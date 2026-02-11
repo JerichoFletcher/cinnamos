@@ -1,10 +1,11 @@
 use riscv::asm::wfi;
+use crate::arch::cpu::Cpu;
 
-pub use crate::arch::riscv::trap::set_interrupt_mask;
+pub struct RiscvCpu;
 
-#[inline(always)]
-pub fn idle() -> ! {
-    loop {
-        wfi();
+impl Cpu for RiscvCpu {
+    #[inline(always)]
+    fn idle() -> ! {
+        loop { wfi(); }
     }
 }

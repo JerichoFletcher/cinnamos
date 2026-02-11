@@ -1,10 +1,11 @@
+#[derive(Debug)]
 pub enum InterruptType {
     Timer,
     External,
     Software,
 }
 
-#[derive(PartialEq)]
+#[derive(Debug)]
 pub struct InterruptMask {
     pub timer: bool,
     pub external: bool,
@@ -21,6 +22,7 @@ impl Default for InterruptMask {
     }
 }
 
+#[derive(Debug)]
 pub struct InterruptController {
     mask: InterruptMask,
 }
@@ -55,7 +57,7 @@ impl InterruptController {
     }
 
     fn sync(&self) {
-        crate::arch::cpu::set_interrupt_mask(&self.mask);
+        crate::arch::trap::set_interrupt_mask(&self.mask);
     }
 }
 

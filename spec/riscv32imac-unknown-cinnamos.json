@@ -4,9 +4,9 @@
   "data-layout": "e-m:e-p:32:32-i64:64-n32-S128",
   "arch": "riscv32",
   "cpu": "generic-rv32",
-  "features": "+m,+zicsr",
+  "features": "+m,+a,+c,+zicsr",
 
-  "os": "none",
+  "os": "cinnamos",
   "vendor": "unknown",
 
   "linker-flavor": "ld.lld",

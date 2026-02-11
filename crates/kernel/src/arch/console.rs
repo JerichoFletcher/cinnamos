@@ -1,22 +1,23 @@
 #[cfg(target_arch = "riscv32")]
-use crate::arch::riscv::sbi::console_putchar as arch_putchar;
-#[cfg(target_arch = "riscv32")]
-use crate::arch::riscv::sbi::console_getchar as arch_getchar;
+use crate::arch::riscv::console::RiscvSbiConsole as ConsoleImpl;
 
-pub fn putchar(c: u8) {
-    arch_putchar(c);
+pub trait Console {
+    fn putchar(c: u8) -> Result<(), ()>;
+    fn getchar() -> Result<u8, ()>;
+    fn putstr(s: &str) -> Result<(), ()>;
 }
 
-pub fn getchar() -> u8 {
-    arch_getchar()
+#[inline(always)]
+pub fn putchar(c: u8) -> Result<(), ()> {
+    ConsoleImpl::putchar(c)
 }
 
-pub fn putstr(s: &str) {
-    for b in s.bytes() {
-        arch_putchar(b);
-    }
+#[inline(always)]
+pub fn getchar() -> Result<u8, ()> {
+    ConsoleImpl::getchar()
 }
 
-pub fn clear() {
-    putstr("\x1b[2J\x1b[1;1H");
+#[inline(always)]
+pub fn putstr(s: &str) -> Result<(), ()> {
+    ConsoleImpl::putstr(s)
 }

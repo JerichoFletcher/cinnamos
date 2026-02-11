@@ -2,37 +2,29 @@ use riscv::register::sstatus::Sstatus;
 use crate::arch::context::Context;
 
 #[repr(C)]
-pub struct RiscvRawContext {
+pub struct RiscvContext {
     pub regs: [usize; 32],
     pub sstatus: usize,
     pub sepc: usize,
 }
 
-pub struct RiscvContext<'a> {
-    raw: &'a mut RiscvRawContext,
-}
-
-impl<'a> RiscvContext<'a> {
-    pub fn new(raw: &'a mut RiscvRawContext) -> RiscvContext<'a> {
-        RiscvContext { raw }
-    }
-
+impl RiscvContext {
     fn sstatus(&self) -> Sstatus {
-        Sstatus::from_bits(self.raw.sstatus)
+        Sstatus::from_bits(self.sstatus)
     }
 
     fn set_sstatus(&mut self, sstatus: Sstatus) {
-        self.raw.sstatus = sstatus.bits();
+        self.sstatus = sstatus.bits();
     }
 }
 
-impl Context for RiscvContext<'_> {
+impl Context for RiscvContext {
     fn pc(&self) -> usize {
-        self.raw.sepc
+        self.sepc
     }
 
     fn set_pc(&mut self, pc: usize) {
-        self.raw.sepc = pc;
+        self.sepc = pc;
     }
 
     fn interrupts_enabled(&self) -> bool {

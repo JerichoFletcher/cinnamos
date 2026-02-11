@@ -1,10 +1,10 @@
-.section .text.entry
+.section .text.init
 .global _start
 _start:
-    la      sp, __stack_top
+    la      sp, _boot_stack_top
 
-    la      t0, __bss_start
-    la      t1, __bss_end
+    la      t0, _bss_start
+    la      t1, _bss_end
 1:
     bgeu    t0, t1, 2f
     sw      zero, 0(t0)

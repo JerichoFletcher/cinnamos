@@ -1,7 +1,6 @@
 pub mod interrupt;
 
-use crate::arch::cpu;
-
+#[inline(always)]
 pub fn idle() -> ! {
-    cpu::idle();
+    crate::arch::cpu::idle();
 }

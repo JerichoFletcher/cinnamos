@@ -1,10 +1,20 @@
 #[cfg(target_arch = "riscv32")]
 pub mod riscv;
 
-#[cfg(target_arch = "riscv32")]
-pub use crate::arch::riscv::*;
-
 pub mod cpu;
 pub mod context;
 pub mod trap;
+pub mod timer;
 pub mod console;
+
+#[cfg(target_arch = "riscv32")]
+use crate::arch::riscv::RiscvArch as ArchImpl;
+
+pub trait Arch {
+    fn init();
+}
+
+#[inline(always)]
+pub fn init() {
+    ArchImpl::init();
+}

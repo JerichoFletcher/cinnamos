@@ -1,45 +1,39 @@
-use core::arch::asm;
+use core::sync::atomic::{AtomicBool, Ordering};
+use sbi_rt::probe_extension;
+use crate::{print, println};
 
-#[inline(always)]
-fn ecall(
-    eid: usize,
-    fid: usize,
-    a0: usize,
-    a1: usize,
-    a2: usize,
-    a3: usize,
-    a4: usize,
-    a5: usize
-) -> Result<usize, usize> {
-    let err: usize;
-    let ret: usize;
-    unsafe {
-        asm!(
-            "ecall",
-            inlateout("a0") a0 => err,
-            inlateout("a1") a1 => ret,
-            in("a2") a2,
-            in("a3") a3,
-            in("a4") a4,
-            in("a5") a5,
-            in("a6") fid,
-            in("a7") eid,
-            options(nomem, nostack)
-        );
+pub struct SbiCaps {
+    timer: AtomicBool,
+    debug_console: AtomicBool,
+}
+
+impl SbiCaps {
+    #[inline(always)]
+    pub fn has_timer(&self) -> bool {
+        self.timer.load(Ordering::Relaxed)
     }
-    if err == 0 {
-        Ok(ret)
-    } else {
-        Err(err)
+
+    #[inline(always)]
+    pub fn has_debug_console(&self) -> bool {
+        self.debug_console.load(Ordering::Relaxed)
     }
 }
 
-#[inline(always)]
-pub fn console_putchar(c: u8) {
-    ecall(0x1, 0, c as usize, 0, 0, 0, 0, 0).expect("console_putchar failed");
-}
+pub static SBI_CAPS: SbiCaps = SbiCaps {
+    timer: AtomicBool::new(false),
+    debug_console: AtomicBool::new(false),
+};
 
-#[inline(always)]
-pub fn console_getchar() -> u8 {
-    ecall(0x2, 0, 0, 0, 0, 0, 0, 0).expect("console_getchar failed") as u8
+pub fn init() {
+    let time = probe_extension(sbi_rt::Timer);
+    let dbcn = probe_extension(sbi_rt::Console);
+
+    SBI_CAPS.timer.store(time.is_available(), Ordering::Relaxed);
+    SBI_CAPS.debug_console.store(dbcn.is_available(), Ordering::Relaxed);
+
+    print!("\nOpenSBI Extensions: ");
+    print!("base");
+    if time.is_available() { print!(",time"); }
+    if dbcn.is_available() { print!(",dbcn"); }
+    println!();
 }

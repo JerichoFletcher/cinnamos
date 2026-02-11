@@ -1,7 +1,12 @@
-use core::panic::PanicInfo;
-use crate::cpu::idle;
+use crate::{print, println};
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    idle();
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    print!("Panic: ");
+    if let Some(p) = info.location() {
+        println!("line {}, file {}: {}", p.line(), p.file(), info.message());
+    } else {
+        println!("No information");
+    }
+    crate::cpu::idle();
 }

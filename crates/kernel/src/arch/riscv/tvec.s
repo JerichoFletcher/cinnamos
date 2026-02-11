@@ -1,6 +1,7 @@
 .global _trap_vector
 
 .section .text
+.align 2
 _trap_vector:
     csrrw   sp, sscratch, sp
     addi    sp, sp, -144
@@ -46,6 +47,12 @@ _trap_vector:
 
     csrr    t0, sepc
     sw      t0, 132(sp)
+
+    csrr    t0, scause
+    sw      t0, 136(sp)
+
+    csrr    t0, stval
+    sw      t0, 140(sp)
 
     # Trap frame is located at sp
     mv      a0, sp
