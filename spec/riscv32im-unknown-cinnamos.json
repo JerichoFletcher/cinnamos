@@ -1,0 +1,28 @@
+{
+  "llvm-target": "riscv32",
+  "llvm-abiname": "ilp32",
+  "data-layout": "e-m:e-p:32:32-i64:64-n32-S128",
+  "arch": "riscv32",
+  "cpu": "generic-rv32",
+  "features": "+m,+zicsr",
+
+  "os": "none",
+  "vendor": "unknown",
+
+  "linker-flavor": "ld.lld",
+  "linker": "rust-lld",
+  "executables": true,
+
+  "disable-redzone": true,
+  "panic-strategy": "abort",
+  "relocation-model": "static",
+  "code-model": "medium",
+
+  "no-default-libraries": true,
+  "requires-uwtable": false,
+
+  "max-atomic-width": 32,
+  "target-endian": "little",
+  "target-pointer-width": 32,
+  "target-c-int-width": 32
+}
