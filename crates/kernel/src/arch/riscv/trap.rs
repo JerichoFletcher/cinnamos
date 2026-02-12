@@ -1,5 +1,4 @@
-use riscv::interrupt::Trap;
-use riscv::interrupt::supervisor::{Interrupt, Exception};
+use riscv::interrupt::{Trap, Interrupt, Exception};
 use riscv::register::{stvec, sie, scause};
 use crate::arch::cpu::local_mut;
 use crate::arch::trap::Trap as TrapIntf;

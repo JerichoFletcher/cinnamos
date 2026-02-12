@@ -20,6 +20,16 @@ impl RiscvContext {
 }
 
 impl Context for RiscvContext {
+    fn new(privilege: PrivMode) -> Self {
+        let mut ctx = Self {
+            regs: [0; 32],
+            sstatus: 0,
+            sepc: 0,
+        };
+        ctx.set_privilege(privilege);
+        ctx
+    }
+
     fn pc(&self) -> usize {
         self.sepc
     }

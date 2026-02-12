@@ -1,5 +1,8 @@
+use core::ptr::null_mut;
 use crate::arch::cpu::Cpu;
 use crate::cpu::local::{CpuLocal, MAX_CPU};
+use crate::sched::queue::RunQueue;
+use crate::sched::task::Task;
 
 static mut CPUS: [RiscvCpuLocal; MAX_CPU] = [RiscvCpuLocal::new(); MAX_CPU];
 
@@ -8,12 +11,22 @@ pub struct RiscvCpuLocal {
     hid: usize,
     kernel_sp: usize,
     scratch: usize,
+    current_task: *mut Task,
     next_deadline: u64,
+    run_queue: RunQueue,
 }
 
 impl CpuLocal for RiscvCpuLocal {
     fn id(&self) -> usize {
         self.hid
+    }
+
+    fn current_task(&self) -> Option<&mut Task> {
+        unsafe { self.current_task.as_mut() }
+    }
+
+    fn set_current_task(&mut self, task: &mut Task) {
+        self.current_task = task as *mut Task
     }
 
     fn kernel_sp(&self) -> usize {
@@ -31,6 +44,10 @@ impl CpuLocal for RiscvCpuLocal {
     fn set_next_deadline(&mut self, next_deadline: u64) {
         self.next_deadline = next_deadline;
     }
+
+    fn run_queue(&mut self) -> &mut RunQueue {
+        &mut self.run_queue
+    }
 }
 
 impl RiscvCpuLocal {
@@ -39,6 +56,8 @@ impl RiscvCpuLocal {
             hid: 0,
             kernel_sp: 0,
             scratch: 0,
+            current_task: null_mut(),
+            run_queue: RunQueue::new(),
             next_deadline: 0,
         }
     }

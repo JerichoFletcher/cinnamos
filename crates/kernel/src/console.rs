@@ -1,9 +1,9 @@
-use core::fmt::{Error, Write};
+use core::fmt::{Result, Error, Write};
 
 pub struct ConsoleWriter;
 
 impl Write for ConsoleWriter {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+    fn write_str(&mut self, s: &str) -> Result {
         match crate::arch::console::putstr(s) {
             Ok(()) => Ok(()),
             Err(()) => Err(Error),
@@ -13,9 +13,9 @@ impl Write for ConsoleWriter {
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ({
+    ($($arg:tt)+) => ({
         use core::fmt::Write;
-        let _ = write!($crate::console::ConsoleWriter, $($arg)*);
+        let _ = write!($crate::console::ConsoleWriter, $($arg)+);
     })
 }
 

@@ -18,8 +18,9 @@ SECTIONS {
         *(.text .text.*)
         PROVIDE(_text_end = .);
     } >ram AT>ram :text
-    
+
     .rodata : {
+        . = ALIGN(32);
         PROVIDE(_rodata_start = .);
         *(.rodata .rodata.*)
         PROVIDE(_rodata_end = .);
@@ -41,19 +42,15 @@ SECTIONS {
         PROVIDE(_bss_end = .);
     } >ram AT>ram :bss
 
-    PROVIDE(_mem_start = ORIGIN(ram));
-    PROVIDE(_mem_end = ORIGIN(ram) + LENGTH(ram));
-
-    . = ALIGN(16);
+    . = ALIGN(32);
     PROVIDE(_stack_start = .);
     .boot_stack (NOLOAD) : {
         PROVIDE(_boot_stack_start = .);
         PROVIDE(_boot_stack_top = _boot_stack_start + 0x4000);
     }
 
-    . = ALIGN(16);
+    . = ALIGN(32);
     .trap_stack (NOLOAD) : {
-        . = ALIGN(16);
         PROVIDE(_trap_stack_start = .);
         PROVIDE(_trap_stack_top = _trap_stack_start + 0x4000);
     }
@@ -61,4 +58,7 @@ SECTIONS {
 
     PROVIDE(_heap_start = _stack_end);
     PROVIDE(_heap_size = _mem_end - _heap_start);
+
+    PROVIDE(_mem_start = ORIGIN(ram));
+    PROVIDE(_mem_end = ORIGIN(ram) + LENGTH(ram));
 }

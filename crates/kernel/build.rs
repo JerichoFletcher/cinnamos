@@ -1,13 +1,17 @@
 fn main() {
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=src/boot/linker.ld");
-    println!("cargo:rerun-if-changed=src/arch/riscv/entry.s");
-    println!("cargo:rerun-if-changed=src/arch/riscv/tvec.s");
-    cc::Build::new()
-        .file("src/arch/riscv/entry.s")
-        .file("src/arch/riscv/tvec.s")
-        .compiler("clang")
+    let target = std::env::var("TARGET").unwrap();
+    let mut build = cc::Build::new();
+
+    if target.contains("riscv32") {
+        build.file("src/asm/arch_riscv32.s")
+            .flag("--target=riscv32-unknown-elf");
+    }
+    
+    build.compiler("clang")
         .no_default_flags(true)
-        .flag("--target=riscv32-unknown-elf")
         .compile("arch_entry");
+
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/boot/");
+    println!("cargo:rerun-if-changed=src/asm/");
 }

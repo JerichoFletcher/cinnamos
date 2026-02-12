@@ -5,11 +5,11 @@ pub use crate::arch::riscv::cpu::RiscvCpuLocal as CpuLocalImpl;
 
 use crate::cpu::local::CpuLocal;
 
-pub trait Cpu<C : CpuLocal> {
+pub trait Cpu<L : CpuLocal> {
     fn init(id: usize);
 
-    fn local() -> &'static C;
-    fn local_mut() -> &'static mut C;
+    fn local() -> &'static L;
+    fn local_mut() -> &'static mut L;
 
     fn idle() -> !;
 }

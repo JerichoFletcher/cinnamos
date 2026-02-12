@@ -13,7 +13,7 @@ test = false
 bench = false
 
 [dependencies]
-riscv = "0.16"
+riscv = { version = "0.16", features = ["s-mode"] }
 sbi-rt = { version = "0.0.3", features = ["legacy"] }
 
 [build-dependencies]

@@ -1,4 +1,5 @@
-use crate::arch::context::Context;
+use crate::arch::context::{Context, ContextImpl};
+use crate::cpu::PrivMode;
 
 #[derive(Debug)]
 pub enum IrqType {
@@ -7,16 +8,27 @@ pub enum IrqType {
 
 #[derive(Debug)]
 pub enum TaskState {
-    NotCreated,
     Ready,
     Running,
     BlockedIrq(IrqType),
-    Terminated,
 }
 
-pub struct Task<C : Context> {
+pub struct Task {
     pub id: usize,
     pub state: TaskState,
-    pub ctx: C,
+    pub ctx: ContextImpl,
     pub priority: usize,
+    pub quantum: usize,
+}
+
+impl Task {
+    pub fn new(id: usize, privilege: PrivMode, priority: usize) -> Self {
+        Self {
+            id,
+            state: TaskState::Ready,
+            ctx: ContextImpl::new(privilege),
+            priority,
+            quantum: 0,
+        }
+    }
 }

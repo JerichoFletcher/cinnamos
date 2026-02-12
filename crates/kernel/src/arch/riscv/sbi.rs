@@ -30,7 +30,7 @@ pub fn init() {
     SBI_CAPS.timer.store(time.is_available(), Ordering::Relaxed);
     SBI_CAPS.debug_console.store(dbcn.is_available(), Ordering::Relaxed);
 
-    print!("\nOpenSBI Extensions: ");
+    print!("OpenSBI Extensions    : ");
     print!("base");
     if time.is_available() { print!(",time"); }
     if dbcn.is_available() { print!(",dbcn"); }

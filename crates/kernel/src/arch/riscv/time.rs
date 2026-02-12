@@ -10,14 +10,20 @@ impl Time for RiscvTime {
         riscv::register::time::read64()
     }
 
+    #[inline(always)]
+    fn has_timer() -> bool {
+        SBI_CAPS.has_timer()
+    }
+
+    #[inline(always)]
     fn deadline() -> u64 {
-        local::get().next_deadline()
+        local::get_local().next_deadline()
     }
 
     fn set_deadline(t: u64) {
         if SBI_CAPS.has_timer() {
             sbi_rt::set_timer(t);
-            local::get_mut().set_next_deadline(t);
+            local::get_local_mut().set_next_deadline(t);
         } else {
             panic!("Timer not supported");
         }

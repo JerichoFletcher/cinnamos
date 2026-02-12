@@ -1,10 +1,24 @@
-.global _trap_vector
+.section .text.init
+.global _start
+_start:
+    la      sp, _boot_stack_top
+
+    la      t0, _bss_start
+    la      t1, _bss_end
+1:
+    bgeu    t0, t1, 2f
+    sw      zero, 0(t0)
+    addi    t0, t0, 4
+    j       1b
+2:
+    tail    kmain
 
 .equ OFFSET_KERNEL_SP, 4
 .equ OFFSET_SCRATCH, 8
 
 .section .text
 .align 2
+.global _trap_vector
 _trap_vector:
     # Load kernel context ptr from sscratch
     # Init trap stack frame

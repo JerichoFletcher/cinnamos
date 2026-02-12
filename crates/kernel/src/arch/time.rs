@@ -3,6 +3,7 @@ use crate::arch::riscv::time::RiscvTime as TimerImpl;
 
 pub trait Time {
     fn now() -> u64;
+    fn has_timer() -> bool;
     fn deadline() -> u64;
     fn set_deadline(t: u64);
 }
@@ -10,6 +11,11 @@ pub trait Time {
 #[inline(always)]
 pub fn now() -> u64 {
     TimerImpl::now()
+}
+
+#[inline(always)]
+pub fn has_timer() -> bool {
+    TimerImpl::has_timer()
 }
 
 #[inline(always)]
