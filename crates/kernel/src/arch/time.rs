@@ -1,14 +1,20 @@
 #[cfg(target_arch = "riscv32")]
-use crate::arch::riscv::timer::RiscvTimer as TimerImpl;
+use crate::arch::riscv::time::RiscvTime as TimerImpl;
 
-pub trait Timer {
+pub trait Time {
     fn now() -> u64;
+    fn deadline() -> u64;
     fn set_deadline(t: u64);
 }
 
 #[inline(always)]
 pub fn now() -> u64 {
     TimerImpl::now()
+}
+
+#[inline(always)]
+pub fn deadline() -> u64 {
+    TimerImpl::deadline()
 }
 
 #[inline(always)]

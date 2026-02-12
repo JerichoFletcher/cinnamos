@@ -4,7 +4,7 @@ pub mod riscv;
 pub mod cpu;
 pub mod context;
 pub mod trap;
-pub mod timer;
+pub mod time;
 pub mod console;
 
 #[cfg(target_arch = "riscv32")]

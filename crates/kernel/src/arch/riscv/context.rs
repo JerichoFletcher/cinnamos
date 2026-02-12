@@ -1,5 +1,6 @@
-use riscv::register::sstatus::Sstatus;
+use riscv::register::sstatus::{Sstatus, SPP};
 use crate::arch::context::Context;
+use crate::cpu::PrivMode;
 
 #[repr(C)]
 pub struct RiscvContext {
@@ -25,6 +26,22 @@ impl Context for RiscvContext {
 
     fn set_pc(&mut self, pc: usize) {
         self.sepc = pc;
+    }
+
+    fn privilege(&self) -> PrivMode {
+        match self.sstatus().spp() {
+            SPP::User => PrivMode::User,
+            SPP::Supervisor => PrivMode::Supervisor,
+        }
+    }
+
+    fn set_privilege(&mut self, privilege: PrivMode) {
+        let mut sstatus = self.sstatus();
+        sstatus.set_spp(match privilege {
+            PrivMode::User => SPP::User,
+            PrivMode::Supervisor => SPP::Supervisor,
+        });
+        self.set_sstatus(sstatus);
     }
 
     fn interrupts_enabled(&self) -> bool {

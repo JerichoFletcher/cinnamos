@@ -1,15 +1,21 @@
 .global _trap_vector
 
+.equ OFFSET_KERNEL_SP, 4
+.equ OFFSET_SCRATCH, 8
+
 .section .text
 .align 2
 _trap_vector:
-    csrrw   sp, sscratch, sp
+    # Load kernel context ptr from sscratch
+    # Init trap stack frame
+    csrrw   tp, sscratch, tp
+    sw      sp, OFFSET_SCRATCH(tp)
+    lw      sp, OFFSET_KERNEL_SP(tp)
     addi    sp, sp, -144
 
-    # Save registers (except sp)
-    sw      x1, 4(sp)
-    sw      x3, 12(sp)
-    sw      x4, 16(sp)
+    # Save registers (except sp, tp)
+    sw      ra, 4(sp)
+    sw      gp, 12(sp)
     sw      x5, 20(sp)
     sw      x6, 24(sp)
     sw      x7, 28(sp)
@@ -38,40 +44,43 @@ _trap_vector:
     sw      x30, 120(sp)
     sw      x31, 124(sp)
 
-    # Save old sp from sscratch
-    csrr    t0, sscratch
+    lw      t0, OFFSET_SCRATCH(tp)
+    csrr    t1, sscratch
+    csrr    t2, sstatus
+    csrr    t3, sepc
+    csrr    t4, scause
+    csrr    t5, stval
+
     sw      t0, 8(sp)
+    sw      t1, 16(sp)
+    sw      t2, 128(sp)
+    sw      t3, 132(sp)
+    sw      t4, 136(sp)
+    sw      t5, 140(sp)
+    # State:
+    # sscratch = user tp
+    # OFFSET_SCRATCH(tp) = user sp
 
-    csrr    t0, sstatus
-    sw      t0, 128(sp)
-
-    csrr    t0, sepc
-    sw      t0, 132(sp)
-
-    csrr    t0, scause
-    sw      t0, 136(sp)
-
-    csrr    t0, stval
-    sw      t0, 140(sp)
-
-    # Trap frame is located at sp
+    # Pass trap frame pointer
     mv      a0, sp
     call    trap_handler
 
-    # Set return sp
+    # Expected:
+    # sscratch <- new user tp
+    # OFFSET_SCRATCH(tp) <- new user sp
     lw      t0, 8(sp)
-    csrw    sscratch, t0
+    lw      t1, 16(sp)
+    lw      t2, 128(sp)
+    lw      t3, 132(sp)
 
-    lw      t0, 128(sp)
-    csrw    sstatus, t0
-
-    lw      t0, 132(sp)
-    csrw    sepc, t0
+    sw      t0, OFFSET_SCRATCH(tp)
+    csrw    sscratch, t1
+    csrw    sstatus, t2
+    csrw    sepc, t3
 
     # Restore registers (except sp)
-    lw      x1, 4(sp)
-    lw      x3, 12(sp)
-    lw      x4, 16(sp)
+    lw      ra, 4(sp)
+    lw      gp, 12(sp)
     lw      x5, 20(sp)
     lw      x6, 24(sp)
     lw      x7, 28(sp)
@@ -100,6 +109,6 @@ _trap_vector:
     lw      x30, 120(sp)
     lw      x31, 124(sp)
 
-    addi    sp, sp, 144
-    csrrw   sp, sscratch, sp
+    lw      sp, OFFSET_SCRATCH(sp)
+    csrrw   tp, sscratch, tp
     sret

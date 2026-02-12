@@ -1,5 +1,4 @@
 use core::sync::atomic::{AtomicBool, Ordering};
-use sbi_rt::probe_extension;
 use crate::{print, println};
 
 pub struct SbiCaps {
@@ -25,8 +24,8 @@ pub static SBI_CAPS: SbiCaps = SbiCaps {
 };
 
 pub fn init() {
-    let time = probe_extension(sbi_rt::Timer);
-    let dbcn = probe_extension(sbi_rt::Console);
+    let time = sbi_rt::probe_extension(sbi_rt::Timer);
+    let dbcn = sbi_rt::probe_extension(sbi_rt::Console);
 
     SBI_CAPS.timer.store(time.is_available(), Ordering::Relaxed);
     SBI_CAPS.debug_console.store(dbcn.is_available(), Ordering::Relaxed);

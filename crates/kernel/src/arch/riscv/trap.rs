@@ -1,8 +1,11 @@
-use riscv::interrupt::{Trap, Interrupt, Exception};
-use riscv::register::{stvec, sscratch, sie, scause};
+use riscv::interrupt::Trap;
+use riscv::interrupt::supervisor::{Interrupt, Exception};
+use riscv::register::{stvec, sie, scause};
+use crate::arch::cpu::local_mut;
 use crate::arch::trap::Trap as TrapIntf;
 use crate::arch::riscv::context::RiscvContext;
 use crate::cpu::interrupt::InterruptMask;
+use crate::cpu::local::CpuLocal;
 use crate::trap::{ktrap_handle, TrapCause, TrapFrame};
 
 #[repr(C)]
@@ -47,28 +50,25 @@ fn install_trap_vector() {
         unsafe extern "C" {
             fn _trap_vector();
         }
-        let tvec = stvec::Stvec::new(
-            _trap_vector as *const () as usize,
-            stvec::TrapMode::Direct
-        );
+        let addr = _trap_vector as *const() as usize;
+        let tvec = stvec::Stvec::new(addr, stvec::TrapMode::Direct);
         stvec::write(tvec);
     }
 }
 
 #[inline(always)]
-fn init_scratch() {
+fn load_trap_stack(loc: &mut impl CpuLocal) {
     unsafe {
         unsafe extern "C" {
             static _trap_stack_top: u8;
         }
-        let tsp = &_trap_stack_top as *const u8;
-        sscratch::write(tsp as usize);
+        loc.set_kernel_sp(&_trap_stack_top as *const _ as usize);
     }
 }
 
 pub fn init() {
     install_trap_vector();
-    init_scratch();
+    load_trap_stack(local_mut());
 }
 
 pub struct RiscvTrap;
