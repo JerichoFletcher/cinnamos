@@ -73,6 +73,7 @@ impl Cpu<RiscvCpuLocal> for RiscvCpu {
         cpu.hid = id;
         unsafe {
             core::arch::asm!("mv tp, {}", in(reg) cpu as *mut _ as usize);
+            core::arch::asm!("csrw sscratch, {}", in(reg) cpu as *mut _ as usize);
         }
     }
 

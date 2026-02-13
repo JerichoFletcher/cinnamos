@@ -46,13 +46,15 @@ SECTIONS {
     PROVIDE(_stack_start = .);
     .boot_stack (NOLOAD) : {
         PROVIDE(_boot_stack_start = .);
-        PROVIDE(_boot_stack_top = _boot_stack_start + 0x4000);
+        . += 0x4000;
+        PROVIDE(_boot_stack_top = .);
     }
 
     . = ALIGN(32);
     .trap_stack (NOLOAD) : {
         PROVIDE(_trap_stack_start = .);
-        PROVIDE(_trap_stack_top = _trap_stack_start + 0x4000);
+        . += 0x4000;
+        PROVIDE(_trap_stack_top = .);
     }
     PROVIDE(_stack_end = .);
 

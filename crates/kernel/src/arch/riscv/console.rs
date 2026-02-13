@@ -47,9 +47,9 @@ impl Console for RiscvSbiConsole {
             }
         } else {
             for b in s.bytes() {
-                'a: loop {
+                loop {
                     if let Ok(()) = RiscvSbiConsole::putchar(b) {
-                        break 'a;
+                        break;
                     }
                 }
             }

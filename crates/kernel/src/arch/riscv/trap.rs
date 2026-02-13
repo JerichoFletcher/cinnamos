@@ -30,6 +30,10 @@ extern "C" fn trap_handler(frame: &mut RiscvTrapFrame) {
     let tval = frame.trap_value();
     let kcause = match frame.trap_cause() {
         Trap::Exception(Exception::IllegalInstruction) => TrapCause::IllegalInstruction(tval),
+        Trap::Exception(Exception::LoadMisaligned) => TrapCause::LoadMisaligned(tval),
+        Trap::Exception(Exception::LoadFault) => TrapCause::LoadFault(tval),
+        Trap::Exception(Exception::StoreMisaligned) => TrapCause::StoreMisaligned(tval),
+        Trap::Exception(Exception::StoreFault) => TrapCause::StoreFault(tval),
         Trap::Exception(Exception::SupervisorEnvCall) => TrapCause::SupervisorEnvCall(frame.ctx.regs[17]),
         Trap::Exception(Exception::UserEnvCall) => TrapCause::UserEnvCall(frame.ctx.regs[17]),
         Trap::Interrupt(Interrupt::SupervisorTimer) => TrapCause::TimerInterrupt,

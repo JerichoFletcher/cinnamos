@@ -5,6 +5,10 @@ use crate::println;
 pub enum TrapCause {
     Unknown,
     IllegalInstruction(usize),
+    LoadMisaligned(usize),
+    LoadFault(usize),
+    StoreMisaligned(usize),
+    StoreFault(usize),
     SupervisorEnvCall(usize),
     UserEnvCall(usize),
     TimerInterrupt,
@@ -20,14 +24,26 @@ pub struct TrapFrame<'a, C : Context> {
 pub fn ktrap_handle<C: Context>(frame: TrapFrame<C>) {
     match frame.cause {
         TrapCause::IllegalInstruction(inst) => {
-            panic!("Illegal instruction 0x{:08x}: 0x{:08x}", frame.ctx.pc(), inst);
+            panic!("Illegal instruction (at {:p}: 0x{:08x})", frame.ctx.pc() as *const u8, inst);
+        }
+        TrapCause::LoadMisaligned(addr) => {
+            panic!("Load address misaligned (at {:p}: 0x{:08x})", frame.ctx.pc() as *const u8, addr);
+        }
+        TrapCause::LoadFault(addr) => {
+            panic!("Load access fault (at {:p}: 0x{:08x})", frame.ctx.pc() as *const u8, addr);
+        }
+        TrapCause::StoreMisaligned(addr) => {
+            panic!("Store address misaligned (at {:p}: 0x{:08x})", frame.ctx.pc() as *const u8, addr);
+        }
+        TrapCause::StoreFault(addr) => {
+            panic!("Store access fault (at {:p}: 0x{:08x})", frame.ctx.pc() as *const u8, addr);
         }
         TrapCause::SupervisorEnvCall(fid) => {
-            println!("Env-call (S): 0x{:08x}: 0x{:08x}", frame.ctx.pc(), fid);
+            println!("S-mode env-call (at {:p}: 0x{:08x})", frame.ctx.pc() as *const u8, fid);
             frame.ctx.set_pc(frame.ctx.pc() + size_of::<usize>());
         }
         TrapCause::UserEnvCall(fid) => {
-            println!("Env-call (U): 0x{:08x}: 0x{:08x}", frame.ctx.pc(), fid);
+            println!("U-mode env-call (at {:p}: 0x{:08x})", frame.ctx.pc() as *const u8, fid);
             frame.ctx.set_pc(frame.ctx.pc() + size_of::<usize>());
         }
         TrapCause::TimerInterrupt => {
@@ -40,7 +56,7 @@ pub fn ktrap_handle<C: Context>(frame: TrapFrame<C>) {
             println!("Software interrupt");
         }
         _ => {
-            panic!("Unexpected trap cause");
+            panic!("Unexpected trap cause (pc={:p})", frame.ctx.pc() as *const u8);
         },
     }
 }

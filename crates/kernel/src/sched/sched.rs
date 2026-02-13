@@ -6,6 +6,7 @@ use crate::sched::task::{Task, TaskState};
 
 pub const MAX_TASKS: usize = 32;
 
+#[allow(dead_code)]
 static mut TASKS: [Option<Task>; MAX_TASKS] = [const { None }; MAX_TASKS];
 static DO_PREEMPT: AtomicBool = AtomicBool::new(false);
 
@@ -53,7 +54,7 @@ pub fn schedule() {
                 loc.set_current_task(task);
             },
             None => {
-                panic!("Run queue pops a null task");
+                panic!("Run queue pops null task");
             }
         }
     }

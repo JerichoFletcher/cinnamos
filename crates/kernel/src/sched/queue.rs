@@ -24,18 +24,16 @@ impl RunQueue {
     }
 
     pub fn push(&mut self, task: *mut Task) {
-        if self.count == MAX_TASKS {
-            panic!("Maximum number of tasks reached");
-        }
+        assert!(self.count < MAX_TASKS);
+
         self.tasks[self.tail] = Some(task);
         self.count += 1;
         self.tail = (self.tail + 1) % MAX_TASKS;
     }
 
     pub fn pop(&mut self) -> *mut Task {
-        if self.count == 0 {
-            panic!("No tasks available");
-        }
+        assert!(self.count > 0);
+        
         let task = self.tasks[self.head].expect("Invalid run queue state; null task");
         self.tasks[self.head] = None;
         self.count -= 1;

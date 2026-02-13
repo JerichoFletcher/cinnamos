@@ -6,7 +6,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     if let Some(p) = info.location() {
         println!("line {}, file {}: {}", p.line(), p.file(), info.message());
     } else {
-        println!("No information");
+        println!("?: {}", info.message());
     }
     crate::cpu::idle();
 }

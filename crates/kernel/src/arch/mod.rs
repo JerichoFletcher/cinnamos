@@ -4,6 +4,7 @@ pub mod riscv;
 pub use crate::arch::riscv::RiscvArch as ArchImpl;
 
 pub mod cpu;
+pub mod mem;
 pub mod context;
 pub mod trap;
 pub mod time;
