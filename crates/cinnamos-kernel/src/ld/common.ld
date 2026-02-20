@@ -4,12 +4,14 @@ PROVIDE(_vma_lma_offset = _kernel_vma - _kernel_lma);
 
 SECTIONS {
     . = _kernel_lma;
-    .boot   : ALIGN(4096) {
+    .boot : ALIGN(4096) {
         PROVIDE(_kernel_phys_start = .);
         PROVIDE(_kernel_start = . + _vma_lma_offset);
         PROVIDE(_boot_start = .);
+        PROVIDE(_boot_text_start = .);
         *(.text.boot.init)
         *(.text.boot)
+        PROVIDE(_boot_text_end = .);
     }
 
     .boot.data : ALIGN(4096) {
@@ -26,7 +28,7 @@ SECTIONS {
     }
 
     . = _boot_end + _vma_lma_offset;
-    .text   : AT(_boot_end) ALIGN(4096) {
+    .text : AT(_boot_end) ALIGN(4096) {
         PROVIDE(_text_start = .);
         *(.text.boot)
         *(.text .text.*)
@@ -40,14 +42,14 @@ SECTIONS {
     }
 
     . = ALIGN(4096);
-    .data   : {
+    .data : {
         PROVIDE(_data_start = .);
         *(.sdata .sdata.*)
         *(.data .data.*)
         PROVIDE(_data_end = .);
     }
 
-    .bss    : {
+    .bss : {
         PROVIDE(_bss_start = .);
         *(.sbss .sbss.*)
         *(.bss .bss.*)

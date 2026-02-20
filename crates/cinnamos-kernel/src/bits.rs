@@ -7,12 +7,18 @@ pub const fn u32_reverse_bytes(val: u32) -> u32 {
 }
 
 #[inline(always)]
-pub fn align_next_u64(val: u64, order: u8) -> u64 {
+pub const fn align_next_u32(val: u32, order: u8) -> u32 {
     let x = (1 << order) - 1;
     (val + x) & !x
 }
 
 #[inline(always)]
-pub fn div_ceil(a: usize, b: usize) -> usize {
+pub const fn align_next_u64(val: u64, order: u8) -> u64 {
+    let x = (1 << order) - 1;
+    (val + x) & !x
+}
+
+#[inline(always)]
+pub const fn div_ceil(a: usize, b: usize) -> usize {
     (a + b - 1) / b
 }

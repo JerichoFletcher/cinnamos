@@ -26,12 +26,12 @@ impl PhysAddr {
     }
 
     #[inline(always)]
-    pub fn add(&self, offset: usize) -> Self {
+    pub const fn add(&self, offset: usize) -> Self {
         Self::new(self.0 + offset as u64)
     }
 
     #[inline(always)]
-    pub fn align_next(&self, order: u8) -> Self {
+    pub const fn align_next(&self, order: u8) -> Self {
         Self::new(bits::align_next_u64(self.0, order))
     }
 }
@@ -44,6 +44,26 @@ impl VirtAddr {
     #[inline(always)]
     pub const fn new(addr: u32) -> Self {
         Self(addr)
+    }
+
+    #[inline(always)]
+    pub const fn from_usize(addr: usize) -> Self {
+        Self(addr as u32)
+    }
+
+    #[inline(always)]
+    pub fn from_ptr(ptr: *const u8) -> Self {
+        Self(ptr as u32)
+    }
+
+    #[inline(always)]
+    pub const fn add(&self, offset: usize) -> Self {
+        Self::new(self.0 + offset as u32)
+    }
+
+    #[inline(always)]
+    pub const fn align_next(&self, order: u8) -> Self {
+        Self::new(bits::align_next_u32(self.0, order))
     }
 }
 
@@ -107,55 +127,87 @@ static mut BOOT_PT: StaticBootPT = StaticBootPT {
 };
 
 #[unsafe(link_section = ".text.boot")]
+unsafe fn boot_mega_map(vaddr: VirtAddr, paddr: PhysAddr, flags: u8) {
+    let flags = flags as u32;
+    let vpn1 = ((vaddr.0 >> 22) & 0x3ff) as usize;
+    let ppn1 = ((paddr.0 >> 22) & 0xfff) as u32;
+    let pte = (ppn1 << 20) | flags;
+    unsafe { BOOT_PT.root[vpn1] = pte; }
+}
+
+#[unsafe(link_section = ".text.boot")]
+unsafe fn boot_id_map(vaddr: VirtAddr, flags: u8, expect_vpn1: usize) {
+    let vpn1 = ((vaddr.0 >> 22) & 0x3ff) as usize;
+    assert!(vpn1 == expect_vpn1, "Invalid virtual address");
+    
+    let flags = flags as u32;
+    let vpn0 = ((vaddr.0 >> 12) & 0x3ff) as usize;
+    let paddr = PhysAddr::new(vaddr.0 as u64);
+    let ppn = (paddr.0 >> 12) as u32;
+    let pte = (ppn << 10) | flags;
+    unsafe { BOOT_PT.l0_id[vpn0] = pte; }
+}
+
+#[unsafe(link_section = ".text.boot")]
+unsafe fn boot_hi_map(vaddr: VirtAddr, paddr: PhysAddr, flags: u8, expect_vpn1: usize) {
+    let vpn1 = ((vaddr.0 >> 22) & 0x3ff) as usize;
+    assert!(vpn1 == expect_vpn1, "Invalid virtual address");
+    
+    let flags = flags as u32;
+    let vpn0 = ((vaddr.0 >> 12) & 0x3ff) as usize;
+    let ppn = (paddr.0 >> 12) as u32;
+    let pte = (ppn << 10) | flags;
+    unsafe { BOOT_PT.l0_hi[vpn0] = pte; }
+}
+
+#[unsafe(link_section = ".text.boot")]
 unsafe fn setup_boot_pt(dtb_ptr: *const u8) -> usize {
     unsafe {
         unsafe extern "C" {
             static BOOT_START: PhysAddr;
             static BOOT_END: PhysAddr;
-            static KERNEL_START: PhysAddr;
-            static KERNEL_END: PhysAddr;
+            static BOOT_TEXT_START: PhysAddr;
+            static BOOT_TEXT_END: PhysAddr;
+            static KERNEL_START: VirtAddr;
+            static KERNEL_END: VirtAddr;
+            static TEXT_START: VirtAddr;
+            static TEXT_END: VirtAddr;
+            static RODATA_START: VirtAddr;
+            static RODATA_END: VirtAddr;
         }
 
         let l0_id_phys = &raw const BOOT_PT.l0_id as *const _ as usize;
         let l0_hi_phys = &raw const BOOT_PT.l0_hi as *const _ as usize;
 
-        let vpn1_id = (BOOT_START.0 >> 22) & 0x3ff;
-        let vpn1_hi = (KERNEL_START.0 >> 22) & 0x3ff;
+        let vpn1_id = ((BOOT_START.0 >> 22) & 0x3ff) as usize;
+        let vpn1_hi = ((KERNEL_START.0 >> 22) & 0x3ff) as usize;
 
-        BOOT_PT.root[vpn1_id as usize] = ((l0_id_phys >> 12) << 10) as u32 | 0b1;
-        BOOT_PT.root[vpn1_hi as usize] = ((l0_hi_phys >> 12) << 10) as u32 | 0b1;
+        BOOT_PT.root[vpn1_id] = ((l0_id_phys >> 12) << 10) as u32 | 0b1;
+        BOOT_PT.root[vpn1_hi] = ((l0_hi_phys >> 12) << 10) as u32 | 0b1;
 
-        let flags = 0b0010_1111;
         let mut paddr = BOOT_START;
-        let mut vpn0 = ((BOOT_START.0 >> 12) & 0x3ff) as usize;
-        while paddr.0 < BOOT_END.0 && vpn0 < PT_ENTRY_COUNT {
-            let ppn0 = (paddr.0 >> 12) as u32;
-            let pte = (ppn0 << 10) | flags;
-            BOOT_PT.l0_id[vpn0] = pte;
-
+        while paddr.0 < BOOT_END.0 {
+            let flags = if BOOT_TEXT_START.0 <= paddr.0 && paddr.0 < BOOT_TEXT_END.0 { 0b0010_1011 } else { 0b0010_0111 };
+            boot_id_map(VirtAddr::new(paddr.0 as u32), flags, vpn1_id);
             paddr = paddr.add(PAGE_SIZE);
-            vpn0 += 1;
         }
 
-        let kernel_vsize = (KERNEL_END.0 - KERNEL_START.0) as usize;
-        let kernel_page_ct = bits::div_ceil(kernel_vsize, PAGE_SIZE);
         let mut paddr = BOOT_START;
-        let mut vpn0 = ((KERNEL_START.0 >> 12) & 0x3ff) as usize;
-        let end_vpn0 = vpn0 + kernel_page_ct;
-        while vpn0 < end_vpn0 && vpn0 < PT_ENTRY_COUNT {
-            let ppn0 = (paddr.0 >> 12) as u32;
-            let pte = (ppn0 << 10) | flags;
-            BOOT_PT.l0_hi[vpn0] = pte;
-
+        let mut vaddr = KERNEL_START;
+        while vaddr.0 < KERNEL_END.0 {
+            let flags = if TEXT_START.0 <= vaddr.0 && vaddr.0 < TEXT_END.0 {
+                0b0010_1011
+            } else if RODATA_START.0 <= vaddr.0 && vaddr.0 < RODATA_END.0 {
+                0b0010_0011
+            } else {
+                0b0010_0111
+            };
+            boot_hi_map(vaddr, paddr, flags, vpn1_hi);
             paddr = paddr.add(PAGE_SIZE);
-            vpn0 += 1;
+            vaddr = vaddr.add(PAGE_SIZE);
         }
 
-        let fdt_paddr = dtb_ptr as usize;
-        let vpn1_fdt = ((fdt_paddr >> 22) & 0x3ff) as u32;
-        let ppn1_fdt = ((fdt_paddr >> 22) & 0xfff) as u32;
-        BOOT_PT.root[vpn1_fdt as usize] = (ppn1_fdt << 20) | flags;
-
+        boot_mega_map(VirtAddr::from_ptr(dtb_ptr), PhysAddr::from_ptr(dtb_ptr), 0b0010_0011);        
         &raw const BOOT_PT.root as *const _ as usize
     }
 }
