@@ -6,8 +6,8 @@ build-std-features = ["compiler-builtins-mem"]
 [build]
 target = "spec/riscv32imac-unknown-cinnamos.json"
 
-[target.'cfg(target_os = "cinnamos")']
+[target.riscv32imac-unknown-cinnamos]
 rustflags = [
-    "-C", "link-arg=-Tcrates/kernel/src/boot/linker.ld",
+    "-C", "link-arg=-Tcrates/cinnamos-kernel/src/ld/arch/riscv32.ld",
 ]
-runner = "./run-qemu.sh"
+runner = "scripts/run-qemu-riscv32.sh"

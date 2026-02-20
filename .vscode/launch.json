@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "inputs": [
+        {
+            "id": "targetPath",
+            "type": "command",
+            "command": "extension.commandvariable.pickStringRemember",
+            "args": {
+                "key": "targetPath",
+                "description": "Select target",
+                "options": [
+                    ["RISC-V (32-bit)", "target/riscv32imac-unknown-cinnamos/debug/cinnamos-kernel"]
+                ]
+            }
+        }
+    ],
+    "configurations": [
+        {
+            "name": "Attach to QEMU",
+            "type": "lldb",
+            "request": "attach",
+            "sourceLanguages": ["rust", "asm"],
+            "targetCreateCommands": ["target create ${workspaceFolder}/${input:targetPath}"],
+            "processCreateCommands": ["gdb-remote localhost:1234"]
+        }
+    ]
+}
