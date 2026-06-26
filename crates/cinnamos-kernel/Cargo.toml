@@ -1,0 +1,20 @@
+[package]
+name = "cinnamos-kernel"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "cinnamos-kernel"
+test = false
+bench = false
+
+[lib]
+test = false
+bench = false
+
+[dependencies]
+riscv = { version = "0.16.0", features = ["s-mode"] }
+sbi = "0.3.0"
+fdt = "0.1.5"
+spin = "0.12.0"
+uart = { version = "3.0.2", default-features = false, features = ["writer_impl", "address_impl"] }

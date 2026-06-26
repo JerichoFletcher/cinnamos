@@ -1,0 +1,25 @@
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.build]
+command = "cargo"
+args = [
+    "build",
+    # "--target", "riscv64gc-unknown-none-elf",
+]
+
+[tasks.run]
+command = "qemu-system-riscv64"
+args = [
+    "-machine", "virt",
+    "-m", "128M",
+    "-S",
+    "-gdb", "tcp::1234",
+    "-bios", "default",
+    "-kernel", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/riscv64gc-unknown-none-elf/debug/${CARGO_MAKE_CRATE_NAME}"
+]
+dependencies = ["build"]
