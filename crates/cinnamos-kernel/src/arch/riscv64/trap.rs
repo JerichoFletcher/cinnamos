@@ -1,10 +1,10 @@
 use riscv::{interrupt::{Exception, Interrupt, Trap}, register::{scause::Scause, stvec::{self, Stvec, TrapMode}}};
 
-use crate::{arch::{self, context::RiscvContext}, println};
+use crate::{arch::{self, context::Context}, println};
 
 #[repr(C)]
 struct RiscvTrapFrame {
-    ctx: RiscvContext,
+    ctx: Context,
     scause: Scause,
     stval: usize,
 }

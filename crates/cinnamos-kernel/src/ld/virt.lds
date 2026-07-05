@@ -6,8 +6,7 @@ MEMORY {
 }
 
 SECTIONS {
-    . = ALIGN(4096);
-    PROVIDE(_kernel_start = .);
+    PROVIDE(_kernel_start = ORIGIN(ram));
     
     .text : ALIGN(4096) {
         PROVIDE(_text_start = .);
@@ -39,7 +38,7 @@ SECTIONS {
     PROVIDE(_stack_end = _stack_start + 0x80000);
 
     PROVIDE(_trap_stack_start = .);
-    PROVIDE(_trap_stack_end = _trap_stack_start + 0x10000);
+    PROVIDE(_trap_stack_end = _trap_stack_start + 0x80000);
 
     PROVIDE(_kernel_end = .);
 }

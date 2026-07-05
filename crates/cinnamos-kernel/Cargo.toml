@@ -14,6 +14,7 @@ bench = false
 
 [dependencies]
 riscv = { version = "0.16.0", features = ["s-mode"] }
+bitflags = "2.13.0"
 sbi = "0.3.0"
 fdt = "0.1.5"
 spin = "0.12.0"

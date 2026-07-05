@@ -1,6 +1,8 @@
+mod trap;
+
 pub mod context;
-pub mod trap;
 pub mod timer;
+pub mod paddr;
 
 fn enable_interrupts() {
     let mut sstatus = riscv::register::sstatus::read();
