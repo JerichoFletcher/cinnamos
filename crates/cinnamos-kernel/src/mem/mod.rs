@@ -1,12 +1,13 @@
-use crate::arch::paddr::PAddr;
+use crate::arch::PAddr;
+pub use crate::arch::PAGE_SIZE;
 
 mod allocator;
-
-pub mod palloc;
 pub use allocator::FrameAlloc;
 
-pub const PAGE_SIZE: usize = 4096;
+pub mod palloc;
+pub mod vms;
 
+#[derive(Debug, Clone, Copy)]
 pub struct MemoryRegion {
     base: PAddr,
     size: Option<usize>,

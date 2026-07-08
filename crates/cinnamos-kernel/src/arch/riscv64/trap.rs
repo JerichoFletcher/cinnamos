@@ -1,6 +1,6 @@
-use riscv::{interrupt::{Exception, Interrupt, Trap}, register::{scause::Scause, stvec::{self, Stvec, TrapMode}}};
+use riscv::{interrupt::{Exception, Interrupt, Trap}, register::{scause::Scause, sscratch, stvec::{self, Stvec, TrapMode}}};
 
-use crate::{arch::{self, context::Context}, println};
+use crate::{arch::{self, PAddr, VAddr, context::Context}, println, mem};
 
 #[repr(C)]
 struct RiscvTrapFrame {
@@ -12,7 +12,7 @@ struct RiscvTrapFrame {
 #[unsafe(no_mangle)]
 extern "C" fn trap_handler(frame: &mut RiscvTrapFrame) {
     let tcause = frame.scause.cause().try_into::<Interrupt, Exception>().unwrap();
-    let sepc = frame.ctx.sepc as usize;
+    let sepc = VAddr::from_ptr(frame.ctx.sepc);
 
     match tcause {
         Trap::Exception(Exception::IllegalInstruction) => panic!("[at 0x{:016x}] Illegal instruction 0x{:016x}", sepc, frame.stval),
@@ -46,7 +46,22 @@ pub fn init() {
     unsafe extern "C" {
         fn _trap_entry();
     }
+
     let trap_entry_addr = _trap_entry as *const() as usize;
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe { stvec::write(stvec); }
+}
+
+pub fn init_higher_half() {
+    unsafe extern "C" {
+        fn _trap_entry();
+        static TRAP_STACK_END: PAddr;
+    }
+
+    let trap_entry_addr = _trap_entry as *const() as usize;
+    let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
+    unsafe {
+        stvec::write(stvec);
+        sscratch::write(mem::vms::phys_to_kernel(TRAP_STACK_END).addr());
+    }
 }

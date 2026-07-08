@@ -1,15 +1,17 @@
-use core::ops::{Add, Sub};
+use core::{fmt::LowerHex, ops::{Add, Sub}};
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PAddr(usize);
 
 impl PAddr {
+    pub const NULL: Self = Self(0);
+
     pub fn new(addr: usize) -> Self {
         Self(addr)
     }
 
-    pub fn from_ptr(ptr: *const u8) -> Self {
+    pub fn from_ptr<T>(ptr: *const T) -> Self {
         Self(ptr as usize)
     }
 
@@ -39,5 +41,11 @@ impl Sub<PAddr> for PAddr {
 
     fn sub(self, rhs: PAddr) -> Self::Output {
         self.0 - rhs.0
+    }
+}
+
+impl LowerHex for PAddr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        LowerHex::fmt(&self.0, f)
     }
 }

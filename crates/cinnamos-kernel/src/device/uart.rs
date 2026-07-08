@@ -1,17 +1,17 @@
 use core::ptr::NonNull;
 
 use spin::Mutex;
-use uart::{address::MmioAddress, writer::UartWriter};
+use uart::{Data, Uart, address::MmioAddress};
 
-struct SendUart(UartWriter<MmioAddress>);
+struct SendUart(Uart<MmioAddress, Data>);
 
 unsafe impl Send for SendUart {}
 
 static UART: Mutex<Option<SendUart>> = Mutex::new(None);
 
 pub fn init(base_addr: NonNull<u8>) {
-    let writer = unsafe { UartWriter::new(MmioAddress::new(base_addr, 1), true) };
-    *UART.lock() = Some(SendUart(writer));
+    let drv = unsafe { <Uart<_, Data>>::new(MmioAddress::new(base_addr, 1)) };
+    *UART.lock() = Some(SendUart(drv));
 }
 
 pub struct Writer;
@@ -24,8 +24,15 @@ impl Writer {
 
 impl core::fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        if let Some(writer) = UART.lock().as_mut() {
-            writer.0.write_str(s).ok();
+        if let Some(drv) = UART.lock().as_mut() {
+            for c in s.bytes() {
+                if c == b'\n' {
+                    drv.0.write_byte(b'\r');
+                    drv.0.write_byte(b'\n');
+                } else {
+                    drv.0.write_byte(c);
+                }
+            }
         }
         Ok(())
     }

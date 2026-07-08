@@ -1,19 +1,44 @@
+use core::arch::asm;
+
+use riscv::register::{sepc, sstatus};
+
+use crate::arch::VAddr;
+
 mod trap;
 
 pub mod context;
 pub mod timer;
 pub mod paddr;
-
-fn enable_interrupts() {
-    let mut sstatus = riscv::register::sstatus::read();
-    sstatus.set_sie(true);
-}
+pub mod vaddr;
+pub mod sv48;
 
 pub fn init() {
     trap::init();
+}
+
+pub fn init_higher_half() {
+    trap::init_higher_half();
 
     timer::schedule_timer();
     timer::enable_timer();
+}
 
-    enable_interrupts();
+pub unsafe fn jump_to_higher_half(target: *const (), hid: usize, dtb_ptr: VAddr, new_sp: VAddr) -> ! {
+    unsafe {
+        let mut sstatus = sstatus::read();
+        sstatus.set_spp(sstatus::SPP::Supervisor);
+        sstatus.set_spie(sstatus.sie());
+        sstatus::write(sstatus);
+        sepc::write(target as usize);
+
+        asm!(
+            "mv sp, {0}",
+            "mv a0, {1}",
+            "mv a1, {2}",
+            in(reg) new_sp.addr(),
+            in(reg) hid,
+            in(reg) dtb_ptr.addr(),
+        );
+        asm!("sret", options(noreturn));
+    }
 }

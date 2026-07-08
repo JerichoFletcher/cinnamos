@@ -7,10 +7,10 @@ fn panic(info: &PanicInfo) -> ! {
     print!("Panic: ");
     
     match info.location() {
-        Some(loc) => println!("{}:{}", loc.file(), loc.line()),
-        None => println!("?"),
+        Some(loc) => print!("{}:{}", loc.file(), loc.line()),
+        None => print!("?"),
     }
 
-    println!("{}", info.message());
+    println!(": {}", info.message());
     loop {}
 }

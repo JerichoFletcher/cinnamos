@@ -34,7 +34,7 @@ fn print_dt(fdt: &Fdt) {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn main(_hid: usize, dtb_ptr: *const u8) -> ! {
+extern "C" fn main(hid: usize, dtb_ptr: *const u8) -> ! {
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("Invalid DTB") };
     if let Some(uart_reg) = dtb::find_compatible_region(&fdt, &["ns16550", "ns16550a"]) {
         device::uart::init(unsafe { NonNull::new_unchecked(uart_reg.start_ptr().cast_mut()) });
@@ -42,7 +42,24 @@ extern "C" fn main(_hid: usize, dtb_ptr: *const u8) -> ! {
     print_dt(&fdt);
 
     arch::init();
-    mem::palloc::init(&fdt);
+    mem::palloc::init(&fdt, dtb_ptr);
+    if let Err(e) = mem::vms::init() { panic!("{:?}", e); }
+    match unsafe { mem::vms::init_kernel_map(&fdt) } {
+        Ok(_) => unsafe { mem::vms::jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr); },
+        Err(e) => panic!("{:?}", e),
+    }
+}
+
+extern "C" fn higher_half_entry(_hid: usize, dtb_ptr: *const u8) -> ! {
+    let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("Invalid DTB") };
+    if let Some(uart_reg) = dtb::find_compatible_region(&fdt, &["ns16550", "ns16550a"]) {
+        let pa = arch::PAddr::from_ptr(uart_reg.start_ptr());
+        device::uart::init(unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) });
+    }
+
+    println!("Hello from higher-half!");
+    arch::init_higher_half();
+    mem::palloc::reinit_higher_half().unwrap();
 
     loop {}
 }

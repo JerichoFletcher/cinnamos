@@ -1,8 +1,8 @@
-use core::{fmt::Debug, ptr};
+use core::{fmt::Debug, ptr::{self, NonNull}};
 
 use bitflags::bitflags;
 
-use crate::{arch::paddr::PAddr, mem::PAGE_SIZE};
+use crate::{arch::PAddr, mem::PAGE_SIZE};
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,14 +18,13 @@ impl FreeListEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
 pub struct FreeListFrameAlloc {
     addr: PAddr,
     frame_count: usize,
 }
 
 impl super::FrameAlloc for FreeListFrameAlloc {
-    fn addr(&self) -> PAddr {
+    fn base_addr(&self) -> PAddr {
         self.addr
     }
 }
@@ -39,12 +38,13 @@ pub struct FreeListAllocator {
 }
 
 impl FreeListAllocator {
-    pub unsafe fn create(at: PAddr, start: PAddr, end: PAddr) -> *mut Self {
+    pub unsafe fn create(at: PAddr, start: PAddr, end: PAddr) -> NonNull<Self> {
         let start_addr = (start.addr() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let end_addr = (end.addr() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let size = (end_addr - start_addr) / PAGE_SIZE;
 
         let alloc: *mut FreeListAllocator = ptr::from_raw_parts_mut(at.addr() as *mut (), size);
+        assert!(!alloc.is_null());
         unsafe {
             (&raw mut (*alloc).base_addr).write(PAddr::new(start_addr));
             (&raw mut (*alloc).used).write(0);
@@ -53,9 +53,9 @@ impl FreeListAllocator {
             for i in 0..size {
                 (&raw mut (*alloc).list[i]).write(FreeListEntry::empty());
             }
+            
+            NonNull::new_unchecked(alloc)
         }
-
-        alloc
     }
 
     fn end_addr(&self) -> PAddr {
@@ -114,12 +114,12 @@ impl super::PhysFrameAllocator<FreeListFrameAlloc> for FreeListAllocator {
         None
     }
 
-    fn dealloc(&mut self, handle: FreeListFrameAlloc) {
+    fn dealloc(&mut self, handle: &mut FreeListFrameAlloc) {
         if self.base_addr <= handle.addr && handle.addr < self.end_addr() {
             let i = (handle.addr - self.base_addr) / PAGE_SIZE;
             for j in 0..handle.frame_count {
                 if !self.list[i + j].contains(FreeListEntry::USED) {
-                    panic!("Attempted to deallocate unused frame i={} (0x{:016x})", i + j, (handle.addr + (i + j) * PAGE_SIZE).addr());
+                    panic!("Attempted to deallocate unused frame i={} (0x{:016x})", i + j, (handle.addr + (i + j) * PAGE_SIZE));
                 }
             }
 
