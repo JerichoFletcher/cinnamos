@@ -15,6 +15,7 @@ cfg_select! {
         pub use riscv64::vaddr::VAddr;
         pub use riscv64::sv48::{
             PAGE_SIZE,
+            PageSize,
             PageTable,
             PTE,
             PTEFlags,

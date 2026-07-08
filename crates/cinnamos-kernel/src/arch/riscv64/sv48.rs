@@ -8,6 +8,58 @@ use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{FrameAlloc, palloc::{self,
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PageSize {
+    Page4K,
+    Megapage2M,
+    Gigapage1G,
+    Terapage512G,
+}
+
+impl PageSize {
+    pub const ALL: [Self; 4] = [
+        Self::Page4K,
+        Self::Megapage2M,
+        Self::Gigapage1G,
+        Self::Terapage512G,
+    ];
+
+    pub fn select_size(va: VAddr, pa: PAddr, size_bytes: usize) -> Option<Self> {
+        let size_bytes = size_bytes.max(Self::Page4K.size());
+
+        for i in (0..Self::ALL.len()).rev() {
+            let s = Self::ALL[i];
+            if s.size() > size_bytes {
+                continue;
+            }
+    
+            let low_mask = s.size() - 1;
+            if va.addr() & low_mask == 0 && pa.addr() & low_mask == 0 {
+                return Some(s)
+            }
+        }
+        None
+    }
+
+    pub const fn size(&self) -> usize {
+        match self {
+            PageSize::Page4K => PAGE_SIZE,
+            PageSize::Megapage2M => PAGE_SIZE << 9,
+            PageSize::Gigapage1G => PAGE_SIZE << 18,
+            PageSize::Terapage512G => PAGE_SIZE << 27,
+        }
+    }
+
+    const fn level(&self) -> usize {
+        match self {
+            PageSize::Page4K => 0,
+            PageSize::Megapage2M => 1,
+            PageSize::Gigapage1G => 2,
+            PageSize::Terapage512G => 3,
+        }
+    }
+}
+
 bitflags! {
     #[derive(Debug, Clone, Copy)]
     pub struct PTEFlags: u8 {
@@ -60,7 +112,9 @@ impl PTE {
         self.set(PAddr::from_ptr(pt), PTEFlags::VALID);
     }
 
-    pub fn set_leaf(&mut self, pa: PAddr, flags: PTEFlags) {
+    pub fn set_leaf(&mut self, pa: PAddr, size: PageSize, flags: PTEFlags) {
+        let mask = usize::MAX << (12 + size.level() * 9);
+        let pa = PAddr::new(pa.addr() & mask);
         self.set(pa, flags | PTEFlags::VALID);
     }
 
@@ -93,6 +147,7 @@ impl PageTable {
 }
 
 pub enum PageTableAlloc {
+    None,
     New(Alloc),
     Existing(*mut PageTable),
 }
@@ -121,7 +176,7 @@ pub enum UnmapError {
 }
 
 #[cfg(debug_assertions)]
-pub fn translate_virt(root_pt: &mut PageTable, va: VAddr) -> Option<PAddr> {
+pub fn translate_virt(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Option<PAddr> {
     let vpn = va.vpn();
     let mut table = root_pt as *mut PageTable;
 
@@ -132,46 +187,56 @@ pub fn translate_virt(root_pt: &mut PageTable, va: VAddr) -> Option<PAddr> {
         if !pte.is_valid() || (!flags.contains(PTEFlags::READ) && flags.contains(PTEFlags::WRITE)) {
             return None
         } else if flags.intersects(PTEFlags::RX) {
-            let pa = pte.phys_addr() + (va.addr() & (PAGE_SIZE - 1));
-            return Some(pa)
+            let pa = pte.phys_addr();
+            let off_mask = (1usize << (12 + level * 9)) - 1;
+
+            if pa.addr() & off_mask != 0 {
+                return None
+            } else {
+                let pa = pa + (va.addr() & off_mask);
+                return Some(pa)
+            }
         } else {
             let next_pa = pte.phys_addr();
-            table = next_pa.addr() as *mut PageTable;
+            table = p2v(next_pa).as_mut();
         }
     }
     None
 }
 
-pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, flags: PTEFlags, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageTableAllocMap, MapError> {
+pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, size: PageSize, flags: PTEFlags, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageTableAllocMap, MapError> {
     let vpn = va.vpn();
     let mut table = root_pt as *mut PageTable;
     let mut table_directory: [Option<PageTableAlloc>; 4] = [const { None }; 4];
     
     table_directory[3] = Some(PageTableAlloc::Existing(table));
-    for level in (1..=3).rev() {
+    for level in (0..=3).rev() {
         let pte = unsafe { &mut (*table).entries[vpn[level]] };
-        if pte.is_valid() && !pte.is_leaf() {
-            let next_pa = pte.phys_addr();
-            table = p2v(next_pa).as_mut();
-            table_directory[level - 1] = Some(PageTableAlloc::Existing(table));
-        } else if !pte.is_valid() {
-            let alloc = palloc::alloc(PAGE_SIZE).ok_or(MapError::OutOfMemory)?;
-            let next_pa = alloc.base_addr();
 
-            table = unsafe { PageTable::init(p2v(next_pa)).as_ptr() };
-            pte.set_table(table);
-            table_directory[level - 1] = Some(PageTableAlloc::New(alloc));
+        if level == size.level() {
+            if pte.is_valid() {
+                return Err(MapError::AlreadyMapped)
+            }
+            pte.set_leaf(pa, size, flags);
+            return Ok(PageTableAllocMap { allocs: table_directory.map(|v| v.unwrap_or(PageTableAlloc::None)) })
         } else {
-            return Err(MapError::AlreadyMapped)
+            if pte.is_valid() && !pte.is_leaf() {
+                let next_pa = pte.phys_addr();
+                table = p2v(next_pa).as_mut();
+                table_directory[level - 1] = Some(PageTableAlloc::Existing(table));
+            } else if !pte.is_valid() {
+                let alloc = palloc::alloc(PAGE_SIZE).ok_or(MapError::OutOfMemory)?;
+                let next_pa = alloc.base_addr();
+    
+                table = unsafe { PageTable::init(p2v(next_pa)).as_ptr() };
+                pte.set_table(table);
+                table_directory[level - 1] = Some(PageTableAlloc::New(alloc));
+            } else {
+                return Err(MapError::AlreadyMapped)
+            }
         }
     }
-
-    let pte = unsafe { &mut (*table).entries[vpn[0]] };
-    if pte.is_valid() {
-        return Err(MapError::AlreadyMapped)
-    }
-    pte.set_leaf(pa, flags);
-    Ok(PageTableAllocMap { allocs: table_directory.map(|v| v.unwrap()) })
+    unreachable!()
 }
 
 pub fn unmap_page(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Result<(), UnmapError> {
@@ -193,6 +258,8 @@ pub fn unmap_page(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAd
             return Err(UnmapError::NotMapped)
         }
     }
+
+    riscv::asm::sfence_vma(0, va.addr());
     Ok(())
 }
 
