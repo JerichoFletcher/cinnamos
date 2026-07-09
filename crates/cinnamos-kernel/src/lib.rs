@@ -4,6 +4,8 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 mod macros;
 mod asm;
 mod panic;

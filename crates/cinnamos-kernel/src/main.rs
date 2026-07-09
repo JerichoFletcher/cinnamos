@@ -1,10 +1,13 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 use core::ptr::NonNull;
 
-use cinnamos_kernel::*;
+use alloc::string::String;
 use fdt::Fdt;
+use cinnamos_kernel::*;
 
 fn print_dt(fdt: &Fdt) {
     for n in fdt.all_nodes() {
@@ -60,6 +63,7 @@ extern "C" fn higher_half_entry(_hid: usize, dtb_ptr: *const u8) -> ! {
     arch::init_higher_half();
     mem::palloc::reinit_higher_half().unwrap();
     mem::heap::init().unwrap();
+    println!("str = {}", String::from("Hello, World!"));
 
     loop {}
 }

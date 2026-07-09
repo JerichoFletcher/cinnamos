@@ -38,6 +38,9 @@ pub struct FreeListAllocator {
 }
 
 impl FreeListAllocator {
+    /// # Safety
+    /// - `start` and `end` must point to a valid, contiguous memory region.
+    /// - `at` must be a page-aligned address that points to writable memory.
     pub unsafe fn create(at: PAddr, start: PAddr, end: PAddr) -> NonNull<Self> {
         let start_addr = (start.addr() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let end_addr = (end.addr() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);

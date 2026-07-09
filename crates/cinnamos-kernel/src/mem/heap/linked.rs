@@ -11,6 +11,14 @@ struct LinkedListHeapEntry {
     next: Option<NonNull<LinkedListHeapEntry>>,
 }
 
+impl LinkedListHeapEntry {
+    /// # Safety
+    /// `layout` must be padded to the alignment of [LinkedListHeapEntry](LinkedListHeapEntry).
+    unsafe fn effective_size(layout: Layout) -> usize {
+        size_of::<Self>() + layout.size()
+    }
+}
+
 #[derive(Debug)]
 struct LinkedListHeapRegion {
     used: usize,
@@ -20,12 +28,14 @@ struct LinkedListHeapRegion {
 }
 
 impl LinkedListHeapRegion {
+    /// # Safety
+    /// `layout` must be padded to the alignment of [LinkedListHeapEntry](LinkedListHeapEntry).
     unsafe fn alloc(&mut self, layout: Layout) -> Option<(VAddr, usize)> {
-        let mut ent = self.find_entry_first_fit(layout)?;
+        let mut ent = unsafe { self.find_entry_first_fit(layout)? };
         
         unsafe {
             let v = ent.as_mut();
-            let eff_size = LinkedListHeap::effective_entry_size(layout);
+            let eff_size = LinkedListHeapEntry::effective_size(layout);
             let mut used = layout.size();
             
             if eff_size + size_of::<LinkedListHeapEntry>() <= v.size {
@@ -48,7 +58,9 @@ impl LinkedListHeapRegion {
         }
     }
 
-    fn find_entry_first_fit(&self, layout: Layout) -> Option<NonNull<LinkedListHeapEntry>> {
+    /// # Safety
+    /// `layout` must be padded to the alignment of [LinkedListHeapEntry](LinkedListHeapEntry).
+    unsafe fn find_entry_first_fit(&self, layout: Layout) -> Option<NonNull<LinkedListHeapEntry>> {
         if self.free < layout.size() { return None }
         let mut ent = self.head;
         
@@ -122,7 +134,7 @@ impl LinkedListHeap {
         }
     }
 
-    fn bump(&mut self) -> Result<(), HeapError> {
+    fn grow(&mut self) -> Result<(), HeapError> {
         let base_addr = self.next_va;
         let alloc = ManuallyDrop::new(mem::palloc::alloc(self.bump_size).ok_or(HeapError::AllocationFailed)?);
 
@@ -163,6 +175,8 @@ impl LinkedListHeap {
     //     todo!()
     // }
 
+    /// # Safety
+    /// `layout` must be padded to the alignment of [LinkedListHeapEntry](LinkedListHeapEntry).
     unsafe fn find_region_first_fit(&self, layout: Layout) -> Option<NonNull<LinkedListHeapRegion>> {
         if self.free < layout.size() { return None };
         
@@ -180,24 +194,20 @@ impl LinkedListHeap {
     fn align_layout(layout: Layout) -> Option<Layout> {
         Some(layout.align_to(core::mem::align_of::<LinkedListHeapEntry>()).ok()?.pad_to_align())
     }
-
-    fn effective_entry_size(layout: Layout) -> usize {
-        size_of::<LinkedListHeapEntry>() + layout.size()
-    }
 }
 
 impl super::Heap for LinkedListHeap {
     unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        println!("HEAP PRE_ALLOC {:?}", self);
         match Self::align_layout(layout) {
             None => core::ptr::null_mut(),
             Some(layout) => {
                 if self.free < layout.size() {
-                    if let Err(_) = self.bump() {
+                    if let Err(_) = self.grow() {
                         return core::ptr::null_mut()
                     }
                 }
-        
+                
+                println!("HEAP PRE_ALLOC {:?} <- LO {:?}", self, layout);
                 let mut reg = unsafe { self.find_region_first_fit(layout) };
                 match reg.as_mut() {
                     None => core::ptr::null_mut(),

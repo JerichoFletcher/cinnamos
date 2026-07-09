@@ -23,6 +23,8 @@ impl SendRootTable {
         self.0.base_addr()
     }
 
+    /// # Safety
+    /// `p2v` must be a physical-to-virtual address translator that is valid for the currently active virtual map.
     unsafe fn root_pt(&mut self, p2v: impl Fn(PAddr) -> VAddr) -> &mut PageTable {
         unsafe { p2v(self.0.base_addr()).as_mut::<PageTable>().as_mut_unchecked() }
     }
@@ -233,6 +235,9 @@ pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
     })
 }
 
+/// # Safety
+/// - `entry` must point to a location mapped within the kernel address space.
+/// - `dtb_ptr` must point to a location mapped within the direct-mapped address space.
 pub unsafe fn jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *const u8) -> ! {
     unsafe {
         let ventry = phys_to_kernel(PAddr::from_ptr(entry));

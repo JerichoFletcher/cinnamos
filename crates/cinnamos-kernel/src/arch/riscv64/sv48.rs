@@ -135,6 +135,8 @@ pub struct PageTable {
 }
 
 impl PageTable {
+    /// # Safety
+    /// `at` must be mapped to a valid address.
     pub unsafe fn init(at: VAddr) -> NonNull<PageTable> {
         let pt = at.as_mut::<PageTable>();
         debug_assert!(!pt.is_null());
