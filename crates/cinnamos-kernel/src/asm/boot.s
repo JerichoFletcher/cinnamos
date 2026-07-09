@@ -1,8 +1,8 @@
 .section .text.init
 .global _start
 _start:
-    la      t0, _bss_start
-    la      t1, _bss_end
+    lla     t0, _bss_start
+    lla     t1, _bss_end
     bgeu    t0, t1, 2f
 
 1:
@@ -11,7 +11,6 @@ _start:
     bltu    t0, t1, 1b
 
 2:
-    la      sp, _stack_end
-    la      t0, _trap_stack_end
-    csrw    sscratch, t0
-    tail    main
+    lla     sp, _stack_end
+    lla     a2, _DYNAMIC
+    tail    kernel_relocate

@@ -3,7 +3,7 @@ use core::ptr::NonNull;
 use fdt::Fdt;
 use spin::Mutex;
 
-use crate::{arch::PAddr, mem::{FrameAlloc, phys::{FrameAllocation, FrameAllocator, PhysFrameAllocator}, vms}, println};
+use crate::{arch::PAddr, mem::{FrameAlloc, phys::{FrameAllocation, FrameAllocator, PhysFrameAllocator}, vms}, *};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PAllocError {
@@ -30,11 +30,6 @@ impl FrameAlloc for Alloc {
 
 static ALLOCATOR: Mutex<Option<SendAllocator>> = Mutex::new(None);
 
-unsafe extern "C" {
-    static KERNEL_START: PAddr;
-    static KERNEL_END: PAddr;
-}
-
 pub fn init(fdt: &Fdt, dtb_ptr: *const u8) {
     for reg in fdt.memory().regions() {
         let start = PAddr::from_ptr(reg.starting_address);
@@ -43,8 +38,8 @@ pub fn init(fdt: &Fdt, dtb_ptr: *const u8) {
         if start < end {
             let mut base = start;
             unsafe {
-                if start < KERNEL_START && KERNEL_END < end {
-                    base = KERNEL_END;
+                if start < kernel_start!() && kernel_end!() < end {
+                    base = kernel_end!();
                 }
             }
 

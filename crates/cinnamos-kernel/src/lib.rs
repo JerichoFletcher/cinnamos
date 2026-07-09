@@ -14,3 +14,5 @@ pub mod arch;
 pub mod mem;
 pub mod device;
 pub mod dtb;
+pub mod rel;
+pub mod sym;

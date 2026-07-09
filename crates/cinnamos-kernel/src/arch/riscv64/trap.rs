@@ -1,6 +1,6 @@
 use riscv::{interrupt::{Exception, Interrupt, Trap}, register::{scause::Scause, sscratch, stvec::{self, Stvec, TrapMode}}};
 
-use crate::{arch::{self, PAddr, VAddr, context::Context}, println, mem};
+use crate::{arch::{self, VAddr, context::Context}, *};
 
 #[repr(C)]
 struct RiscvTrapFrame {
@@ -55,13 +55,12 @@ pub fn init() {
 pub fn init_higher_half() {
     unsafe extern "C" {
         fn _trap_entry();
-        static TRAP_STACK_END: PAddr;
     }
 
     let trap_entry_addr = _trap_entry as *const() as usize;
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe {
         stvec::write(stvec);
-        sscratch::write(mem::vms::phys_to_kernel(TRAP_STACK_END).addr());
+        sscratch::write(trap_stack_end!().addr());
     }
 }

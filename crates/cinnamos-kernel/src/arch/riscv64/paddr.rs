@@ -15,7 +15,7 @@ impl PAddr {
         Self(ptr as usize)
     }
 
-    pub fn addr(&self) -> usize {
+    pub const fn addr(&self) -> usize {
         self.0
     }
 }

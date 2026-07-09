@@ -1,40 +1,54 @@
 OUTPUT_ARCH("riscv")
 ENTRY(_start)
 
-MEMORY {
-    ram (wxa) : ORIGIN = 0x80200000, LENGTH = 128M
+PHDRS {
+    text    PT_LOAD     FLAGS(5);
+    rodata  PT_LOAD     FLAGS(4);
+    data    PT_LOAD     FLAGS(6);
+    dynamic PT_DYNAMIC  FLAGS(4);
 }
 
 SECTIONS {
-    PROVIDE(_kernel_start = ORIGIN(ram));
+    . = 0xffffc00000000000;
+    PROVIDE(_kernel_start = .);
     
-    .text : ALIGN(4096) {
-        PROVIDE(_text_start = .);
+    PROVIDE(_text_start = .);
+    .text : AT(0x80200000) {
         *(.text.init)
         *(.text .text.*)
-    } > ram AT>ram :text
+    }
+    PROVIDE(_text_end = .);
 
-    .rodata : ALIGN(32) {
+    . = ALIGN(4K);
+    PROVIDE(_rodata_start = .);
+    .rodata : {
         *(.rodata .rodata.*)
-        PROVIDE(_text_end = .);
-    } > ram AT>ram :text
+    }
+    .dynamic : { *(.dynamic) } :data :dynamic
+    .dynsym : { *(.dynsym) }
+    .dynstr : { *(.dynstr) }
+    .rela.dyn : { *(.rela.dyn) }
+    .gnu.hash : { *(.gnu.hash) }
+    .hash : { *(.hash) }
+    PROVIDE(_rodata_end = .);
 
-    .data : ALIGN(4096) {
-        PROVIDE(_data_start = .);
+    . = ALIGN(4K);
+    PROVIDE(_data_start = .);
+    .data : {
         *(.sdata .sdata.*)
         *(.data .data.*)
-        PROVIDE(_data_end = .);
-    } > ram AT>ram :data
-
-    .bss : ALIGN(4096) {
+    }
+    .got : { *(.got .got.*) }
+    .bss : {
         PROVIDE(_bss_start = .);
         *(.sbss .sbss.*)
         *(.bss .bss.*)
         *(COMMON)
         PROVIDE(_bss_end = .);
-    } > ram AT>ram :bss
+    }
+    PROVIDE(_data_end = .);
 
-    . = ALIGN(4096);
+    . = ALIGN(4K);
     PROVIDE(_kmem_start = .);
     PROVIDE(_stack_start = .);
     . += 0x80000;

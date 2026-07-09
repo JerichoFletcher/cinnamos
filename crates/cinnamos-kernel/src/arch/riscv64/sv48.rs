@@ -3,7 +3,7 @@ use core::ptr::NonNull;
 use bitflags::bitflags;
 use riscv::{register::satp::{self, Satp}};
 
-use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{FrameAlloc, palloc::{self, Alloc}}, println};
+use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{FrameAlloc, palloc::{self, Alloc}}};
 
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
@@ -242,8 +242,6 @@ pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, size: PageSize, f
 }
 
 pub fn unmap_page(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageSize, UnmapError> {
-    println!("Unmapping {:?}", va);
-
     let vpn = va.vpn();
     let mut table = root_pt as *mut PageTable;
     let mut table_directory: [*mut PageTable; 4] = [const { core::ptr::null_mut() }; 4];

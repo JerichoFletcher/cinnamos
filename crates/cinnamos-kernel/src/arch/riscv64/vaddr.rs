@@ -34,19 +34,19 @@ impl VAddr {
         Self(ptr as usize)
     }
 
-    pub fn as_ptr<T>(&self) -> *const T {
+    pub const fn as_ptr<T>(&self) -> *const T {
         self.0 as *const T
     }
 
-    pub fn as_mut<T>(&self) -> *mut T {
+    pub const fn as_mut<T>(&self) -> *mut T {
         self.0 as *mut T
     }
 
-    pub fn addr(&self) -> usize {
+    pub const fn addr(&self) -> usize {
         self.0
     }
 
-    pub fn vpn(&self) -> [usize; 4] {
+    pub const fn vpn(&self) -> [usize; 4] {
         [
             (self.0 >> 12) & 0x1ff,
             (self.0 >> 21) & 0x1ff,
