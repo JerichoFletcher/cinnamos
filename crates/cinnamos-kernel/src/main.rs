@@ -43,8 +43,8 @@ extern "C" fn main(hid: usize, dtb_ptr: *const u8) -> ! {
 
     arch::init();
     mem::palloc::init(&fdt, dtb_ptr);
-    if let Err(e) = mem::vms::init() { panic!("{:?}", e); }
-    match unsafe { mem::vms::init_kernel_map(&fdt) } {
+    mem::vms::init().unwrap();
+    match mem::vms::init_kernel_map(&fdt) {
         Ok(_) => unsafe { mem::vms::jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr); },
         Err(e) => panic!("{:?}", e),
     }
@@ -57,9 +57,9 @@ extern "C" fn higher_half_entry(_hid: usize, dtb_ptr: *const u8) -> ! {
         device::uart::init(unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) });
     }
 
-    println!("Hello from higher-half!");
     arch::init_higher_half();
     mem::palloc::reinit_higher_half().unwrap();
+    mem::heap::init().unwrap();
 
     loop {}
 }

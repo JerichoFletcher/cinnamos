@@ -82,7 +82,7 @@ pub fn init() -> Result<(), VmsError> {
     }
 }
 
-pub unsafe fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
+pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
     acquire_with_p2v(&VAddr::identity, |mut g| {
         unsafe {
             println!("id-mapping text\t: 0x{:016x} .. 0x{:016x}", TEXT_START, TEXT_END);
@@ -245,6 +245,15 @@ pub struct VmsAccessGuard<'a, F>
 where F : Fn(PAddr) -> VAddr {
     guard: MutexGuard<'a, Option<SendRootTable>, Spin>,
     p2v: &'a F,
+    flush: bool,
+}
+
+impl<F : Fn(PAddr) -> VAddr> Drop for VmsAccessGuard<'_, F> {
+    fn drop(&mut self) {
+        if self.flush {
+            arch::flush_vmap();
+        }
+    }
 }
 
 impl<F : Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
@@ -261,20 +270,24 @@ impl<F : Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
     pub fn map_page(&mut self, va: VAddr, pa: PAddr, size: PageSize, flags: PTEFlags) -> Result<PageTableAllocMap, VmsError> {
         let wrapper = self.guard.as_mut().ok_or(VmsError::RootTableUninitialized)?;
         let root_pt = unsafe { wrapper.root_pt(self.p2v) };
-        arch::map_page(root_pt, va, pa, size, flags, self.p2v).map_err(|e| VmsError::Map(e))
+        let allocs = arch::map_page(root_pt, va, pa, size, flags, self.p2v).map_err(|e| VmsError::Map(e))?;
+        self.flush = true;
+        Ok(allocs)
     }
 
-    pub fn unmap_page(&mut self, va: VAddr) -> Result<(), VmsError> {
+    pub fn unmap_page(&mut self, va: VAddr) -> Result<PageSize, VmsError> {
         let wrapper = self.guard.as_mut().ok_or(VmsError::RootTableUninitialized)?;
         let root_pt = unsafe { wrapper.root_pt(self.p2v) };
-        arch::unmap_page(root_pt, va, self.p2v).map_err(|e| VmsError::Unmap(e))
+        let unmapped_size = arch::unmap_page(root_pt, va, self.p2v).map_err(|e| VmsError::Unmap(e))?;
+        self.flush = true;
+        Ok(unmapped_size)
     }
 }
 
 pub fn acquire_with_p2v<F, T>(p2v: F, f: impl FnOnce(VmsAccessGuard<'_, F>) -> T) -> T
 where F: Fn(PAddr) -> VAddr {
     let guard = ROOT_PT.lock();
-    let guard = VmsAccessGuard { guard, p2v: &p2v };
+    let guard = VmsAccessGuard { guard, p2v: &p2v, flush: false };
     f(guard)
 }
 

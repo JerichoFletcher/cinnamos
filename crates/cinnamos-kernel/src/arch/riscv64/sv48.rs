@@ -1,9 +1,9 @@
 use core::ptr::NonNull;
 
 use bitflags::bitflags;
-use riscv::register::satp::{self, Satp};
+use riscv::{register::satp::{self, Satp}};
 
-use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{FrameAlloc, palloc::{self, Alloc}}};
+use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{FrameAlloc, palloc::{self, Alloc}}, println};
 
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
@@ -88,12 +88,12 @@ impl PTE {
     pub fn new(page_addr: PAddr, flags: PTEFlags) -> Self {
         debug_assert_eq!(page_addr.addr() & PAGE_SIZE - 1, 0);
         let flags = flags.bits() as usize & 0xff;
-        let paddr = (page_addr.addr() & 0xfffffffffff000) >> 2;
+        let paddr = (page_addr.addr() & 0xff_ffff_ffff_f000) >> 2;
         Self(paddr | flags)
     }
 
     pub fn phys_addr(&self) -> PAddr {
-        PAddr::new(((self.0 << 10) >> 8) & 0xff_ffff_ffff_f000)
+        PAddr::new(((self.0 << 10) as isize >> 8) as usize & 0xffff_ffff_ffff_f000)
     }
 
     pub fn flags(&self) -> PTEFlags {
@@ -108,8 +108,8 @@ impl PTE {
         self.is_valid() && self.flags().intersects(PTEFlags::READ | PTEFlags::WRITE | PTEFlags::EXECUTE)
     }
 
-    pub fn set_table(&mut self, pt: *const PageTable) {
-        self.set(PAddr::from_ptr(pt), PTEFlags::VALID);
+    pub fn set_table(&mut self, pa: PAddr) {
+        self.set(pa, PTEFlags::VALID);
     }
 
     pub fn set_leaf(&mut self, pa: PAddr, size: PageSize, flags: PTEFlags) {
@@ -137,7 +137,7 @@ pub struct PageTable {
 impl PageTable {
     pub unsafe fn init(at: VAddr) -> NonNull<PageTable> {
         let pt = at.as_mut::<PageTable>();
-        assert!(!pt.is_null());
+        debug_assert!(!pt.is_null());
         
         unsafe {
             (&raw mut (*pt).entries).write([PTE::EMPTY; 512]);
@@ -229,7 +229,7 @@ pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, size: PageSize, f
                 let next_pa = alloc.base_addr();
     
                 table = unsafe { PageTable::init(p2v(next_pa)).as_ptr() };
-                pte.set_table(table);
+                pte.set_table(alloc.base_addr());
                 table_directory[level - 1] = Some(PageTableAlloc::New(alloc));
             } else {
                 return Err(MapError::AlreadyMapped)
@@ -239,7 +239,9 @@ pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, size: PageSize, f
     unreachable!()
 }
 
-pub fn unmap_page(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Result<(), UnmapError> {
+pub fn unmap_page(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageSize, UnmapError> {
+    println!("Unmapping {:?}", va);
+
     let vpn = va.vpn();
     let mut table = root_pt as *mut PageTable;
     let mut table_directory: [*mut PageTable; 4] = [const { core::ptr::null_mut() }; 4];
@@ -253,14 +255,13 @@ pub fn unmap_page(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAd
             table_directory[level - 1] = table;
         } else if pte.is_valid() {
             pte.clear();
-            break;
+            riscv::asm::sfence_vma(0, va.addr());
+            return Ok(PageSize::ALL[level])
         } else {
             return Err(UnmapError::NotMapped)
         }
     }
-
-    riscv::asm::sfence_vma(0, va.addr());
-    Ok(())
+    unreachable!()
 }
 
 pub fn activate_vmap(root_pt_pa: PAddr) -> usize {
@@ -275,7 +276,11 @@ pub fn activate_vmap(root_pt_pa: PAddr) -> usize {
     satp.set_asid(0);
     satp.set_mode(satp::Mode::Sv48);
     unsafe { satp::write(satp); }
-    riscv::asm::sfence_vma_all();
+    flush_vmap();
 
     max_asid
+}
+
+pub fn flush_vmap() {
+    riscv::asm::sfence_vma_all();
 }

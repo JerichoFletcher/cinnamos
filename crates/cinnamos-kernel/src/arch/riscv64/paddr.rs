@@ -1,7 +1,7 @@
-use core::{fmt::LowerHex, ops::{Add, Sub}};
+use core::{fmt::{Debug, LowerHex}, ops::{Add, Sub}};
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PAddr(usize);
 
 impl PAddr {
@@ -47,5 +47,11 @@ impl Sub<PAddr> for PAddr {
 impl LowerHex for PAddr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         LowerHex::fmt(&self.0, f)
+    }
+}
+
+impl Debug for PAddr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "VAddr(0x{:016x})", self.0)
     }
 }

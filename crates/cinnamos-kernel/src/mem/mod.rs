@@ -1,11 +1,12 @@
 use crate::arch::PAddr;
 pub use crate::arch::PAGE_SIZE;
 
-mod allocator;
-pub use allocator::FrameAlloc;
+mod phys;
+pub use phys::FrameAlloc;
 
 pub mod palloc;
 pub mod vms;
+pub mod heap;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MemoryRegion {

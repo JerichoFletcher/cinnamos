@@ -5,6 +5,8 @@ cfg_select! {
 
         pub const DIRECT_MAP_BASE: usize = 0xffff_8000_0000_0000;
         pub const KERNEL_MAP_BASE: usize = 0xffff_c000_0000_0000;
+        pub const HEAP_MAP_BASE: usize = 0xffff_f000_0000_0000;
+        pub const HEAP_BUMP_SIZE: usize = PageSize::Page4K.size() * 32;
 
         pub use riscv64::{
             init,
@@ -22,6 +24,7 @@ cfg_select! {
             map_page,
             unmap_page,
             activate_vmap,
+            flush_vmap,
             PageTableAlloc,
             PageTableAllocMap,
             MapError,

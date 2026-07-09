@@ -3,7 +3,7 @@ use core::ptr::NonNull;
 use fdt::Fdt;
 use spin::Mutex;
 
-use crate::{arch::PAddr, mem::{FrameAlloc, allocator::{FrameAllocation, FrameAllocator, PhysFrameAllocator}, vms}, println};
+use crate::{arch::PAddr, mem::{FrameAlloc, phys::{FrameAllocation, FrameAllocator, PhysFrameAllocator}, vms}, println};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PAllocError {

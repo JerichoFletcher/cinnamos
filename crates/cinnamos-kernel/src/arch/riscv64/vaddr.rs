@@ -1,9 +1,9 @@
-use core::fmt::LowerHex;
+use core::{fmt::{Debug, LowerHex}, ops::{Add, Sub}};
 
 use crate::arch::{PAddr, sv48::PT_MAX_ENTRIES};
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VAddr(usize);
 
 impl VAddr {
@@ -56,8 +56,38 @@ impl VAddr {
     }
 }
 
+impl Add<usize> for VAddr {
+    type Output = VAddr;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+impl Sub<usize> for VAddr {
+    type Output = VAddr;
+
+    fn sub(self, rhs: usize) -> Self::Output {
+        Self(self.0 - rhs)
+    }
+}
+
+impl Sub<VAddr> for VAddr {
+    type Output = usize;
+
+    fn sub(self, rhs: VAddr) -> Self::Output {
+        self.0 - rhs.0
+    }
+}
+
 impl LowerHex for VAddr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         LowerHex::fmt(&self.0, f)
+    }
+}
+
+impl Debug for VAddr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "VAddr(0x{:016x})", self.0)
     }
 }
