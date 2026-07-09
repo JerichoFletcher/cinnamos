@@ -18,4 +18,4 @@ bitflags = "2.13.0"
 sbi = "0.3.0"
 fdt = "0.1.5"
 spin = "0.12.0"
-uart = { version = "3.0.2", default-features = false, features = ["writer_impl", "address_impl"] }
+uart = { version = "3.0.2", default-features = false, features = ["address_impl"] }

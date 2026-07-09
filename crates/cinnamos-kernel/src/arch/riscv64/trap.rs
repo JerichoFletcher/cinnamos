@@ -61,6 +61,6 @@ pub fn init_higher_half() {
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe {
         stvec::write(stvec);
-        sscratch::write(trap_stack_end!().addr());
+        sscratch::write(trap_stack_end_v!().addr());
     }
 }

@@ -12,6 +12,11 @@ pub mod paddr;
 pub mod vaddr;
 pub mod sv48;
 
+#[inline]
+pub fn wait_for_interrupt() {
+    riscv::asm::wfi();
+}
+
 pub fn init() {
     trap::init();
 }

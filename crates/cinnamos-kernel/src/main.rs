@@ -5,7 +5,6 @@ extern crate alloc;
 
 use core::ptr::NonNull;
 
-use alloc::{string::String, vec};
 use fdt::Fdt;
 use cinnamos_kernel::*;
 
@@ -35,15 +34,16 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
 }
 
 unsafe extern "C" fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
+    unsafe { rel::shift(dyn_ptr, mem::vms::PHYS_TO_KERNEL_SLIDE); }
+
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("Invalid DTB") };
     if let Some(uart_reg) = dtb::find_compatible_region(&fdt, &["ns16550", "ns16550a"]) {
         let pa = arch::PAddr::from_ptr(uart_reg.start_ptr());
         device::uart::init(unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) });
     }
-    unsafe { rel::shift(dyn_ptr, mem::vms::PHYS_TO_KERNEL_SLIDE); }
 
     #[cfg(debug_assertions)] {
-        println!("Hello from higher-half! (HID {})", hid);
+        println!("debug : higher-half entry (HID {})", hid);
     }
 
     arch::init_higher_half();
@@ -51,12 +51,5 @@ unsafe extern "C" fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: 
     unsafe { mem::vms::uninit_identity_map().unwrap() };
     mem::heap::init().unwrap();
 
-    #[cfg(debug_assertions)] {
-        let s = String::from("Hello, World!");
-        let v = vec![67, 67, 67, 67, 67, 67];
-        println!("{:?}", s);
-        println!("{:?}", v);
-    }
-
-    loop {}
+    loop { arch::wait_for_interrupt(); }
 }

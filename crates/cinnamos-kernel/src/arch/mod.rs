@@ -10,6 +10,7 @@ cfg_select! {
         pub const HEAP_BUMP_SIZE: usize = PageSize::Page4K.size() * 32;
 
         pub use riscv64::{
+            wait_for_interrupt,
             init,
             init_higher_half,
             jump_to_higher_half,

@@ -135,7 +135,9 @@ impl LinkedListHeap {
                 allocated += size.size();
             }
             
-            debug_assert_eq!(crate::arch::translate_virt(g.root_pt().unwrap(), base_addr, mem::vms::phys_to_virt), Some(alloc.base_addr()));
+            #[cfg(debug_assertions)] {
+                debug_assert_eq!(crate::arch::translate_virt(g.root_pt().unwrap(), base_addr, mem::vms::phys_to_virt), Some(alloc.base_addr()));
+            }
             Ok(())
         })?;
 
@@ -186,7 +188,9 @@ impl LinkedListHeap {
                 allocated += size.size();
             }
             
-            debug_assert_eq!(crate::arch::translate_virt(g.root_pt().unwrap(), base_addr, mem::vms::phys_to_virt), Some(alloc.base_addr()));
+            #[cfg(debug_assertions)] {
+                debug_assert_eq!(crate::arch::translate_virt(g.root_pt().unwrap(), base_addr, mem::vms::phys_to_virt), Some(alloc.base_addr()));
+            }
             Ok(())
         })?;
 

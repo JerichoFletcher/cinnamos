@@ -21,9 +21,7 @@ SECTIONS {
 
     . = ALIGN(4K);
     PROVIDE(_rodata_start = .);
-    .rodata : {
-        *(.rodata .rodata.*)
-    }
+    .rodata : { *(.rodata .rodata.*) }
     .dynamic : { *(.dynamic) } :data :dynamic
     .dynsym : { *(.dynsym) }
     .dynstr : { *(.dynstr) }
@@ -34,10 +32,7 @@ SECTIONS {
 
     . = ALIGN(4K);
     PROVIDE(_data_start = .);
-    .data : {
-        *(.sdata .sdata.*)
-        *(.data .data.*)
-    }
+    .data : { *(.sdata .sdata.*) *(.data .data.*) }
     .got : { *(.got .got.*) }
     .bss : {
         PROVIDE(_bss_start = .);

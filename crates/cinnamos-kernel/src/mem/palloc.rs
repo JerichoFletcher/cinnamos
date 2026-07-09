@@ -38,8 +38,8 @@ pub fn init(fdt: &Fdt, dtb_ptr: *const u8) {
         if start < end {
             let mut base = start;
             unsafe {
-                if start < kernel_start!() && kernel_end!() < end {
-                    base = kernel_end!();
+                if start < kernel_start_p!() && kernel_end_p!() < end {
+                    base = kernel_end_p!();
                 }
             }
 
