@@ -5,7 +5,7 @@ extern crate alloc;
 
 use core::ptr::NonNull;
 
-use alloc::string::String;
+use alloc::{string::String, vec};
 use fdt::Fdt;
 use cinnamos_kernel::*;
 
@@ -63,7 +63,13 @@ extern "C" fn higher_half_entry(_hid: usize, dtb_ptr: *const u8) -> ! {
     arch::init_higher_half();
     mem::palloc::reinit_higher_half().unwrap();
     mem::heap::init().unwrap();
-    println!("str = {}", String::from("Hello, World!"));
+
+    {
+        let s = String::from("Hello, World!");
+        let v = vec![67, 67, 67, 67, 67, 67];
+        println!("{:?}", s);
+        println!("{:?}", v);
+    }
 
     loop {}
 }
