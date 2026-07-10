@@ -46,8 +46,11 @@ pub fn init(fdt: &Fdt, dtb_ptr: *const u8) {
             if end.addr() - base.addr() >= FrameAllocator::size(start, end) {
                 let mut alloc_ptr = unsafe { FrameAllocator::create(base, start, end) };
                 let alloc = unsafe { alloc_ptr.as_mut() };
-                let alloc_paddr = PAddr::from_ptr(alloc_ptr.as_ptr().cast::<u8>());
-                alloc.reserve(alloc_paddr, alloc_paddr + unsafe { core::mem::size_of_val_raw(alloc) });
+                
+                let alloc_paddr_start = PAddr::from_ptr(alloc_ptr.as_ptr().cast::<u8>());
+                let alloc_paddr_end = alloc_paddr_start + unsafe { core::mem::size_of_val_raw(alloc) };
+                alloc.reserve(alloc_paddr_start, alloc_paddr_end);
+                println!("alloc : reserve 0x{:016x} .. 0x{:016x} (meta)", alloc_paddr_start, alloc_paddr_end);
 
                 if let Some(rsv) = fdt.find_node("/reserved-memory") {
                     for n in rsv.children() {
@@ -56,22 +59,25 @@ pub fn init(fdt: &Fdt, dtb_ptr: *const u8) {
                                 if let Some(rsv_size) = reg.size {
                                     let rsv_start = PAddr::from_ptr(reg.starting_address);
                                     alloc.reserve(rsv_start, rsv_start + rsv_size);
+                                    println!("alloc : reserve 0x{:016x} .. 0x{:016x} (reserved-memory)", rsv_start, rsv_start + rsv_size);
                                 }
                             }
                         }
                     }
                 }
-
+                
                 for rsv in fdt.memory_reservations() {
                     let rsv_start = PAddr::from_ptr(rsv.address());
                     alloc.reserve(rsv_start, rsv_start + rsv.size());
+                    println!("alloc : reserve 0x{:016x} .. 0x{:016x} (memreserve)", rsv_start, rsv_start + rsv.size());
                 }
-
+                
                 let dtb_start = PAddr::from_ptr(dtb_ptr);
-                alloc.reserve(dtb_start, dtb_start + fdt.total_size());
+                let dtb_end = dtb_start + fdt.total_size();
+                alloc.reserve(dtb_start, dtb_end);
+                println!("alloc : reserve 0x{:016x} .. 0x{:016x} (dtb)", dtb_start, dtb_end);
 
                 *ALLOCATOR.lock() = Some(SendAllocator(alloc_ptr));
-                println!("alloc : meta = 0x{:016x}; area = 0x{:016x}..0x{:016x}", alloc_ptr.addr(), start, end);
             } else {
                 println!("Unable to create allocator for region 0x{:016x}..0x{:016x}", start, end);
             }

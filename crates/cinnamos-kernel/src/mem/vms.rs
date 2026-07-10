@@ -139,7 +139,7 @@ pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
                     pa = PAddr::from_ptr(r.starting_address);
                     let pa_end = pa + size;
 
-                    println!("mapping mem\t: 0x{:016x} .. 0x{:016x}", pa, pa_end);
+                    println!("di-map mem\t: 0x{:016x} .. 0x{:016x}", pa, pa_end);
                     while pa < pa_end {
                         let va = phys_to_virt(pa);
                         let next_size = PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
@@ -157,7 +157,7 @@ pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
                                 pa = PAddr::from_ptr(r.starting_address);
                                 let pa_end = pa + size;
 
-                                println!("mapping /soc/{}\t: 0x{:016x} .. 0x{:016x}", n.name, pa, pa_end);
+                                println!("di-map /soc/{}\t: 0x{:016x} .. 0x{:016x}", n.name, pa, pa_end);
                                 while pa < pa_end {
                                     let va = phys_to_virt(pa);
                                     let next_size = PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
@@ -240,15 +240,16 @@ pub unsafe fn uninit_identity_map() -> Result<(), VmsError> {
 }
 
 /// # Safety
-/// - `entry` must point to a location mapped within the kernel address space.
-/// - `dtb_ptr` must point to a location mapped within the direct-mapped address space.
-/// - `dyn_ptr` must point to the `_DYNAMIC` symbol.
+/// - `entry` must point to a physical location and be virtually mapped.
+/// - `hid` must be equal to the executing hart ID.
+/// - `dtb_ptr` must point to a physical location and be direct-mapped.
+/// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol and be direct-mapped.
 pub unsafe fn jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
     unsafe {
         let ventry = phys_to_kernel(PAddr::from_ptr(entry));
         let vdtb = phys_to_virt(PAddr::from_ptr(dtb_ptr));
-        let vdyn = phys_to_virt(PAddr::from_ptr(dyn_ptr));
-        arch::jump_to_higher_half(ventry.as_ptr(), hid, vdtb, vdyn, phys_to_kernel(stack_end_p!()));
+        let vdyn = phys_to_kernel(PAddr::from_ptr(dyn_ptr));
+        arch::jump_higher_half(ventry.as_ptr(), hid, vdtb, vdyn, phys_to_kernel(stack_end_p!()));
     }
 }
 

@@ -13,7 +13,7 @@ cfg_select! {
             wait_for_interrupt,
             init,
             init_higher_half,
-            jump_to_higher_half,
+            jump_higher_half,
         };
         pub use riscv64::paddr::PAddr;
         pub use riscv64::vaddr::VAddr;

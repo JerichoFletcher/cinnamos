@@ -8,11 +8,11 @@ macro_rules! print {
 
 #[macro_export]
 macro_rules! println {
-    () => ({ $crate::print!("\r\n") });
+    () => ({ $crate::print!("\n") });
     ($fmt:expr) => ({
-        $crate::print!(concat!($fmt, "\r\n"))
+        $crate::print!(concat!($fmt, "\n"))
     });
     ($fmt:expr, $($arg:tt)+) => ({
-        $crate::print!(concat!($fmt, "\r\n"), $($arg)+)
+        $crate::print!(concat!($fmt, "\n"), $($arg)+)
     });
 }

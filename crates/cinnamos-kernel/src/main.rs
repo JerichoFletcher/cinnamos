@@ -25,12 +25,8 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
     arch::init();
     mem::palloc::init(&fdt, dtb_ptr);
     mem::vms::init().unwrap();
-    match mem::vms::init_kernel_map(&fdt) {
-        Ok(_) => unsafe {
-            mem::vms::jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr, dyn_ptr);
-        },
-        Err(e) => panic!("{:?}", e),
-    }
+    let _ = mem::vms::init_kernel_map(&fdt).unwrap();
+    unsafe { mem::vms::jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr, dyn_ptr); }
 }
 
 unsafe extern "C" fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {

@@ -31,7 +31,7 @@ pub fn init_higher_half() {
 /// # Safety
 /// - `target`, `dtb_ptr`, `dyn_ptr`, and `new_sp` must be within the initialized higher-half virtual map.
 /// - `hid` must be equal to the executing hart ID.
-pub unsafe fn jump_to_higher_half(target: *const (), hid: usize, dtb_ptr: VAddr, dyn_ptr: VAddr, new_sp: VAddr) -> ! {
+pub unsafe fn jump_higher_half(target: *const (), hid: usize, dtb_ptr: VAddr, dyn_ptr: VAddr, new_sp: VAddr) -> ! {
     unsafe {
         let mut sstatus = sstatus::read();
         sstatus.set_spp(sstatus::SPP::Supervisor);
