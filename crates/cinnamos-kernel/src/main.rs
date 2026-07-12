@@ -18,34 +18,42 @@ unsafe extern "C" fn kernel_relocate(hid: usize, dtb_ptr: *const u8, dyn_ptr: *c
 
 unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("Invalid DTB") };
-    if let Some(uart_reg) = dtb::find_compatible_region(&fdt, &["ns16550", "ns16550a"]) {
-        device::uart::init(unsafe { NonNull::new_unchecked(uart_reg.start_ptr().cast_mut()) });
+    if let Some((uart, uart_reg)) = devicetree::find_compatible(&fdt, &["ns16550", "ns16550a"]) {
+        let irq_id = uart.interrupts().map(|mut c| c.next().unwrap_or(0)).unwrap();
+        device::uart::init(unsafe { NonNull::new_unchecked(uart_reg.start_ptr().cast_mut()) }, irq_id as u16);
     }
     
-    arch::init();
-    mem::palloc::init(&fdt, dtb_ptr);
-    mem::vms::init().unwrap();
-    let _ = mem::vms::init_kernel_map(&fdt).unwrap();
-    unsafe { mem::vms::jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr, dyn_ptr); }
+    unsafe {
+        hloc::load_boot_hart_local(hid);
+        arch::init();
+        mem::palloc::init(&fdt, dtb_ptr);
+        mem::vms::init().unwrap();
+        mem::vms::init_kernel_map(&fdt).unwrap();
+        mem::vms::jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr, dyn_ptr);
+    }
 }
 
 unsafe extern "C" fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
-    unsafe { rel::shift(dyn_ptr, mem::vms::PHYS_TO_KERNEL_SLIDE); }
+    unsafe { rel::shift_relocation(dyn_ptr, mem::vms::PHYS_TO_KERNEL_SLIDE); }
 
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("Invalid DTB") };
-    if let Some(uart_reg) = dtb::find_compatible_region(&fdt, &["ns16550", "ns16550a"]) {
+    if let Some((uart, uart_reg)) = devicetree::find_compatible(&fdt, &["ns16550", "ns16550a"]) {
+        let irq_id = uart.interrupts().map(|mut c| c.next().unwrap_or(0)).unwrap();
         let pa = arch::PAddr::from_ptr(uart_reg.start_ptr());
-        device::uart::init(unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) });
+        device::uart::init(unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) }, irq_id as u16);
     }
 
-    #[cfg(debug_assertions)] {
-        println!("debug : higher-half entry (HID {})", hid);
+    #[cfg(debug_assertions)] println!("debug : higher-half entry (HID {})", hid);
+    unsafe {
+        hloc::load_boot_hart_local(hid);
+        arch::init_higher_half();
+        mem::palloc::reinit_higher_half().unwrap();
+        mem::vms::uninit_identity_map().unwrap();
+        mem::heap::init().unwrap();
     }
 
-    arch::init_higher_half();
-    mem::palloc::reinit_higher_half().unwrap();
-    unsafe { mem::vms::uninit_identity_map().unwrap() };
-    mem::heap::init().unwrap();
+    arch::init_interrupts(hid, &fdt);
 
+    #[cfg(debug_assertions)] println!("debug : waiting for interrupt (HID {})", hid);
     loop { arch::wait_for_interrupt(); }
 }

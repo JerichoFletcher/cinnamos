@@ -12,5 +12,5 @@ rustflags = [
     "-C", "link-arg=-pie",
     "-C", "link-arg=--export-dynamic",
     "-C", "link-arg=-Bsymbolic",
-    "-C", "link-arg=-Tcrates/cinnamos-kernel/src/ld/virt.lds",
+    "-C", "link-arg=-Tcrates/cinnamos-kernel/src/ld/riscv64.lds",
 ]

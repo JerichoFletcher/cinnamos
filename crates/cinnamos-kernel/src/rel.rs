@@ -84,7 +84,7 @@ pub unsafe fn relocate(dyn_ptr: *const Elf64Dyn) {
 /// # Safety
 /// `dyn_ptr` must point to the `_DYNAMIC` symbol.
 #[inline(always)]
-pub unsafe fn shift(dyn_ptr: *const Elf64Dyn, slide: usize) {
+pub unsafe fn shift_relocation(dyn_ptr: *const Elf64Dyn, slide: usize) {
     let mut rela_addr: *const Elf64Rela = core::ptr::null();
     let mut rela_size = 0usize;
     let mut rela_ent_size = 0usize;

@@ -88,7 +88,7 @@ impl LinkedListHeapRegion {
         
         while let Some(mut v) = ent {
             let v = unsafe { v.as_mut() };
-            if v.size >= layout.size() { return ent }
+            if !v.used && v.size >= layout.size() { return ent }
             ent = v.next;
         }
         None

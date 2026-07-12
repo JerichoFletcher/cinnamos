@@ -9,11 +9,11 @@ PHDRS {
 }
 
 SECTIONS {
-    . = 0xffffc00000000000;
+    . = KERNEL_START_VIRT;
     PROVIDE(_kernel_start = .);
     
     PROVIDE(_text_start = .);
-    .text : AT(0x80200000) {
+    .text : AT(KERNEL_START_PHYS) {
         *(.text.init)
         *(.text .text.*)
     }

@@ -1,17 +1,34 @@
-use core::ptr::NonNull;
+use core::{mem::MaybeUninit, num::NonZero, ptr::NonNull};
 
-use spin::Mutex;
-use uart::{Data, Uart, address::MmioAddress};
+use uart::*;
 
-struct SendUart(Uart<MmioAddress, Data>);
+use crate::arch;
 
-unsafe impl Send for SendUart {}
+struct SendUart(Uart<address::MmioAddress, Data>);
 
-static UART: Mutex<Option<SendUart>> = Mutex::new(None);
+unsafe impl Sync for SendUart {}
 
-pub fn init(base_addr: NonNull<u8>) {
-    let drv = unsafe { <Uart<_, Data>>::new(MmioAddress::new(base_addr, 1)) };
-    *UART.lock() = Some(SendUart(drv));
+static mut UART: MaybeUninit<SendUart> = MaybeUninit::zeroed();
+
+pub fn init(base_addr: NonNull<u8>, irq_id: u16) {
+    let mut drv = unsafe { <Uart<_, Data>>::new(address::MmioAddress::new(base_addr, 1)) };
+    drv.write_fifo_control(FifoControl::ENABLE | FifoControl::INT_LVL_1 | FifoControl::CLEAR_TX | FifoControl::CLEAR_RX);
+
+    if let Some(irq_id) = NonZero::new(irq_id) {
+        drv.write_interrupt_enable(InterruptEnable::RECEIVED_DATA);
+        let _ = arch::register_irq_handler(irq_id, handle_uart_irq);
+    }
+    unsafe { (&raw mut (UART)).write(MaybeUninit::new(SendUart(drv))); }
+}
+
+fn handle_uart_irq() {
+    let drv = unsafe { &mut (&raw mut (UART)).as_mut_unchecked().assume_init_mut().0 };
+    while drv.read_line_status().contains(LineStatus::DATA_AVAILABLE) {
+        let b = drv.read_byte();
+        
+        // TODO: Push byte to input queue
+        drv.write_byte(b);
+    }
 }
 
 pub struct Writer;
@@ -24,14 +41,13 @@ impl Writer {
 
 impl core::fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        if let Some(drv) = UART.lock().as_mut() {
-            for c in s.bytes() {
-                if c == b'\n' {
-                    drv.0.write_byte(b'\r');
-                    drv.0.write_byte(b'\n');
-                } else {
-                    drv.0.write_byte(c);
-                }
+        let drv = unsafe { &mut (&raw mut (UART)).as_mut_unchecked().assume_init_mut().0 };
+        for c in s.bytes() {
+            if c == b'\n' {
+                drv.write_byte(b'\r');
+                drv.write_byte(b'\n');
+            } else {
+                drv.write_byte(c);
             }
         }
         Ok(())

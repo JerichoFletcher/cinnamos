@@ -12,11 +12,17 @@ cfg_select! {
         pub use riscv64::{
             wait_for_interrupt,
             init,
+            init_interrupts,
             init_higher_half,
             jump_higher_half,
         };
+        pub use riscv64::hloc::{
+            load_boot_hart_local,
+            hart_local,
+        };
         pub use riscv64::paddr::PAddr;
         pub use riscv64::vaddr::VAddr;
+        pub use riscv64::context::Context;
         pub use riscv64::sv48::{
             PAGE_SIZE,
             PageSize,
@@ -31,6 +37,10 @@ cfg_select! {
             PageTableAllocMap,
             MapError,
             UnmapError,
+        };
+        pub use riscv64::interrupt::{
+            register_irq_handler,
+            InterruptError,
         };
 
         #[cfg(debug_assertions)]
