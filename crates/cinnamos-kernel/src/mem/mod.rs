@@ -1,12 +1,13 @@
-use crate::arch::PAddr;
 pub use crate::arch::PAGE_SIZE;
+use crate::arch::PAddr;
 
 mod phys;
 pub use phys::FrameAlloc;
 
 pub mod palloc;
-pub mod vms;
+// pub mod valloc;
 pub mod heap;
+pub mod vms;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MemoryRegion {
@@ -16,7 +17,10 @@ pub struct MemoryRegion {
 
 impl MemoryRegion {
     pub fn new(base: *const u8, size: Option<usize>) -> Self {
-        Self { base: PAddr::from_ptr(base), size: size }
+        Self {
+            base: PAddr::from_ptr(base),
+            size: size,
+        }
     }
 
     pub fn start(&self) -> PAddr {

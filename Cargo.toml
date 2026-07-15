@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = [
+    "crates/cinnamos-kernel",
+    "crates/structs",
+]
 
 [profile.dev]
 panic = "abort"

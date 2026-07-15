@@ -1,30 +1,60 @@
 [env]
 CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+BOOT_CMD = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/boot.cmd"
+IMAGE_ITS = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/image.its"
+BOOT_DIR = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/boot"
+IMAGE = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/hd.img"
+KERNEL_BIN = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/cinnamos.bin"
 
-[tasks.clean]
-command = "cargo"
-args = ["clean"]
+BIOS = "/usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.bin"
+BOOTLOADER = "/usr/lib/u-boot/qemu-riscv64_smode/uboot.elf"
 
-[tasks.build]
+[config]
+default_to_workspace = false
+
+[tasks.clean-all]
+script = [
+    "cargo clean",
+    "rm -f ${IMAGE}",
+    "rm -rf ${BOOT_DIR}",
+    "rm ${KERNEL_BIN} ${KERNEL_BIN}.gz",
+]
+
+[tasks.kernel]
 command = "cargo"
-args = [
-    "build",
-    # "--target", "riscv64gc-unknown-none-elf",
+args = ["build"]
+
+[tasks.img]
+dependencies = ["kernel"]
+env = { KERNEL = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/riscv64gc-unknown-none-elf/debug/cinnamos-kernel", KERNEL_IM = "${BOOT_DIR}/kernel.fit", BOOT_SCR_IM = "${BOOT_DIR}/boot.scr" }
+script = [
+    "mkdir -p ${BOOT_DIR}",
+    "riscv64-unknown-elf-objcopy -O binary ${KERNEL} ${KERNEL_BIN}",
+    "gzip -f ${KERNEL_BIN}",
+    "mkimage -f ${IMAGE_ITS} ${KERNEL_IM}",
+    "mkimage -A riscv -T script -C none -d ${BOOT_CMD} ${BOOT_SCR_IM}",
+    "rm -f ${IMAGE}",
+    "truncate -s 64M ${IMAGE}",
+    "printf ',,c,*\n' | sfdisk ${IMAGE}",
+    "mformat -F -i ${IMAGE}@@1M ::",
+    "mcopy -o -i ${IMAGE}@@1M -s ${BOOT_DIR} ::",
 ]
 
 [tasks.run]
+dependencies = ["img"]
+env = { DRV_ID = "hd0" }
 command = "xterm"
 args = [
     "-e", "qemu-system-riscv64",
     "-machine", "virt",
-    "-m", "128M",
+    "-m", "1G",
     "-smp", "4",
     "-S",
     "-gdb", "tcp::1234",
-    "-bios", "default",
     "-serial", "stdio",
+    "-bios", "${BIOS}",
+    "-kernel", "${BOOTLOADER}",
+    "-drive", "format=raw,if=virtio,file=${IMAGE},id=${DRV_ID}",
     "-device", "virtio-gpu",
     "-device", "virtio-keyboard",
-    "-kernel", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/riscv64gc-unknown-none-elf/debug/${CARGO_MAKE_CRATE_NAME}"
 ]
-dependencies = ["build"]

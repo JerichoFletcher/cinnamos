@@ -1,7 +1,10 @@
 use core::{alloc::Layout, mem::ManuallyDrop, ptr::NonNull};
 
-use crate::{arch::{PTEFlags, PageSize, VAddr}, mem::{self, FrameAlloc, PAGE_SIZE}};
 use super::HeapError;
+use crate::{
+    arch::{PTEFlags, PageSize, VAddr},
+    mem::{self, FrameAlloc, PAGE_SIZE},
+};
 
 #[derive(Debug)]
 struct LinkedListHeapEntry {
@@ -24,7 +27,7 @@ impl LinkedListHeapRegion {
     /// `layout` must be padded to the alignment of [LinkedListHeapEntry](LinkedListHeapEntry).
     unsafe fn alloc(&mut self, layout: Layout) -> Option<(VAddr, usize)> {
         let mut ent = unsafe { self.find_entry_first_fit(layout)? };
-        
+
         unsafe {
             let v = ent.as_mut();
             let mut used = layout.size();
@@ -40,7 +43,7 @@ impl LinkedListHeapRegion {
                 });
                 v.next = Some(ent_next);
             }
-            
+
             self.used += used;
             self.free -= used;
             v.used = true;
@@ -59,12 +62,14 @@ impl LinkedListHeapRegion {
                 if v.size == layout.size() {
                     let mut freed = layout.size();
                     v.used = false;
-                    
+
                     let mut neighbor_ptr = v.next;
                     while let Some(mut neighbor) = neighbor_ptr {
                         let neighbor = neighbor.as_mut();
-                        if neighbor.used { break; }
-                        
+                        if neighbor.used {
+                            break;
+                        }
+
                         freed += size_of::<LinkedListHeapEntry>();
                         v.size += size_of::<LinkedListHeapEntry>() + neighbor.size;
                         v.next = neighbor.next;
@@ -73,7 +78,7 @@ impl LinkedListHeapRegion {
 
                     self.used -= freed;
                     self.free += freed;
-                    return freed
+                    return freed;
                 }
             }
         }
@@ -83,12 +88,16 @@ impl LinkedListHeapRegion {
     /// # Safety
     /// `layout` must be padded to the alignment of [LinkedListHeapEntry](LinkedListHeapEntry).
     unsafe fn find_entry_first_fit(&self, layout: Layout) -> Option<NonNull<LinkedListHeapEntry>> {
-        if self.free < layout.size() { return None }
+        if self.free < layout.size() {
+            return None;
+        }
         let mut ent = self.head;
-        
+
         while let Some(mut v) = ent {
             let v = unsafe { v.as_mut() };
-            if !v.used && v.size >= layout.size() { return ent }
+            if !v.used && v.size >= layout.size() {
+                return ent;
+            }
             ent = v.next;
         }
         None
@@ -99,7 +108,9 @@ impl LinkedListHeapRegion {
 
         while let Some(mut v) = ent {
             let v = unsafe { v.as_mut() };
-            if v.addr == va { return ent }
+            if v.addr == va {
+                return ent;
+            }
             ent = v.next;
         }
         None
@@ -120,7 +131,8 @@ impl LinkedListHeap {
     pub fn new(base_addr: VAddr, bump_size: usize) -> Result<Self, HeapError> {
         let base_addr = VAddr::new((base_addr.addr() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1));
         let bump_size = (bump_size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-        let alloc = ManuallyDrop::new(mem::palloc::alloc(bump_size).ok_or(HeapError::AllocationFailed)?);
+        let alloc =
+            ManuallyDrop::new(mem::palloc::alloc(bump_size).ok_or(HeapError::AllocationFailed)?);
 
         mem::vms::acquire(|mut g| -> Result<(), HeapError> {
             let mut va = base_addr;
@@ -128,15 +140,26 @@ impl LinkedListHeap {
             let mut allocated = 0;
 
             while allocated < bump_size {
-                let size = PageSize::select_size(va, pa, bump_size - allocated).ok_or(HeapError::MappingFailed)?;
-                g.map_page(va, pa, size, PTEFlags::RW).map_err(|_| HeapError::MappingFailed)?.forget();
+                let size = PageSize::select_size(va, pa, bump_size - allocated)
+                    .ok_or(HeapError::MappingFailed)?;
+                g.map_page(va, pa, size, PTEFlags::RW)
+                    .map_err(|_| HeapError::MappingFailed)?
+                    .forget();
                 va = va + size.size();
                 pa = pa + size.size();
                 allocated += size.size();
             }
-            
-            #[cfg(debug_assertions)] {
-                debug_assert_eq!(crate::arch::translate_virt(g.root_pt().unwrap(), base_addr, mem::vms::phys_to_virt), Some(alloc.base_addr()));
+
+            #[cfg(debug_assertions)]
+            {
+                debug_assert_eq!(
+                    crate::arch::translate_virt(
+                        g.root_pt().unwrap(),
+                        base_addr,
+                        mem::vms::phys_to_virt
+                    ),
+                    Some(alloc.base_addr())
+                );
             }
             Ok(())
         })?;
@@ -173,7 +196,9 @@ impl LinkedListHeap {
 
     fn grow(&mut self) -> Result<(), HeapError> {
         let base_addr = self.next_va;
-        let alloc = ManuallyDrop::new(mem::palloc::alloc(self.bump_size).ok_or(HeapError::AllocationFailed)?);
+        let alloc = ManuallyDrop::new(
+            mem::palloc::alloc(self.bump_size).ok_or(HeapError::AllocationFailed)?,
+        );
 
         mem::vms::acquire(|mut g| {
             let mut va = base_addr;
@@ -181,15 +206,26 @@ impl LinkedListHeap {
             let mut allocated = 0;
 
             while allocated < self.bump_size {
-                let size = PageSize::select_size(va, pa, self.bump_size - allocated).ok_or(HeapError::MappingFailed)?;
-                g.map_page(va, pa, size, PTEFlags::RW).map_err(|_| HeapError::MappingFailed)?.forget();
+                let size = PageSize::select_size(va, pa, self.bump_size - allocated)
+                    .ok_or(HeapError::MappingFailed)?;
+                g.map_page(va, pa, size, PTEFlags::RW)
+                    .map_err(|_| HeapError::MappingFailed)?
+                    .forget();
                 va = va + size.size();
                 pa = pa + size.size();
                 allocated += size.size();
             }
-            
-            #[cfg(debug_assertions)] {
-                debug_assert_eq!(crate::arch::translate_virt(g.root_pt().unwrap(), base_addr, mem::vms::phys_to_virt), Some(alloc.base_addr()));
+
+            #[cfg(debug_assertions)]
+            {
+                debug_assert_eq!(
+                    crate::arch::translate_virt(
+                        g.root_pt().unwrap(),
+                        base_addr,
+                        mem::vms::phys_to_virt
+                    ),
+                    Some(alloc.base_addr())
+                );
             }
             Ok(())
         })?;
@@ -200,8 +236,18 @@ impl LinkedListHeap {
 
             let init_addr = VAddr::from_ptr(ent.add(1));
             let init_size = base_addr + self.bump_size - init_addr;
-            reg.write(LinkedListHeapRegion { used: 0, free: init_size, head: Some(NonNull::new_unchecked(ent)), next: None });
-            ent.write(LinkedListHeapEntry { used: false, size: init_size, addr: init_addr, next: None });
+            reg.write(LinkedListHeapRegion {
+                used: 0,
+                free: init_size,
+                head: Some(NonNull::new_unchecked(ent)),
+                next: None,
+            });
+            ent.write(LinkedListHeapEntry {
+                used: false,
+                size: init_size,
+                addr: init_addr,
+                next: None,
+            });
 
             self.next_va = self.next_va + self.bump_size;
             self.free += init_size;
@@ -211,14 +257,18 @@ impl LinkedListHeap {
     }
 
     fn find_region_include(&self, va: VAddr) -> Option<NonNull<LinkedListHeapRegion>> {
-        if va < self.init_va { return None }
+        if va < self.init_va {
+            return None;
+        }
 
         unsafe {
             let mut reg = Some(self.head);
             let mut va_hi = self.init_va + self.bump_size;
             while let Some(curr) = reg {
                 let curr = curr.as_ref();
-                if va < va_hi { return reg }
+                if va < va_hi {
+                    return reg;
+                }
                 reg = curr.next;
                 va_hi = va_hi + self.bump_size;
             }
@@ -228,14 +278,21 @@ impl LinkedListHeap {
 
     /// # Safety
     /// `layout` must be padded to the alignment of [LinkedListHeapEntry](LinkedListHeapEntry).
-    unsafe fn find_region_first_fit(&self, layout: Layout) -> Option<NonNull<LinkedListHeapRegion>> {
-        if self.free < layout.size() { return None };
-        
+    unsafe fn find_region_first_fit(
+        &self,
+        layout: Layout,
+    ) -> Option<NonNull<LinkedListHeapRegion>> {
+        if self.free < layout.size() {
+            return None;
+        };
+
         unsafe {
             let mut reg = Some(self.head);
             while let Some(mut curr) = reg {
                 let curr = curr.as_mut();
-                if curr.free >= layout.size() { return reg }
+                if curr.free >= layout.size() {
+                    return reg;
+                }
                 reg = curr.next;
             }
         }
@@ -243,7 +300,12 @@ impl LinkedListHeap {
     }
 
     fn align_layout(layout: Layout) -> Option<Layout> {
-        Some(layout.align_to(core::mem::align_of::<LinkedListHeapEntry>()).ok()?.pad_to_align())
+        Some(
+            layout
+                .align_to(core::mem::align_of::<LinkedListHeapEntry>())
+                .ok()?
+                .pad_to_align(),
+        )
     }
 }
 
@@ -254,28 +316,27 @@ impl super::Heap for LinkedListHeap {
             Some(layout) => {
                 if self.free < layout.size() {
                     if let Err(_) = self.grow() {
-                        return core::ptr::null_mut()
+                        return core::ptr::null_mut();
                     }
                 }
                 // println!("HEAP PRE_ALLOC used={} free={} <- LO {:?}", self.used, self.free, layout);
-                
+
                 unsafe {
                     let mut reg = self.find_region_first_fit(layout);
                     match reg.as_mut() {
                         None => core::ptr::null_mut(),
-                        Some(reg) =>
-                            match reg.as_mut().alloc(layout) {
-                                None => core::ptr::null_mut(),
-                                Some((va, size_used)) => {
-                                    self.used += size_used;
-                                    self.free -= size_used;
-                                    // println!("HEAP POST_ALLOC used={} free={} -> VA {:?}", self.used, self.free, va);
-                                    va.as_mut()
-                                }
-                            },
+                        Some(reg) => match reg.as_mut().alloc(layout) {
+                            None => core::ptr::null_mut(),
+                            Some((va, size_used)) => {
+                                self.used += size_used;
+                                self.free -= size_used;
+                                // println!("HEAP POST_ALLOC used={} free={} -> VA {:?}", self.used, self.free, va);
+                                va.as_mut()
+                            }
+                        },
                     }
                 }
-            },
+            }
         }
     }
 

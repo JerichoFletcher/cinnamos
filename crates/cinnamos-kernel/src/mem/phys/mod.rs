@@ -1,4 +1,5 @@
 mod freelist;
+// mod buddy;
 pub use freelist::FreeListAllocator as FrameAllocator;
 pub use freelist::FreeListFrameAlloc as FrameAllocation;
 
@@ -8,7 +9,7 @@ pub trait FrameAlloc {
     fn base_addr(&self) -> PAddr;
 }
 
-pub trait PhysFrameAllocator<T : FrameAlloc> {
+pub trait PhysFrameAllocator<T: FrameAlloc> {
     fn size(start: PAddr, end: PAddr) -> usize;
 
     fn alloc(&mut self, size_bytes: usize) -> Option<T>;

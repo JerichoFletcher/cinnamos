@@ -5,11 +5,15 @@ extern crate alloc;
 
 use core::ptr::NonNull;
 
-use fdt::Fdt;
 use cinnamos_kernel::*;
+use fdt::Fdt;
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn kernel_relocate(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
+unsafe extern "C" fn kernel_relocate(
+    hid: usize,
+    dtb_ptr: *const u8,
+    dyn_ptr: *const rel::Elf64Dyn,
+) -> ! {
     unsafe {
         rel::relocate(dyn_ptr);
         entry(hid, dtb_ptr, dyn_ptr)
@@ -19,10 +23,16 @@ unsafe extern "C" fn kernel_relocate(hid: usize, dtb_ptr: *const u8, dyn_ptr: *c
 unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("Invalid DTB") };
     if let Some((uart, uart_reg)) = devicetree::find_compatible(&fdt, &["ns16550", "ns16550a"]) {
-        let irq_id = uart.interrupts().map(|mut c| c.next().unwrap_or(0)).unwrap();
-        device::uart::init(unsafe { NonNull::new_unchecked(uart_reg.start_ptr().cast_mut()) }, irq_id as u16);
+        let irq_id = uart
+            .interrupts()
+            .map(|mut c| c.next().unwrap_or(0))
+            .unwrap();
+        device::uart::init(
+            unsafe { NonNull::new_unchecked(uart_reg.start_ptr().cast_mut()) },
+            irq_id as u16,
+        );
     }
-    
+
     unsafe {
         hloc::load_boot_hart_local(hid);
         arch::init();
@@ -33,17 +43,30 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
     }
 }
 
-unsafe extern "C" fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
-    unsafe { rel::shift_relocation(dyn_ptr, mem::vms::PHYS_TO_KERNEL_SLIDE); }
+unsafe extern "C" fn higher_half_entry(
+    hid: usize,
+    dtb_ptr: *const u8,
+    dyn_ptr: *const rel::Elf64Dyn,
+) -> ! {
+    unsafe {
+        rel::shift_relocation(dyn_ptr, mem::vms::PHYS_TO_KERNEL_SLIDE);
+    }
 
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("Invalid DTB") };
     if let Some((uart, uart_reg)) = devicetree::find_compatible(&fdt, &["ns16550", "ns16550a"]) {
-        let irq_id = uart.interrupts().map(|mut c| c.next().unwrap_or(0)).unwrap();
+        let irq_id = uart
+            .interrupts()
+            .map(|mut c| c.next().unwrap_or(0))
+            .unwrap();
         let pa = arch::PAddr::from_ptr(uart_reg.start_ptr());
-        device::uart::init(unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) }, irq_id as u16);
+        device::uart::init(
+            unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) },
+            irq_id as u16,
+        );
     }
 
-    #[cfg(debug_assertions)] println!("debug : higher-half entry (HID {})", hid);
+    #[cfg(debug_assertions)]
+    println!("debug : higher-half entry (HID {})", hid);
     unsafe {
         hloc::load_boot_hart_local(hid);
         arch::init_higher_half();
@@ -54,6 +77,9 @@ unsafe extern "C" fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: 
 
     arch::init_interrupts(hid, &fdt);
 
-    #[cfg(debug_assertions)] println!("debug : waiting for interrupt (HID {})", hid);
-    loop { arch::wait_for_interrupt(); }
+    #[cfg(debug_assertions)]
+    println!("debug : waiting for interrupt (HID {})", hid);
+    loop {
+        arch::wait_for_interrupt();
+    }
 }

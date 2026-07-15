@@ -28,8 +28,10 @@ fn relocate_entry(rela: &Elf64Rela) {
     match rela_type {
         R_RISCV64_RELA => {
             let target = (rela.offset as usize).wrapping_add(kernel_to_phys_slide) as *mut usize;
-            unsafe { *target = (rela.addend as usize).wrapping_add(kernel_to_phys_slide) as usize; }
-        },
+            unsafe {
+                *target = (rela.addend as usize).wrapping_add(kernel_to_phys_slide) as usize;
+            }
+        }
         _ => (),
     }
 }
@@ -44,7 +46,7 @@ unsafe fn slide_entry(rela: &Elf64Rela, slide: usize) {
                 let paddr = *target;
                 *target = paddr + slide;
             }
-        },
+        }
         _ => (),
     }
 }
@@ -63,7 +65,10 @@ pub unsafe fn relocate(dyn_ptr: *const Elf64Dyn) {
         let mut dyn_ptr = dyn_ptr;
         while (*dyn_ptr).tag != DT_NULL {
             match (*dyn_ptr).tag {
-                DT_RELA => rela_addr = ((*dyn_ptr).val as usize).wrapping_add(kernel_to_phys_slide) as *const Elf64Rela,
+                DT_RELA => {
+                    rela_addr = ((*dyn_ptr).val as usize).wrapping_add(kernel_to_phys_slide)
+                        as *const Elf64Rela
+                }
                 DT_RELASZ => rela_size = (*dyn_ptr).val as usize,
                 DT_RELAENT => rela_ent_size = (*dyn_ptr).val as usize,
                 _ => (),

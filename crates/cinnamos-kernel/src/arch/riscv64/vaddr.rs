@@ -7,15 +7,15 @@ use crate::arch::{PAddr, sv48::PT_MAX_ENTRIES};
 pub struct VAddr(usize);
 
 impl VAddr {
-    pub fn new(addr: usize) -> Self {
+    pub const fn new(addr: usize) -> Self {
         Self(addr)
     }
 
-    pub fn identity(paddr: PAddr) -> Self {
+    pub const fn identity(paddr: PAddr) -> Self {
         Self(paddr.addr())
     }
 
-    pub fn from_parts(vpn: [usize; 4], page_offset: usize) -> Self {
+    pub const fn from_parts(vpn: [usize; 4], page_offset: usize) -> Self {
         debug_assert!(vpn[0] < PT_MAX_ENTRIES);
         debug_assert!(vpn[1] < PT_MAX_ENTRIES);
         debug_assert!(vpn[2] < PT_MAX_ENTRIES);

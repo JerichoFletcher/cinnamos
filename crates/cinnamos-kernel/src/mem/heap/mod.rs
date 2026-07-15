@@ -3,9 +3,13 @@ use core::alloc::{GlobalAlloc, Layout};
 use spin::Mutex;
 
 mod linked;
-use linked::LinkedListHeap as HeapAllocator;
+// mod freelist;
 
-use crate::{arch::{HEAP_BUMP_SIZE, HEAP_MAP_BASE, VAddr}, println};
+use crate::{
+    arch::{HEAP_BUMP_SIZE, HEAP_MAP_BASE, VAddr},
+    println,
+};
+use linked::LinkedListHeap as HeapAllocator;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeapError {
@@ -38,7 +42,9 @@ unsafe impl GlobalAlloc for HeapImpl {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let mut guard = HEAP.lock();
         if let Some(h) = guard.as_mut() {
-            unsafe { h.0.dealloc(ptr, layout); }
+            unsafe {
+                h.0.dealloc(ptr, layout);
+            }
         }
     }
 }

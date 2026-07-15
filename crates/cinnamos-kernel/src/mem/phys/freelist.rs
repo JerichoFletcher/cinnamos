@@ -1,4 +1,7 @@
-use core::{fmt::Debug, ptr::{self, NonNull}};
+use core::{
+    fmt::Debug,
+    ptr::{self, NonNull},
+};
 
 use bitflags::bitflags;
 
@@ -52,11 +55,11 @@ impl FreeListAllocator {
             (&raw mut (*alloc).base_addr).write(PAddr::new(start_addr));
             (&raw mut (*alloc).used).write(0);
             (&raw mut (*alloc).free).write(size);
-            
+
             for i in 0..size {
                 (&raw mut (*alloc).list[i]).write(FreeListEntry::empty());
             }
-            
+
             NonNull::new_unchecked(alloc)
         }
     }
@@ -71,15 +74,15 @@ impl super::PhysFrameAllocator<FreeListFrameAlloc> for FreeListAllocator {
         let start_addr = (start.addr() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let end_addr = (end.addr() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         let size = (end_addr - start_addr) / PAGE_SIZE;
-        
-        size_of::<PAddr>()
-            + size_of::<usize>() * 2
-            + size_of::<FreeListEntry>() * size
+
+        size_of::<PAddr>() + size_of::<usize>() * 2 + size_of::<FreeListEntry>() * size
     }
 
     fn alloc(&mut self, size_bytes: usize) -> Option<FreeListFrameAlloc> {
         let frame_count = (size_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
-        if frame_count == 0 || frame_count > self.free { return None; }
+        if frame_count == 0 || frame_count > self.free {
+            return None;
+        }
 
         let mut i: usize = 0;
         while i < self.list.len() {
@@ -122,7 +125,11 @@ impl super::PhysFrameAllocator<FreeListFrameAlloc> for FreeListAllocator {
             let i = (handle.addr - self.base_addr) / PAGE_SIZE;
             for j in 0..handle.frame_count {
                 if !self.list[i + j].contains(FreeListEntry::USED) {
-                    panic!("Attempted to deallocate unused frame i={} (0x{:016x})", i + j, (handle.addr + (i + j) * PAGE_SIZE));
+                    panic!(
+                        "Attempted to deallocate unused frame i={} (0x{:016x})",
+                        i + j,
+                        (handle.addr + (i + j) * PAGE_SIZE)
+                    );
                 }
             }
 
@@ -136,11 +143,23 @@ impl super::PhysFrameAllocator<FreeListFrameAlloc> for FreeListAllocator {
 
     fn reserve(&mut self, start: PAddr, end: PAddr) {
         if start < self.end_addr() && end > self.base_addr && start < end {
-            let start = if start < self.base_addr { self.base_addr } else { start };
-            let end = if end > self.end_addr() { self.end_addr() } else { end };
+            let start = if start < self.base_addr {
+                self.base_addr
+            } else {
+                start
+            };
+            let end = if end > self.end_addr() {
+                self.end_addr()
+            } else {
+                end
+            };
 
-            let i_start = (((start + PAGE_SIZE - 1).addr() & !(PAGE_SIZE - 1)) - self.base_addr.addr()) / PAGE_SIZE;
-            let i_endx = (((end + PAGE_SIZE - 1).addr() & !(PAGE_SIZE - 1)) - self.base_addr.addr()) / PAGE_SIZE;
+            let i_start = (((start + PAGE_SIZE - 1).addr() & !(PAGE_SIZE - 1))
+                - self.base_addr.addr())
+                / PAGE_SIZE;
+            let i_endx = (((end + PAGE_SIZE - 1).addr() & !(PAGE_SIZE - 1))
+                - self.base_addr.addr())
+                / PAGE_SIZE;
 
             for i in i_start..i_endx {
                 self.list[i].set(FreeListEntry::RESERVED, true);

@@ -7,7 +7,7 @@ pub struct PAddr(usize);
 impl PAddr {
     pub const NULL: Self = Self(0);
 
-    pub fn new(addr: usize) -> Self {
+    pub const fn new(addr: usize) -> Self {
         Self(addr)
     }
 
