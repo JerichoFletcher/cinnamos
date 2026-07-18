@@ -319,7 +319,6 @@ impl super::Heap for LinkedListHeap {
                         return core::ptr::null_mut();
                     }
                 }
-                // println!("HEAP PRE_ALLOC used={} free={} <- LO {:?}", self.used, self.free, layout);
 
                 unsafe {
                     let mut reg = self.find_region_first_fit(layout);
@@ -330,7 +329,6 @@ impl super::Heap for LinkedListHeap {
                             Some((va, size_used)) => {
                                 self.used += size_used;
                                 self.free -= size_used;
-                                // println!("HEAP POST_ALLOC used={} free={} -> VA {:?}", self.used, self.free, va);
                                 va.as_mut()
                             }
                         },
@@ -345,12 +343,10 @@ impl super::Heap for LinkedListHeap {
             let va = VAddr::from_ptr(ptr);
             if let Some(mut reg) = self.find_region_include(va) {
                 unsafe {
-                    // println!("HEAP PRE_DEALLOC used={} free={} -> VA {:?} LO {:?}", self.used, self.free, va, layout);
                     let reg = reg.as_mut();
                     let size_freed = reg.dealloc(va, layout);
                     self.used -= size_freed;
                     self.free += size_freed;
-                    // println!("HEAP POST_DEALLOC used={} free={}", self.used, self.free);
                 }
             }
         }

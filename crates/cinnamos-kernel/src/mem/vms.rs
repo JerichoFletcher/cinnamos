@@ -1,14 +1,11 @@
-use core::mem::ManuallyDrop;
+use core::mem::{ManuallyDrop, MaybeUninit};
 
 use fdt::Fdt;
 use spin::{Mutex, MutexGuard, Spin};
 
 use crate::{
     arch::*,
-    mem::{
-        FrameAlloc, PAGE_SIZE,
-        palloc::{self, Alloc},
-    },
+    mem::{FrameAlloc, PAGE_SIZE, palloc::Alloc},
     *,
 };
 
@@ -41,39 +38,54 @@ impl SendRootTable {
 
 unsafe impl Send for SendRootTable {}
 
+static ROOT_PT: Mutex<Option<SendRootTable>> = Mutex::new(None);
+
 pub struct VirtualMemoryInfo {
     pub max_asid: usize,
 }
 
-static ROOT_PT: Mutex<Option<SendRootTable>> = Mutex::new(None);
-
 #[macro_export]
-macro_rules! phys_to_kernel_symshift {
+macro_rules! phys_to_kernel_dynslide {
     () => {{
-        use $crate::arch::KERNEL_LOAD_BASE;
+        use $crate::{arch::KERNEL_LOAD_BASE, kernel_start_v};
         kernel_start_v!().addr().wrapping_sub(KERNEL_LOAD_BASE)
     }};
 }
 
 pub const PHYS_TO_KERNEL_SLIDE: usize = KERNEL_MAP_BASE - KERNEL_LOAD_BASE;
 
+pub fn phys_identity(pa: PAddr) -> VAddr {
+    VAddr::identity(pa)
+}
+
 pub fn phys_to_kernel(pa: PAddr) -> VAddr {
-    VAddr::new(pa.addr() + PHYS_TO_KERNEL_SLIDE)
+    VAddr::new(pa.addr().wrapping_add(PHYS_TO_KERNEL_SLIDE))
+}
+
+pub fn kernel_to_phys(va: VAddr) -> PAddr {
+    PAddr::new(va.addr().wrapping_sub(PHYS_TO_KERNEL_SLIDE))
 }
 
 pub fn phys_to_virt(pa: PAddr) -> VAddr {
-    VAddr::new(pa.addr() + DIRECT_MAP_BASE)
+    VAddr::new(pa.addr().wrapping_add(DIRECT_MAP_BASE))
 }
 
+pub fn virt_to_phys(va: VAddr) -> PAddr {
+    PAddr::new(va.addr().wrapping_sub(DIRECT_MAP_BASE))
+}
+
+/// Should only be called once in early phase
 pub fn init() -> Result<(), VmsError> {
-    if let Some(alloc) = palloc::alloc(size_of::<PageTable>()) {
-        let pt = unsafe { PageTable::init(VAddr::identity(alloc.base_addr())) };
-        *ROOT_PT.lock() = Some(SendRootTable(ManuallyDrop::new(alloc)));
-        println!("ptable : 0x{:016x}", pt.addr());
-        Ok(())
-    } else {
-        Err(VmsError::FrameAllocFailed)
+    let mut g = ROOT_PT.lock();
+    if let None = g.as_mut() {
+        let b = mem::palloc::alloc(1).ok_or(VmsError::FrameAllocFailed)?;
+        let pt = phys_identity(b.base_addr()).as_mut() as *mut MaybeUninit<PageTable>;
+        unsafe {
+            PageTable::init(pt.as_mut_unchecked());
+        }
+        *g = Some(SendRootTable(ManuallyDrop::new(b)));
     }
+    Ok(())
 }
 
 pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
@@ -366,7 +378,7 @@ impl<F: Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
             .guard
             .as_mut()
             .ok_or(VmsError::RootTableUninitialized)?;
-        Ok(unsafe { wrapper.root_pt(self.p2v) })
+        unsafe { Ok(wrapper.root_pt(self.p2v)) }
     }
 
     pub fn map_page(
@@ -376,25 +388,20 @@ impl<F: Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
         size: PageSize,
         flags: PTEFlags,
     ) -> Result<PageTableAllocMap, VmsError> {
-        let wrapper = self
-            .guard
-            .as_mut()
-            .ok_or(VmsError::RootTableUninitialized)?;
-        let root_pt = unsafe { wrapper.root_pt(self.p2v) };
+        let p2v = self.p2v;
+        let root_pt = self.root_pt()?;
+
         let allocs =
-            arch::map_page(root_pt, va, pa, size, flags, self.p2v).map_err(|e| VmsError::Map(e))?;
+            arch::map_page(root_pt, va, pa, size, flags, p2v).map_err(|e| VmsError::Map(e))?;
         self.flush = true;
         Ok(allocs)
     }
 
     pub fn unmap_page(&mut self, va: VAddr) -> Result<PageSize, VmsError> {
-        let wrapper = self
-            .guard
-            .as_mut()
-            .ok_or(VmsError::RootTableUninitialized)?;
-        let root_pt = unsafe { wrapper.root_pt(self.p2v) };
-        let unmapped_size =
-            arch::unmap_page(root_pt, va, self.p2v).map_err(|e| VmsError::Unmap(e))?;
+        let p2v = self.p2v;
+        let root_pt = self.root_pt()?;
+
+        let unmapped_size = arch::unmap_page(root_pt, va, p2v).map_err(|e| VmsError::Unmap(e))?;
         self.flush = true;
         Ok(unmapped_size)
     }

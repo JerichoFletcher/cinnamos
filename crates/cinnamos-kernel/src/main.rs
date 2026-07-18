@@ -26,7 +26,7 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
         let irq_id = uart
             .interrupts()
             .map(|mut c| c.next().unwrap_or(0))
-            .unwrap();
+            .expect("Failed to get interrupt ID for UART");
         device::uart::init(
             unsafe { NonNull::new_unchecked(uart_reg.start_ptr().cast_mut()) },
             irq_id as u16,
@@ -36,9 +36,11 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
     unsafe {
         hloc::load_boot_hart_local(hid);
         arch::init();
-        mem::palloc::init(&fdt, dtb_ptr);
-        mem::vms::init().unwrap();
-        mem::vms::init_kernel_map(&fdt).unwrap();
+        mem::bump::init();
+        mem::heap::init_bump();
+        mem::palloc::init_bump();
+        mem::vms::init().expect("Failed to initialize VMS");
+        mem::vms::init_kernel_map(&fdt).expect("Failed to initialize virtual map");
         mem::vms::jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr, dyn_ptr);
     }
 }
@@ -51,13 +53,14 @@ unsafe extern "C" fn higher_half_entry(
     unsafe {
         rel::shift_relocation(dyn_ptr, mem::vms::PHYS_TO_KERNEL_SLIDE);
     }
+    mem::heap::shift_bump(&mem::vms::phys_to_virt);
 
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("Invalid DTB") };
     if let Some((uart, uart_reg)) = devicetree::find_compatible(&fdt, &["ns16550", "ns16550a"]) {
         let irq_id = uart
             .interrupts()
             .map(|mut c| c.next().unwrap_or(0))
-            .unwrap();
+            .expect("Failed to get interrupt ID for UART");
         let pa = arch::PAddr::from_ptr(uart_reg.start_ptr());
         device::uart::init(
             unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) },
@@ -70,9 +73,9 @@ unsafe extern "C" fn higher_half_entry(
     unsafe {
         hloc::load_boot_hart_local(hid);
         arch::init_higher_half();
-        mem::palloc::reinit_higher_half().unwrap();
-        mem::vms::uninit_identity_map().unwrap();
-        mem::heap::init().unwrap();
+        mem::palloc::init(&fdt, dtb_ptr);
+        mem::vms::uninit_identity_map().expect("Failed to uninitialize identity map");
+        mem::heap::init_heap().expect("Failed to initialize heap allocator");
     }
 
     arch::init_interrupts(hid, &fdt);

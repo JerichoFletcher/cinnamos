@@ -24,7 +24,7 @@ impl Add<usize> for PAddr {
     type Output = PAddr;
 
     fn add(self, rhs: usize) -> Self::Output {
-        PAddr(self.0 + rhs)
+        PAddr(self.0.wrapping_add(rhs))
     }
 }
 
@@ -32,7 +32,7 @@ impl Sub<usize> for PAddr {
     type Output = PAddr;
 
     fn sub(self, rhs: usize) -> Self::Output {
-        PAddr(self.0 - rhs)
+        PAddr(self.0.wrapping_sub(rhs))
     }
 }
 
@@ -40,7 +40,7 @@ impl Sub<PAddr> for PAddr {
     type Output = usize;
 
     fn sub(self, rhs: PAddr) -> Self::Output {
-        self.0 - rhs.0
+        self.0.wrapping_sub(rhs.0)
     }
 }
 

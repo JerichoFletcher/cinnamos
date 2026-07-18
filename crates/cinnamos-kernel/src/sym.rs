@@ -15,7 +15,7 @@ macro_rules! kernel_start_p {
             static _kernel_start: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_kernel_start) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_kernel_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -37,7 +37,7 @@ macro_rules! kernel_end_p {
             static _kernel_end: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_kernel_end) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_kernel_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -59,7 +59,7 @@ macro_rules! text_start_p {
             static _text_start: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_text_start) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_text_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -81,7 +81,7 @@ macro_rules! text_end_p {
             static _text_end: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_text_end) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_text_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -103,7 +103,7 @@ macro_rules! rodata_start_p {
             static _rodata_start: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_rodata_start) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_rodata_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -125,7 +125,7 @@ macro_rules! rodata_end_p {
             static _rodata_end: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_rodata_end) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_rodata_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -147,7 +147,7 @@ macro_rules! data_start_p {
             static _data_start: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_data_start) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_data_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -169,7 +169,7 @@ macro_rules! data_end_p {
             static _data_end: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_data_end) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_data_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -191,7 +191,7 @@ macro_rules! kmem_start_p {
             static _kmem_start: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_kmem_start) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_kmem_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -213,7 +213,7 @@ macro_rules! kmem_end_p {
             static _kmem_end: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_kmem_end) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_kmem_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -235,7 +235,7 @@ macro_rules! stack_start_p {
             static _stack_start: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_stack_start) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_stack_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -257,7 +257,7 @@ macro_rules! stack_end_p {
             static _stack_end: u8;
         }
         $crate::arch::PAddr::new(
-            (&raw const (_stack_end) as usize).wrapping_sub($crate::phys_to_kernel_symshift!()),
+            (&raw const (_stack_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }
@@ -276,7 +276,7 @@ macro_rules! trap_stack_start_v {
 macro_rules! trap_stack_start_p {
     () => ({
         unsafe extern "C" { static _trap_stack_start: u8; }
-        $crate::arch::PAddr:new((&raw const _trap_stack_start() as usize).wrapping_sub($crate::phys_to_kernel_symshift!()))
+        $crate::arch::PAddr:new((&raw const _trap_stack_start() as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()))
     })
 }
 
@@ -298,7 +298,52 @@ macro_rules! trap_stack_end_p {
         }
         $crate::arch::PAddr::new(
             (&raw const (_trap_stack_end) as usize)
-                .wrapping_sub($crate::phys_to_kernel_symshift!()),
+                .wrapping_sub($crate::phys_to_kernel_dynslide!()),
+        )
+    }};
+}
+
+#[macro_export]
+macro_rules! bump_heap_start_v {
+    () => {{
+        unsafe extern "C" {
+            static _bump_heap_start: u8;
+        }
+        $crate::arch::VAddr::from_ptr(&_bump_heap_start)
+    }};
+}
+
+#[macro_export]
+macro_rules! bump_heap_start_p {
+    () => {{
+        unsafe extern "C" {
+            static _bump_heap_start: u8;
+        }
+        $crate::arch::PAddr::new(
+            (&raw const (_bump_heap_start) as usize)
+                .wrapping_sub($crate::phys_to_kernel_dynslide!()),
+        )
+    }};
+}
+
+#[macro_export]
+macro_rules! bump_heap_end_v {
+    () => {{
+        unsafe extern "C" {
+            static _bump_heap_end: u8;
+        }
+        $crate::arch::VAddr::from_ptr(&_bump_heap_end)
+    }};
+}
+
+#[macro_export]
+macro_rules! bump_heap_end_p {
+    () => {{
+        unsafe extern "C" {
+            static _bump_heap_end: u8;
+        }
+        $crate::arch::PAddr::new(
+            (&raw const (_bump_heap_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
         )
     }};
 }

@@ -1,4 +1,4 @@
-use core::ptr::NonNull;
+use core::mem::MaybeUninit;
 
 use bitflags::bitflags;
 use riscv::{register::satp::{self, Satp}};
@@ -135,15 +135,10 @@ pub struct PageTable {
 }
 
 impl PageTable {
-    /// # Safety
-    /// `at` must be mapped to a valid address.
-    pub unsafe fn init(at: VAddr) -> NonNull<PageTable> {
-        let pt = at.as_mut::<PageTable>();
-        debug_assert!(!pt.is_null());
-        
-        unsafe {
-            (&raw mut (*pt).entries).write([PTE::EMPTY; 512]);
-            NonNull::new_unchecked(pt)
+    pub fn init(slot: *mut MaybeUninit<Self>) {
+        if !slot.is_null() && slot.is_aligned() {
+            // Safety: slot is not null and aligned
+            unsafe { (*slot).write(Self { entries: [PTE::EMPTY; 512] }); }
         }
     }
 }
@@ -155,7 +150,7 @@ pub enum PageTableAlloc {
 }
 
 pub struct PageTableAllocMap {
-    allocs: [PageTableAlloc; 4],
+    allocs: [PageTableAlloc; 3],
 }
 
 impl PageTableAllocMap {
@@ -209,9 +204,9 @@ pub fn translate_virt(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) ->
 pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, size: PageSize, flags: PTEFlags, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageTableAllocMap, MapError> {
     let vpn = va.vpn();
     let mut table = root_pt as *mut PageTable;
-    let mut table_directory: [Option<PageTableAlloc>; 4] = [const { None }; 4];
+    let mut table_directory: [Option<PageTableAlloc>; 3] = [const { None }; 3];
     
-    table_directory[3] = Some(PageTableAlloc::Existing(table));
+    // table_directory[3] = Some(PageTableAlloc::Existing(table));
     for level in (0..=3).rev() {
         let pte = unsafe { &mut (*table).entries[vpn[level]] };
 
@@ -227,10 +222,14 @@ pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, size: PageSize, f
                 table = p2v(next_pa).as_mut();
                 table_directory[level - 1] = Some(PageTableAlloc::Existing(table));
             } else if !pte.is_valid() {
-                let alloc = palloc::alloc(PAGE_SIZE).ok_or(MapError::OutOfMemory)?;
+                let alloc = palloc::alloc(1).ok_or(MapError::OutOfMemory)?;
                 let next_pa = alloc.base_addr();
-    
-                table = unsafe { PageTable::init(p2v(next_pa)).as_ptr() };
+                
+                // Safety: p2v(next_pa) has the same alignment as next_pa, which points to an allocated physical page
+                let table_uninit = unsafe { p2v(next_pa).as_mut::<MaybeUninit<PageTable>>().as_mut_unchecked() };
+                PageTable::init(table_uninit);
+                table = table_uninit.as_mut_ptr();
+
                 pte.set_table(alloc.base_addr());
                 table_directory[level - 1] = Some(PageTableAlloc::New(alloc));
             } else {

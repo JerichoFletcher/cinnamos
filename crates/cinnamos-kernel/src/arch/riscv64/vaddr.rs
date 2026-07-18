@@ -60,7 +60,7 @@ impl Add<usize> for VAddr {
     type Output = VAddr;
 
     fn add(self, rhs: usize) -> Self::Output {
-        Self(self.0 + rhs)
+        Self(self.0.wrapping_add(rhs))
     }
 }
 
@@ -68,7 +68,7 @@ impl Sub<usize> for VAddr {
     type Output = VAddr;
 
     fn sub(self, rhs: usize) -> Self::Output {
-        Self(self.0 - rhs)
+        Self(self.0.wrapping_sub(rhs))
     }
 }
 
@@ -76,7 +76,7 @@ impl Sub<VAddr> for VAddr {
     type Output = usize;
 
     fn sub(self, rhs: VAddr) -> Self::Output {
-        self.0 - rhs.0
+        self.0.wrapping_sub(rhs.0)
     }
 }
 

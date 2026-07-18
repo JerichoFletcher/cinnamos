@@ -1,12 +1,11 @@
-use core::ptr::NonNull;
-
+use alloc::vec::Vec;
 use fdt::Fdt;
 use spin::Mutex;
 
 use crate::{
-    arch::PAddr,
+    arch::{PAddr, VAddr},
     mem::{
-        FrameAlloc,
+        FrameAlloc, PAGE_SIZE, RegionSubtract, SizedMemoryRegion,
         phys::{FrameAllocation, FrameAllocator, PhysFrameAllocator},
         vms,
     },
@@ -18,11 +17,10 @@ pub enum PAllocError {
     AllocatorUninitialized,
 }
 
-struct SendAllocator(NonNull<FrameAllocator>);
-
-unsafe impl Send for SendAllocator {}
-
-pub struct Alloc(FrameAllocation);
+pub enum Alloc {
+    BumpAlloc(PAddr),
+    BuddyAlloc(FrameAllocation),
+}
 
 impl Drop for Alloc {
     fn drop(&mut self) {
@@ -32,109 +30,144 @@ impl Drop for Alloc {
 
 impl FrameAlloc for Alloc {
     fn base_addr(&self) -> PAddr {
-        self.0.base_addr()
-    }
-}
-
-static ALLOCATOR: Mutex<Option<SendAllocator>> = Mutex::new(None);
-
-pub fn init(fdt: &Fdt, dtb_ptr: *const u8) {
-    for reg in fdt.memory().regions() {
-        let start = PAddr::from_ptr(reg.starting_address);
-        let end = start + reg.size.unwrap_or(0);
-
-        if start < end {
-            let mut base = start;
-            unsafe {
-                if start < kernel_start_p!() && kernel_end_p!() < end {
-                    base = kernel_end_p!();
-                }
-            }
-
-            if end.addr() - base.addr() >= FrameAllocator::size(start, end) {
-                let mut alloc_ptr = unsafe { FrameAllocator::create(base, start, end) };
-                let alloc = unsafe { alloc_ptr.as_mut() };
-
-                let alloc_paddr_start = PAddr::from_ptr(alloc_ptr.as_ptr().cast::<u8>());
-                let alloc_paddr_end =
-                    alloc_paddr_start + unsafe { core::mem::size_of_val_raw(alloc) };
-                alloc.reserve(alloc_paddr_start, alloc_paddr_end);
-                println!(
-                    "alloc : reserve 0x{:016x} .. 0x{:016x} (meta)",
-                    alloc_paddr_start, alloc_paddr_end
-                );
-
-                if let Some(rsv) = fdt.find_node("/reserved-memory") {
-                    for n in rsv.children() {
-                        if let Some(regs) = n.reg() {
-                            for reg in regs {
-                                if let Some(rsv_size) = reg.size {
-                                    let rsv_start = PAddr::from_ptr(reg.starting_address);
-                                    alloc.reserve(rsv_start, rsv_start + rsv_size);
-                                    println!(
-                                        "alloc : reserve 0x{:016x} .. 0x{:016x} (reserved-memory)",
-                                        rsv_start,
-                                        rsv_start + rsv_size
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-
-                for rsv in fdt.memory_reservations() {
-                    let rsv_start = PAddr::from_ptr(rsv.address());
-                    alloc.reserve(rsv_start, rsv_start + rsv.size());
-                    println!(
-                        "alloc : reserve 0x{:016x} .. 0x{:016x} (memreserve)",
-                        rsv_start,
-                        rsv_start + rsv.size()
-                    );
-                }
-
-                let dtb_start = PAddr::from_ptr(dtb_ptr);
-                let dtb_end = dtb_start + fdt.total_size();
-                alloc.reserve(dtb_start, dtb_end);
-                println!(
-                    "alloc : reserve 0x{:016x} .. 0x{:016x} (dtb)",
-                    dtb_start, dtb_end
-                );
-
-                *ALLOCATOR.lock() = Some(SendAllocator(alloc_ptr));
-            } else {
-                println!(
-                    "Unable to create allocator for region 0x{:016x}..0x{:016x}",
-                    start, end
-                );
-            }
+        match self {
+            Alloc::BumpAlloc(pa) => *pa,
+            Alloc::BuddyAlloc(alloc) => alloc.base_addr(),
         }
     }
 }
 
-pub fn reinit_higher_half() -> Result<(), PAllocError> {
-    let mut guard = ALLOCATOR.lock();
-    let sa = guard.as_mut().ok_or(PAllocError::AllocatorUninitialized)?;
-
-    let (ptr, ptr_meta) = sa.0.to_raw_parts();
-    let pa = PAddr::from_ptr(ptr.as_ptr());
-    let va = vms::phys_to_virt(pa);
-    let ptr: *mut FrameAllocator = core::ptr::from_raw_parts_mut(va.as_mut::<()>(), ptr_meta);
-    *guard = unsafe { Some(SendAllocator(NonNull::new_unchecked(ptr))) };
-
-    Ok(())
+enum SendAllocator {
+    Bump,
+    Buddy,
 }
 
-pub fn alloc(size_bytes: usize) -> Option<Alloc> {
+impl SendAllocator {
+    fn alloc(&self, frame_count: usize) -> Option<Alloc> {
+        match self {
+            Self::Bump => mem::bump::alloc_frame(frame_count).map(|pa| Alloc::BumpAlloc(pa)),
+            Self::Buddy => todo!(),
+        }
+    }
+
+    /// # Safety
+    /// `alloc` must be an allocation from the currently active allocator.
+    unsafe fn dealloc(&self, _alloc: &mut Alloc) {
+        match self {
+            Self::Bump => (),
+            Self::Buddy => todo!(),
+        }
+    }
+}
+
+// struct SendAllocator(NonNull<FrameAllocator>);
+
+unsafe impl Send for SendAllocator {}
+
+static ALLOCATOR: Mutex<Option<SendAllocator>> = Mutex::new(None);
+
+/// Should only be called once on early phase
+pub fn init_bump() {
+    *ALLOCATOR.lock() = Some(SendAllocator::Bump);
+}
+
+pub fn init(fdt: &Fdt, dtb_ptr: *const u8) {
+    let mut rsv_regs: Vec<SizedMemoryRegion> = fdt
+        .memory_reservations()
+        .map(|r| unsafe {
+            SizedMemoryRegion::new_unchecked(PAddr::from_ptr(r.address()), r.size())
+        })
+        .chain(
+            [
+                // Safety: Used symbols are defined in the linker script
+                unsafe {
+                    SizedMemoryRegion::new_unchecked(
+                        kernel_start_p!(),
+                        kernel_end_p!() - kernel_start_p!(),
+                    )
+                },
+                // Safety: The size of the devicetree blob is nonzero
+                unsafe {
+                    SizedMemoryRegion::new_unchecked(
+                        vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)),
+                        (fdt.total_size() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1),
+                    )
+                },
+            ]
+            .into_iter(),
+        )
+        .collect();
+    if let Some(rsv) = fdt.find_node("/reserved-memory") {
+        rsv_regs.extend(
+            rsv.children()
+                .map(|n| n.reg())
+                .filter_map(|r| {
+                    r.map(|rs| {
+                        rs.map(|r| {
+                            SizedMemoryRegion::new(PAddr::from_ptr(r.starting_address), r.size)
+                        })
+                    })
+                })
+                .flatten()
+                .filter_map(|r| r),
+        );
+    }
+    rsv_regs.sort();
+
+    let mut usable_regs: Vec<SizedMemoryRegion> = Vec::with_capacity(rsv_regs.len() + 1);
+    for r in fdt
+        .memory()
+        .regions()
+        .map(|r| SizedMemoryRegion::new(PAddr::from_ptr(r.starting_address), r.size))
+        .filter_map(|r| r)
+    {
+        slice_usable_region(r, &mut rsv_regs, &mut usable_regs);
+    }
+
+    println!("Usable regions: {:?}", &usable_regs);
+    todo!("Initialize allocators for each usable region");
+}
+
+pub fn alloc(frame_count: usize) -> Option<Alloc> {
     let mut guard = ALLOCATOR.lock();
     let sa = guard.as_mut()?;
-    unsafe { (*sa.0.as_ptr()).alloc(size_bytes).map(|v| Alloc(v)) }
+    (*sa).alloc(frame_count)
 }
 
 pub fn dealloc(handle: &mut Alloc) {
     let mut guard = ALLOCATOR.lock();
     if let Some(sa) = guard.as_mut() {
+        // Safety: Bump-backed frames are never deallocated
         unsafe {
-            (*sa.0.as_ptr()).dealloc(&mut handle.0);
+            (*sa).dealloc(handle);
         }
     }
+}
+
+fn slice_usable_region(
+    reg: SizedMemoryRegion,
+    rsv: &mut [SizedMemoryRegion],
+    out: &mut Vec<SizedMemoryRegion>,
+) {
+    rsv.sort_unstable();
+
+    let mut reg = reg;
+    for i in 0..rsv.len() {
+        if reg.overlaps(&rsv[i]) {
+            match reg.subtract(&rsv[i]) {
+                RegionSubtract::None => return,
+                RegionSubtract::Left(reg_l) => {
+                    out.push(reg_l);
+                    return;
+                }
+                RegionSubtract::Right(reg_r) => reg = reg_r,
+                RegionSubtract::Both(reg_l, reg_r) => {
+                    out.push(reg_l);
+                    reg = reg_r;
+                }
+                RegionSubtract::Nonoverlapping => (),
+            }
+        }
+    }
+    out.push(reg);
 }
