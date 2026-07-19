@@ -6,7 +6,7 @@ cfg_select! {
         pub const KERNEL_LOAD_BASE: usize = 0x8020_0000;
         pub const DIRECT_MAP_BASE: usize = 0xffff_8000_0000_0000;
         pub const KERNEL_MAP_BASE: usize = 0xffff_c000_0000_0000;
-        pub const HEAP_MAP_BASE: usize = 0xffff_f000_0000_0000;
+        pub const HEAP_MAP_BASE: usize = 0xffff_ff00_0000_0000;
         pub const HEAP_BUMP_SIZE: usize = PageSize::Page4K.size() * 32;
 
         pub use riscv64::{

@@ -155,12 +155,12 @@ impl<'a> BuddyAllocator<'a> {
     fn free_list_push(&mut self, order: usize, block: BlockIndex) {
         debug_assert_eq!(block % (1 << order), 0);
         debug_assert!(block <= self.max_block_count());
-        
+
         let idx = self.next_idx(order, block);
         self.next[idx] = self.free_lists[order];
         self.free_lists[order] = block;
     }
-    
+
     fn free_list_remove(&mut self, order: usize, block: BlockIndex) {
         debug_assert_eq!(block % (1 << order), 0);
         debug_assert!(block <= self.max_block_count());

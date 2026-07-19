@@ -42,7 +42,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
 }
 
 fn handle_external_interrupt(_frame: &mut TrapFrame) {
-    let hloc = unsafe { hloc::hart_local() };
+    let hloc = hloc::hart_local();
     if let Some(claim) = arch::device::plic::claim_irq(hloc.hid) {
         let irq = claim.irq_id();
         if let Err(e) = interrupt::dispatch_irq(irq) {

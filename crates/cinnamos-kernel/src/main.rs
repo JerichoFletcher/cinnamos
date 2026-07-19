@@ -70,11 +70,7 @@ unsafe fn jump_higher_half(
     }
 }
 
-unsafe fn higher_half_entry(
-    hid: usize,
-    dtb_ptr: *const u8,
-    dyn_ptr: *const rel::Elf64Dyn,
-) -> ! {
+unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
     unsafe {
         rel::shift_relocation(dyn_ptr, mem::vms::PHYS_TO_KERNEL_SLIDE);
     }
@@ -111,7 +107,7 @@ unsafe fn higher_half_entry(
             bump_end - bump_start,
         );
     }
-    mem::heap::init_heap().expect("Failed to initialize heap allocator");
+    mem::heap::init_heap();
 
     arch::init_interrupts(hid, &fdt);
 

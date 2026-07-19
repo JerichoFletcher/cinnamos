@@ -7,6 +7,8 @@ use crate::arch::{PAddr, sv48::PT_MAX_ENTRIES};
 pub struct VAddr(usize);
 
 impl VAddr {
+    pub const NULL: Self = Self(0);
+
     pub const fn new(addr: usize) -> Self {
         Self(addr)
     }

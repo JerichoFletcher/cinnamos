@@ -1,4 +1,4 @@
-#![feature(ptr_metadata, coroutines, iter_from_coroutine, atomic_ptr_null)]
+#![feature(coroutines, iter_from_coroutine, atomic_ptr_null)]
 #![no_std]
 #![no_main]
 

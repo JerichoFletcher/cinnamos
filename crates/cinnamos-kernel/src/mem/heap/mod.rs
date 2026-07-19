@@ -3,14 +3,13 @@ use core::alloc::{GlobalAlloc, Layout};
 use spin::Mutex;
 
 mod freelist;
-mod linked;
 
 use super::bump;
 use crate::{
-    arch::{PAddr, VAddr},
+    arch::{HEAP_MAP_BASE, PAddr, VAddr},
+    mem::heap::freelist::FreeListHeap,
     *,
 };
-use linked::LinkedListHeap as HeapAllocator;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeapError {
@@ -25,7 +24,7 @@ pub trait Heap {
 
 enum SendHeap {
     Bump(&'static dyn Fn(PAddr) -> VAddr),
-    Heap(HeapAllocator),
+    Heap(FreeListHeap),
 }
 
 unsafe impl Send for SendHeap {}
@@ -40,7 +39,7 @@ unsafe impl GlobalAlloc for HeapImpl {
         match guard.as_mut() {
             Some(h) => match h {
                 SendHeap::Bump(p2v) => unsafe { bump::alloc(layout, *p2v) },
-                SendHeap::Heap(heap) => unsafe { heap.alloc(layout) },
+                SendHeap::Heap(heap) => heap.alloc(layout),
             },
             None => core::ptr::null_mut(),
         }
@@ -51,9 +50,7 @@ unsafe impl GlobalAlloc for HeapImpl {
         if let Some(h) = guard.as_mut() {
             match h {
                 SendHeap::Bump(_) => (),
-                SendHeap::Heap(heap) => unsafe {
-                    heap.dealloc(ptr, layout);
-                },
+                SendHeap::Heap(heap) => heap.dealloc(ptr, layout),
             }
         }
     }
@@ -62,20 +59,22 @@ unsafe impl GlobalAlloc for HeapImpl {
 #[global_allocator]
 static ALLOCATOR: HeapImpl = HeapImpl;
 
+/// Should only be called once in early phase
 pub fn init_bump() {
     *HEAP.lock() = Some(SendHeap::Bump(&mem::vms::phys_identity));
 }
 
+/// Should only be called once upon entering higher-half
 pub fn shift_bump(p2v: &'static impl Fn(PAddr) -> VAddr) {
     let mut g = HEAP.lock();
-    if let Some(heap) = g.as_mut()
-        && let SendHeap::Bump(_) = heap
+    if let Some(wrapper) = g.as_mut()
+        && let SendHeap::Bump(_) = wrapper
     {
-        // Safety: This shifts the bump allocator from identity space to higher-half space, which has been mapped
         *g = Some(SendHeap::Bump(p2v));
     }
 }
 
-pub fn init_heap() -> Result<(), HeapError> {
-    todo!("Initialize heap allocator")
+/// Should only be called once in higher-half
+pub fn init_heap() {
+    *HEAP.lock() = Some(SendHeap::Heap(FreeListHeap::new(VAddr::new(HEAP_MAP_BASE))));
 }

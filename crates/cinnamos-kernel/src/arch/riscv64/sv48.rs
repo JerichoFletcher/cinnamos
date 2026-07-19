@@ -233,14 +233,14 @@ pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, size: PageSize, f
                 table_directory[level - 1] = Some(PageTableAlloc::Existing(table));
             } else if !pte.is_valid() {
                 let alloc = palloc::alloc(1).ok_or(MapError::OutOfMemory)?;
-                let next_pa = alloc.base_addr();
+                let next_pa = alloc.start_addr();
                 
                 // Safety: p2v(next_pa) has the same alignment as next_pa, which points to an allocated physical page
                 let table_uninit = unsafe { p2v(next_pa).as_mut::<MaybeUninit<PageTable>>().as_mut_unchecked() };
                 PageTable::init(table_uninit);
                 table = table_uninit.as_mut_ptr();
 
-                pte.set_table(alloc.base_addr());
+                pte.set_table(alloc.start_addr());
                 table_directory[level - 1] = Some(PageTableAlloc::New(alloc));
             } else {
                 return Err(MapError::AlreadyMapped)

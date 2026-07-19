@@ -35,9 +35,8 @@ pub fn load_boot_hart_local(hid: usize) {
     }
 }
 
-/// # Safety
-/// This function can only be safely called after the [HartLocal](HartLocal) for the caller has been loaded.
+/// Should only be called after the [HartLocal](HartLocal) for the caller has been loaded.
 #[inline]
-pub unsafe fn hart_local() -> &'static mut HartLocal {
+pub fn hart_local() -> &'static mut HartLocal {
     unsafe { arch::hart_local() }
 }

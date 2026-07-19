@@ -20,7 +20,7 @@ pub enum PAllocError {
 
 #[derive(Debug)]
 pub enum Alloc {
-    BumpAlloc(PAddr),
+    BumpAlloc((PAddr, usize)),
     BuddyAlloc(BuddyFrameAlloc),
 }
 
@@ -31,10 +31,17 @@ impl Drop for Alloc {
 }
 
 impl PhysFrameAlloc for Alloc {
-    fn base_addr(&self) -> PAddr {
+    fn start_addr(&self) -> PAddr {
         match self {
-            Alloc::BumpAlloc(pa) => *pa,
-            Alloc::BuddyAlloc(alloc) => alloc.base_addr(),
+            Alloc::BumpAlloc((pa, _)) => *pa,
+            Alloc::BuddyAlloc(alloc) => alloc.start_addr(),
+        }
+    }
+
+    fn end_addr(&self) -> PAddr {
+        match self {
+            Alloc::BumpAlloc((pa, frame_count)) => *pa + PAGE_SIZE * frame_count,
+            Alloc::BuddyAlloc(alloc) => alloc.end_addr(),
         }
     }
 }
@@ -47,7 +54,9 @@ enum SendAllocator<'a> {
 impl<'a> SendAllocator<'a> {
     fn alloc(&mut self, frame_count: usize) -> Option<Alloc> {
         match self {
-            Self::Bump => mem::bump::alloc_frame(frame_count).map(|pa| Alloc::BumpAlloc(pa)),
+            Self::Bump => {
+                mem::bump::alloc_frame(frame_count).map(|pa| Alloc::BumpAlloc((pa, frame_count)))
+            }
             Self::Buddy(alloc) => alloc.alloc(frame_count).map(|a| Alloc::BuddyAlloc(a)),
         }
     }
@@ -101,7 +110,9 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
         ],
     );
     usable_regs.sort_unstable_by(|a, b| b.size.cmp(&a.size));
-    println!("USABLE {:?}", &usable_regs);
+    for r in &usable_regs {
+        println!("palloc : usable at 0x{:016x} .. 0x{:016x}", r.base, r.end());
+    }
 
     let mut alloc = BuddyFrameAllocator::new(&[usable_regs[0]]);
     let (_, regs) = usable_regs.split_at(1);
@@ -118,7 +129,7 @@ pub fn alloc(frame_count: usize) -> Option<Alloc> {
     (*sa).alloc(frame_count)
 }
 
-pub fn dealloc(handle: &mut Alloc) {
+fn dealloc(handle: &mut Alloc) {
     let mut guard = ALLOCATOR.lock();
     if let Some(sa) = guard.as_mut() {
         // Safety: Bump-backed frames are never deallocated

@@ -136,7 +136,7 @@ impl LinkedListHeap {
 
         mem::vms::acquire(|mut g| -> Result<(), HeapError> {
             let mut va = base_addr;
-            let mut pa = alloc.base_addr();
+            let mut pa = alloc.start_addr();
             let mut allocated = 0;
 
             while allocated < bump_size {
@@ -158,7 +158,7 @@ impl LinkedListHeap {
                         base_addr,
                         mem::vms::phys_to_virt
                     ),
-                    Some(alloc.base_addr())
+                    Some(alloc.start_addr())
                 );
             }
             Ok(())
@@ -202,7 +202,7 @@ impl LinkedListHeap {
 
         mem::vms::acquire(|mut g| {
             let mut va = base_addr;
-            let mut pa = alloc.base_addr();
+            let mut pa = alloc.start_addr();
             let mut allocated = 0;
 
             while allocated < self.bump_size {
@@ -224,7 +224,7 @@ impl LinkedListHeap {
                         base_addr,
                         mem::vms::phys_to_virt
                     ),
-                    Some(alloc.base_addr())
+                    Some(alloc.start_addr())
                 );
             }
             Ok(())

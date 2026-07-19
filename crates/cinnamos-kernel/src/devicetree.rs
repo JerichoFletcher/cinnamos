@@ -44,6 +44,7 @@ pub fn get_region_slices<const N: usize>(
 ) -> (Vec<SizedMemoryRegion>, Vec<SizedMemoryRegion>) {
     let mut rsv_regs: Vec<SizedMemoryRegion> = fdt
         .memory_reservations()
+        // Safety: r.size() is never zero
         .map(|r| unsafe {
             SizedMemoryRegion::new_unchecked(PAddr::from_ptr(r.address()), r.size())
         })

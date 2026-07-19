@@ -29,14 +29,14 @@ enum SendRootTable {
 impl SendRootTable {
     fn root_pt_pa(&self) -> PAddr {
         match self {
-            Self::Raw(alloc) => alloc.base_addr(),
-            Self::Virtual(alloc, _) => alloc.base_addr(),
+            Self::Raw(alloc) => alloc.start_addr(),
+            Self::Virtual(alloc, _) => alloc.start_addr(),
         }
     }
 
     fn root_pt(&mut self) -> *mut PageTable {
         match self {
-            Self::Raw(alloc) => VAddr::identity(alloc.base_addr()).as_mut(),
+            Self::Raw(alloc) => VAddr::identity(alloc.start_addr()).as_mut(),
             Self::Virtual(_, p) => *p,
         }
     }
@@ -85,7 +85,7 @@ pub fn init() -> Result<(), VmsError> {
     let mut g = ROOT_PT.lock();
     if let None = g.as_mut() {
         let b = mem::palloc::alloc(1).ok_or(VmsError::FrameAllocFailed)?;
-        let pt = phys_identity(b.base_addr()).as_mut() as *mut MaybeUninit<PageTable>;
+        let pt = phys_identity(b.start_addr()).as_mut() as *mut MaybeUninit<PageTable>;
         unsafe {
             PageTable::init(pt.as_mut_unchecked());
         }
@@ -370,7 +370,7 @@ pub fn init_kernel_map(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, Vm
         let mut i = 0usize;
         while !pt_frames.is_empty() {
             let alloc = pt_frames.pop().unwrap();
-            let mut pa = alloc.base_addr();
+            let mut pa = alloc.start_addr();
             let pa_end = pa + size_of::<PageTable>();
             println!(
                 "di-map pt {}\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",

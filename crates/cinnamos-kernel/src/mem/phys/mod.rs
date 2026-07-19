@@ -3,7 +3,12 @@ pub mod buddy;
 use crate::arch::PAddr;
 
 pub trait PhysFrameAlloc {
-    fn base_addr(&self) -> PAddr;
+    fn start_addr(&self) -> PAddr;
+    fn end_addr(&self) -> PAddr;
+
+    fn size(&self) -> usize {
+        self.end_addr() - self.start_addr()
+    }
 }
 
 pub trait PhysFrameAllocator<T: PhysFrameAlloc> {

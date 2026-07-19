@@ -14,8 +14,12 @@ pub struct BuddyFrameAlloc {
 }
 
 impl super::PhysFrameAlloc for BuddyFrameAlloc {
-    fn base_addr(&self) -> PAddr {
+    fn start_addr(&self) -> PAddr {
         self.base
+    }
+
+    fn end_addr(&self) -> PAddr {
+        self.base + (PAGE_SIZE << self.order)
     }
 }
 
@@ -31,7 +35,13 @@ impl<'a> BuddyRegion<'a> {
     /// - `base` must be aligned to `order` orders of page boundary.
     /// - `next` must point to an aligned buffer of [BlockIndex](BlockIndex) with at least `2 << order` items of capacity.
     /// - `bitmap` must point to an aligned buffer of [u64](u64) with at least `(1 << order).max(64) / 64` items of capacity.
-    unsafe fn new(id: usize, base: PAddr, order: usize, next: *mut BlockIndex, bitmap: *mut u64) -> Self {
+    unsafe fn new(
+        id: usize,
+        base: PAddr,
+        order: usize,
+        next: *mut BlockIndex,
+        bitmap: *mut u64,
+    ) -> Self {
         assert!(
             Self::max_align_order_of(base) as usize >= order,
             "Base address not aligned: {:016x}, order {}",
@@ -74,9 +84,13 @@ impl<'a> BuddyRegion<'a> {
         let order = (BlockIndex::BITS - 1 - (frame_count as BlockIndex).leading_zeros()) as usize;
         let block = self.buddy.alloc(order)?;
         let base = self.base + block as usize * PAGE_SIZE;
-        Some(BuddyFrameAlloc { id: self.id, base, order })
+        Some(BuddyFrameAlloc {
+            id: self.id,
+            base,
+            order,
+        })
     }
-    
+
     fn dealloc(&mut self, handle: &mut BuddyFrameAlloc) {
         let block = (handle.base - self.base) / PAGE_SIZE;
         self.buddy.dealloc(handle.order, block as BlockIndex);
