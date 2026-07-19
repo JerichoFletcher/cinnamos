@@ -24,6 +24,10 @@ script = [
 command = "cargo"
 args = ["build"]
 
+[tasks.kernel-release]
+command = "cargo"
+args = ["build", "--profile", "release"]
+
 [tasks.img]
 dependencies = ["kernel"]
 env = { KERNEL = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/riscv64gc-unknown-none-elf/debug/cinnamos-kernel", KERNEL_IM = "${BOOT_DIR}/kernel.fit", BOOT_SCR_IM = "${BOOT_DIR}/boot.scr" }
@@ -40,8 +44,43 @@ script = [
     "mcopy -o -i ${IMAGE}@@1M -s ${BOOT_DIR} ::",
 ]
 
+[tasks.img-release]
+dependencies = ["kernel-release"]
+env = { KERNEL = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/riscv64gc-unknown-none-elf/release/cinnamos-kernel", KERNEL_IM = "${BOOT_DIR}/kernel.fit", BOOT_SCR_IM = "${BOOT_DIR}/boot.scr" }
+script = [
+    "mkdir -p ${BOOT_DIR}",
+    "riscv64-unknown-elf-objcopy -O binary ${KERNEL} ${KERNEL_BIN}",
+    "gzip -f ${KERNEL_BIN}",
+    "mkimage -f ${IMAGE_ITS} ${KERNEL_IM}",
+    "mkimage -A riscv -T script -C none -d ${BOOT_CMD} ${BOOT_SCR_IM}",
+    "rm -f ${IMAGE}",
+    "truncate -s 64M ${IMAGE}",
+    "printf ',,c,*\n' | sfdisk ${IMAGE}",
+    "mformat -F -i ${IMAGE}@@1M ::",
+    "mcopy -o -i ${IMAGE}@@1M -s ${BOOT_DIR} ::",
+]
+
 [tasks.run]
 dependencies = ["img"]
+env = { DRV_ID = "hd0" }
+command = "xterm"
+args = [
+    "-e", "qemu-system-riscv64",
+    "-machine", "virt",
+    "-m", "1G",
+    "-smp", "4",
+    "-S",
+    "-gdb", "tcp::1234",
+    "-serial", "stdio",
+    "-bios", "${BIOS}",
+    "-kernel", "${BOOTLOADER}",
+    "-drive", "format=raw,if=virtio,file=${IMAGE},id=${DRV_ID}",
+    "-device", "virtio-gpu",
+    "-device", "virtio-keyboard",
+]
+
+[tasks.run-release]
+dependencies = ["img-release"]
 env = { DRV_ID = "hd0" }
 command = "xterm"
 args = [
