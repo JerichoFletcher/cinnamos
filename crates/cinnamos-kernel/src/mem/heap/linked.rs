@@ -3,7 +3,7 @@ use core::{alloc::Layout, mem::ManuallyDrop, ptr::NonNull};
 use super::HeapError;
 use crate::{
     arch::{PTEFlags, PageSize, VAddr},
-    mem::{self, FrameAlloc, PAGE_SIZE},
+    mem::{self, PAGE_SIZE, PhysFrameAlloc},
 };
 
 #[derive(Debug)]

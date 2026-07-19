@@ -1,5 +1,7 @@
 use core::{fmt::{Debug, LowerHex}, ops::{Add, Sub}};
 
+use crate::mem::PAGE_SIZE;
+
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PAddr(usize);
@@ -17,6 +19,14 @@ impl PAddr {
 
     pub const fn addr(&self) -> usize {
         self.0
+    }
+
+    pub const fn ppn(&self) -> usize {
+        self.0 / PAGE_SIZE
+    }
+
+    pub const fn next_multiple_of(&self, rhs: usize) -> Self {
+        Self::new(self.addr().next_multiple_of(rhs))
     }
 }
 

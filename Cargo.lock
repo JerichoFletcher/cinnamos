@@ -17,6 +17,7 @@ dependencies = [
  "riscv",
  "sbi",
  "spin",
+ "structs",
  "uart",
 ]
 

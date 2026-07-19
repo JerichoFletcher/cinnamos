@@ -1,11 +1,12 @@
 use core::mem::{ManuallyDrop, MaybeUninit};
 
+use alloc::vec::Vec;
 use fdt::Fdt;
 use spin::{Mutex, MutexGuard, Spin};
 
 use crate::{
     arch::*,
-    mem::{FrameAlloc, PAGE_SIZE, palloc::Alloc},
+    mem::{PAGE_SIZE, PhysFrameAlloc, SizedMemoryRegion, palloc::Alloc},
     *,
 };
 
@@ -13,25 +14,30 @@ use crate::{
 pub enum VmsError {
     FrameAllocFailed,
     RootTableUninitialized,
+    RootTableAlreadyInitialized,
     Unaligned,
     Map(MapError),
     Unmap(UnmapError),
 }
 
-struct SendRootTable(ManuallyDrop<Alloc>);
+#[derive(Debug)]
+enum SendRootTable {
+    Raw(ManuallyDrop<Alloc>),
+    Virtual(ManuallyDrop<Alloc>, *mut PageTable),
+}
 
 impl SendRootTable {
     fn root_pt_pa(&self) -> PAddr {
-        self.0.base_addr()
+        match self {
+            Self::Raw(alloc) => alloc.base_addr(),
+            Self::Virtual(alloc, _) => alloc.base_addr(),
+        }
     }
 
-    /// # Safety
-    /// `p2v` must be a physical-to-virtual address translator that is valid for the currently active virtual map.
-    unsafe fn root_pt(&mut self, p2v: impl Fn(PAddr) -> VAddr) -> &mut PageTable {
-        unsafe {
-            p2v(self.0.base_addr())
-                .as_mut::<PageTable>()
-                .as_mut_unchecked()
+    fn root_pt(&mut self) -> *mut PageTable {
+        match self {
+            Self::Raw(alloc) => VAddr::identity(alloc.base_addr()).as_mut(),
+            Self::Virtual(_, p) => *p,
         }
     }
 }
@@ -83,133 +89,230 @@ pub fn init() -> Result<(), VmsError> {
         unsafe {
             PageTable::init(pt.as_mut_unchecked());
         }
-        *g = Some(SendRootTable(ManuallyDrop::new(b)));
+        *g = Some(SendRootTable::Raw(ManuallyDrop::new(b)));
     }
     Ok(())
 }
 
-pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
-    acquire_with_p2v(&VAddr::identity, |mut g| unsafe {
-        println!(
-            "id-map text\t: 0x{:016x} .. 0x{:016x}",
-            text_start_p!(),
-            text_end_p!()
-        );
-        let mut pa = text_start_p!();
-        while pa < text_end_p!() {
-            let va = VAddr::identity(pa);
-            let next_size =
-                PageSize::select_size(va, pa, text_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-            g.map_page(va, pa, next_size, PTEFlags::RX)?.forget();
-            pa = pa + next_size.size();
-        }
-        println!(
-            "id-map rodata\t: 0x{:016x} .. 0x{:016x}",
-            rodata_start_p!(),
-            rodata_end_p!()
-        );
-        let mut pa = rodata_start_p!();
-        while pa < rodata_end_p!() {
-            let va = VAddr::identity(pa);
-            let next_size =
-                PageSize::select_size(va, pa, rodata_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-            g.map_page(va, pa, next_size, PTEFlags::READ)?.forget();
-            pa = pa + next_size.size();
-        }
-        println!(
-            "id-map data\t: 0x{:016x} .. 0x{:016x}",
-            data_start_p!(),
-            data_end_p!()
-        );
-        pa = data_start_p!();
-        while pa < data_end_p!() {
-            let va = VAddr::identity(pa);
-            let next_size =
-                PageSize::select_size(va, pa, data_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-            g.map_page(va, pa, next_size, PTEFlags::RW)?.forget();
-            pa = pa + next_size.size();
-        }
-        println!(
-            "id-map kmem\t: 0x{:016x} .. 0x{:016x}",
-            kmem_start_p!(),
-            kmem_end_p!()
-        );
-        pa = kmem_start_p!();
-        while pa < kmem_end_p!() {
-            let va = VAddr::identity(pa);
-            let next_size =
-                PageSize::select_size(va, pa, kmem_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-            g.map_page(va, pa, next_size, PTEFlags::RW)?.forget();
-            pa = pa + next_size.size();
-        }
+pub fn init_kernel_map(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
+    acquire_with_p2v(&VAddr::identity, |mut g| {
+        let mut pt_frames = Vec::with_capacity(32);
 
-        println!(
-            "hi-map text\t: 0x{:016x} .. 0x{:016x}",
-            text_start_p!(),
-            text_end_p!()
-        );
-        pa = text_start_p!();
-        while pa < text_end_p!() {
-            let va = phys_to_kernel(pa);
-            let next_size =
-                PageSize::select_size(va, pa, text_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-            g.map_page(va, pa, next_size, PTEFlags::RX)?.forget();
-            pa = pa + next_size.size();
-        }
-        println!(
-            "hi-map rodata\t: 0x{:016x} .. 0x{:016x}",
-            rodata_start_p!(),
-            rodata_end_p!()
-        );
-        pa = rodata_start_p!();
-        while pa < rodata_end_p!() {
-            let va = phys_to_kernel(pa);
-            let next_size =
-                PageSize::select_size(va, pa, rodata_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-            g.map_page(va, pa, next_size, PTEFlags::READ)?.forget();
-            pa = pa + next_size.size();
-        }
-        println!(
-            "hi-map data\t: 0x{:016x} .. 0x{:016x}",
-            data_start_p!(),
-            data_end_p!()
-        );
-        pa = data_start_p!();
-        while pa < data_end_p!() {
-            let va = phys_to_kernel(pa);
-            let next_size =
-                PageSize::select_size(va, pa, data_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-            g.map_page(va, pa, next_size, PTEFlags::RW)?.forget();
-            pa = pa + next_size.size();
-        }
-        println!(
-            "hi-map kmem\t: 0x{:016x} .. 0x{:016x}",
-            kmem_start_p!(),
-            kmem_end_p!()
-        );
-        pa = kmem_start_p!();
-        while pa < kmem_end_p!() {
-            let va = phys_to_kernel(pa);
-            let next_size =
-                PageSize::select_size(va, pa, kmem_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-            g.map_page(va, pa, next_size, PTEFlags::RW)?.forget();
-            pa = pa + next_size.size();
-        }
-
-        for r in fdt.memory().regions() {
-            if let Some(size) = r.size {
-                pa = PAddr::from_ptr(r.starting_address);
-                let pa_end = pa + size;
-
-                println!("di-map mem\t: 0x{:016x} .. 0x{:016x}", pa, pa_end);
-                while pa < pa_end {
-                    let va = phys_to_virt(pa);
-                    let next_size =
-                        PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
-                    g.map_page(va, pa, next_size, PTEFlags::RW)?.forget();
-                    pa = pa + next_size.size();
-                }
+        unsafe {
+            println!(
+                "id-map text\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                text_start_p!(),
+                text_end_p!(),
+                VAddr::identity(text_start_p!()),
+                VAddr::identity(text_end_p!()),
+            );
+            let mut pa = text_start_p!();
+            while pa < text_end_p!() {
+                let va = VAddr::identity(pa);
+                let next_size =
+                    PageSize::select_size(va, pa, text_end_p!() - pa).ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::RX)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
             }
+
+            println!(
+                "id-map rodata\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                rodata_start_p!(),
+                rodata_end_p!(),
+                VAddr::identity(rodata_start_p!()),
+                VAddr::identity(rodata_end_p!()),
+            );
+            let mut pa = rodata_start_p!();
+            while pa < rodata_end_p!() {
+                let va = VAddr::identity(pa);
+                let next_size = PageSize::select_size(va, pa, rodata_end_p!() - pa)
+                    .ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::READ)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
+            }
+
+            println!(
+                "id-map data\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                data_start_p!(),
+                data_end_p!(),
+                VAddr::identity(data_start_p!()),
+                VAddr::identity(data_end_p!()),
+            );
+            let mut pa = data_start_p!();
+            while pa < data_end_p!() {
+                let va = VAddr::identity(pa);
+                let next_size =
+                    PageSize::select_size(va, pa, data_end_p!() - pa).ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::RW)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
+            }
+
+            println!(
+                "id-map kmem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                kmem_start_p!(),
+                kmem_end_p!(),
+                VAddr::identity(kmem_start_p!()),
+                VAddr::identity(kmem_end_p!()),
+            );
+            let mut pa = kmem_start_p!();
+            while pa < kmem_end_p!() {
+                let va = VAddr::identity(pa);
+                let next_size =
+                    PageSize::select_size(va, pa, kmem_end_p!() - pa).ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::RW)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
+            }
+
+            println!(
+                "hi-map text\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                text_start_p!(),
+                text_end_p!(),
+                phys_to_kernel(text_start_p!()),
+                phys_to_kernel(text_end_p!()),
+            );
+            let mut pa = text_start_p!();
+            while pa < text_end_p!() {
+                let va = phys_to_kernel(pa);
+                let next_size =
+                    PageSize::select_size(va, pa, text_end_p!() - pa).ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RX)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
+            }
+
+            println!(
+                "hi-map rodata\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                rodata_start_p!(),
+                rodata_end_p!(),
+                phys_to_kernel(rodata_start_p!()),
+                phys_to_kernel(rodata_end_p!()),
+            );
+            let mut pa = rodata_start_p!();
+            while pa < rodata_end_p!() {
+                let va = phys_to_kernel(pa);
+                let next_size = PageSize::select_size(va, pa, rodata_end_p!() - pa)
+                    .ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::READ)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
+            }
+
+            println!(
+                "hi-map data\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                data_start_p!(),
+                data_end_p!(),
+                phys_to_kernel(data_start_p!()),
+                phys_to_kernel(data_end_p!()),
+            );
+            let mut pa = data_start_p!();
+            while pa < data_end_p!() {
+                let va = phys_to_kernel(pa);
+                let next_size =
+                    PageSize::select_size(va, pa, data_end_p!() - pa).ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RW)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
+            }
+
+            println!(
+                "hi-map kmem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                kmem_start_p!(),
+                kmem_end_p!(),
+                phys_to_kernel(kmem_start_p!()),
+                phys_to_kernel(kmem_end_p!()),
+            );
+            let mut pa = kmem_start_p!();
+            while pa < kmem_end_p!() {
+                let va = phys_to_kernel(pa);
+                let next_size =
+                    PageSize::select_size(va, pa, kmem_end_p!() - pa).ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RW)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
+            }
+        }
+
+        let (usable_regs, _) = devicetree::get_region_slices(
+            fdt,
+            [
+                // Safety: Used symbols are defined in the linker script
+                unsafe {
+                    SizedMemoryRegion::new_unchecked(
+                        kernel_start_p!(),
+                        kernel_end_p!() - kernel_start_p!(),
+                    )
+                },
+                // Safety: The size of the devicetree blob is nonzero
+                unsafe {
+                    SizedMemoryRegion::new_unchecked(
+                        dtb_pa,
+                        (fdt.total_size() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1),
+                    )
+                },
+            ],
+        );
+
+        for r in &usable_regs {
+            let mut pa = r.base;
+            let pa_end = r.end();
+
+            println!(
+                "di-map mem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                pa,
+                pa_end,
+                phys_to_virt(pa),
+                phys_to_virt(pa_end),
+            );
+            while pa < pa_end {
+                let va = phys_to_virt(pa);
+                let next_size =
+                    PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::RW)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
+            }
+        }
+
+        println!(
+            "di-map dtb\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            dtb_pa,
+            dtb_pa + fdt.total_size(),
+            phys_to_virt(dtb_pa),
+            phys_to_virt(dtb_pa + fdt.total_size()),
+        );
+        let mut pa = dtb_pa;
+        let pa_end = dtb_pa + fdt.total_size();
+        while pa < pa_end {
+            let va = phys_to_virt(pa);
+            let next_size =
+                PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::READ)?
+                    .take_new_allocs(),
+            );
+            pa = pa + next_size.size();
         }
 
         if let Some(soc) = fdt.find_node("/soc") {
@@ -217,18 +320,25 @@ pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
                 if let Some(regs) = n.reg() {
                     for r in regs {
                         if let Some(size) = r.size {
-                            pa = PAddr::from_ptr(r.starting_address);
+                            let mut pa = PAddr::from_ptr(r.starting_address);
                             let pa_end = pa + size;
 
                             println!(
-                                "di-map /soc/{}\t: 0x{:016x} .. 0x{:016x}",
-                                n.name, pa, pa_end
+                                "di-map /soc/{}\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                                n.name,
+                                pa,
+                                pa_end,
+                                phys_to_virt(pa),
+                                phys_to_virt(pa_end),
                             );
                             while pa < pa_end {
                                 let va = phys_to_virt(pa);
                                 let next_size = PageSize::select_size(va, pa, pa_end - pa)
                                     .ok_or(VmsError::Unaligned)?;
-                                g.map_page(va, pa, next_size, PTEFlags::RW)?.forget();
+                                pt_frames.extend(
+                                    g.map_page(va, pa, next_size, PTEFlags::RW)?
+                                        .take_new_allocs(),
+                                );
                                 pa = pa + next_size.size();
                             }
                         }
@@ -237,14 +347,62 @@ pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
             }
         }
 
+        let mut pa = g.root_pt_pa()?;
+        let pa_end = pa + PAGE_SIZE;
+        println!(
+            "di-map pt root\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            pa,
+            pa_end,
+            phys_to_virt(pa),
+            phys_to_virt(pa_end),
+        );
+        while pa < pa_end {
+            let va = phys_to_virt(pa);
+            let next_size =
+                PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::RW)?
+                    .take_new_allocs(),
+            );
+            pa = pa + next_size.size();
+        }
+
+        let mut i = 0usize;
+        while !pt_frames.is_empty() {
+            let alloc = pt_frames.pop().unwrap();
+            let mut pa = alloc.base_addr();
+            let pa_end = pa + size_of::<PageTable>();
+            println!(
+                "di-map pt {}\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                i,
+                pa,
+                pa_end,
+                phys_to_virt(pa),
+                phys_to_virt(pa_end),
+            );
+            while pa < pa_end {
+                let va = phys_to_virt(pa);
+                let next_size =
+                    PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
+                pt_frames.extend(
+                    g.map_page(va, pa, next_size, PTEFlags::RW)?
+                        .take_new_allocs(),
+                );
+                pa = pa + next_size.size();
+            }
+            // TODO: Store in kernel own AddressSpace struct
+            core::mem::forget(alloc);
+            i += 1;
+        }
+
         #[cfg(debug_assertions)]
         {
             use crate::{kernel_end_p, kernel_start_p};
 
             println!("debug : testing mappings");
 
-            let mut pa_orig = kernel_start_p!();
-            while pa_orig < kernel_end_p!() {
+            let mut pa_orig = unsafe { kernel_start_p!() };
+            while pa_orig < unsafe { kernel_end_p!() } {
                 let va = phys_to_kernel(pa_orig);
                 let pa_trns = arch::translate_virt(g.root_pt()?, va, VAddr::identity);
                 let va_addr = va.addr();
@@ -260,25 +418,27 @@ pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
             }
             println!("debug : phys-to-kernel translation success");
 
-            pa_orig = kernel_start_p!();
-            while pa_orig < kernel_end_p!() {
-                let va = phys_to_virt(pa_orig);
-                let pa_trns = arch::translate_virt(g.root_pt()?, va, VAddr::identity);
-                let va_addr = va.addr();
-                let pa_orig_addr = pa_orig.addr();
-                let pa_trns_addr = pa_trns.unwrap_or(PAddr::new(0)).addr();
-                debug_assert_eq!(
-                    pa_trns,
-                    Some(pa_orig),
-                    "Phys-to-direct translation failed 0x{va_addr:016x} -> 0x{pa_trns_addr:016x} vs. 0x{pa_orig_addr:016x}"
-                );
+            for r in usable_regs {
+                pa_orig = r.base;
+                while pa_orig < r.end() {
+                    let va = phys_to_virt(pa_orig);
+                    let pa_trns = arch::translate_virt(g.root_pt()?, va, VAddr::identity);
+                    let va_addr = va.addr();
+                    let pa_orig_addr = pa_orig.addr();
+                    let pa_trns_addr = pa_trns.unwrap_or(PAddr::new(0)).addr();
+                    debug_assert_eq!(
+                        pa_trns,
+                        Some(pa_orig),
+                        "Phys-to-direct translation failed 0x{va_addr:016x} -> 0x{pa_trns_addr:016x} vs. 0x{pa_orig_addr:016x}"
+                    );
 
-                pa_orig = pa_orig + PAGE_SIZE;
+                    pa_orig = pa_orig + PAGE_SIZE;
+                }
             }
             println!("debug : phys-to-direct translation success");
 
-            pa_orig = kernel_start_p!();
-            while pa_orig < kernel_end_p!() {
+            pa_orig = unsafe { kernel_start_p!() };
+            while pa_orig < unsafe { kernel_end_p!() } {
                 let va = VAddr::identity(pa_orig);
                 let pa_trns = arch::translate_virt(g.root_pt()?, va, VAddr::identity);
                 let va_addr = va.addr();
@@ -296,18 +456,19 @@ pub fn init_kernel_map(fdt: &Fdt) -> Result<VirtualMemoryInfo, VmsError> {
         }
 
         let root_pt_pa = g.root_pt_pa()?;
+        g.attach_virt(phys_to_virt(root_pt_pa))?;
+
         let max_asid = arch::activate_vmap(root_pt_pa);
         Ok(VirtualMemoryInfo { max_asid })
     })
 }
 
-/// # Safety
-/// This function can only be safely called from the kernel address space.
-pub unsafe fn uninit_identity_map() -> Result<(), VmsError> {
+/// Should only be called from the kernel address space.
+pub fn uninit_identity_map() -> Result<(), VmsError> {
     acquire(|mut g| {
         unsafe {
             println!(
-                "unmapping kernel\t: 0x{:016x} .. 0x{:016x}",
+                "unmapping id-map kernel\t: 0x{:016x} .. 0x{:016x}",
                 kernel_start_p!(),
                 kernel_end_p!()
             );
@@ -320,31 +481,6 @@ pub unsafe fn uninit_identity_map() -> Result<(), VmsError> {
         }
         Ok(())
     })
-}
-
-/// # Safety
-/// - `entry` must point to a physical location and be virtually mapped.
-/// - `hid` must be equal to the executing hart ID.
-/// - `dtb_ptr` must point to a physical location and be direct-mapped.
-/// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol and be direct-mapped.
-pub unsafe fn jump_higher_half(
-    entry: *const (),
-    hid: usize,
-    dtb_ptr: *const u8,
-    dyn_ptr: *const rel::Elf64Dyn,
-) -> ! {
-    unsafe {
-        let ventry = phys_to_kernel(PAddr::from_ptr(entry));
-        let vdtb = phys_to_virt(PAddr::from_ptr(dtb_ptr));
-        let vdyn = phys_to_kernel(PAddr::from_ptr(dyn_ptr));
-        arch::jump_higher_half(
-            ventry.as_ptr(),
-            hid,
-            vdtb,
-            vdyn,
-            phys_to_kernel(stack_end_p!()),
-        );
-    }
 }
 
 pub struct VmsAccessGuard<'a, F>
@@ -378,7 +514,8 @@ impl<F: Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
             .guard
             .as_mut()
             .ok_or(VmsError::RootTableUninitialized)?;
-        unsafe { Ok(wrapper.root_pt(self.p2v)) }
+        // Safety: The root page table pointer is never null and always valid; the mutable reference is locked behind a mutex
+        unsafe { Ok(wrapper.root_pt().as_mut_unchecked()) }
     }
 
     pub fn map_page(
@@ -404,6 +541,19 @@ impl<F: Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
         let unmapped_size = arch::unmap_page(root_pt, va, p2v).map_err(|e| VmsError::Unmap(e))?;
         self.flush = true;
         Ok(unmapped_size)
+    }
+
+    fn attach_virt(&mut self, va: VAddr) -> Result<(), VmsError> {
+        if self.guard.is_none() {
+            return Err(VmsError::RootTableUninitialized);
+        }
+
+        let old = self.guard.take().unwrap();
+        *self.guard = Some(match old {
+            SendRootTable::Raw(alloc) => SendRootTable::Virtual(alloc, va.as_mut()),
+            SendRootTable::Virtual(_, _) => return Err(VmsError::RootTableAlreadyInitialized),
+        });
+        Ok(())
     }
 }
 

@@ -4,7 +4,8 @@
 _trap_entry:
 # Load trap handler stack pointer from sscratch
     csrrw           tp, sscratch, tp
-    amoswap.d.aq    sp, sp, (tp)
+    sd              sp, 16(tp)
+    ld              sp, 8(tp)
     addi            sp, sp, -288
 
 # Save registers (except tp and sp)
@@ -101,7 +102,7 @@ _trap_entry:
 
 # Restore context stack pointer
     addi            sp, sp, 288
-    amoswap.d.rl    sp, sp, (tp)
+    ld              sp, 16(tp)
     csrrw           tp, sscratch, tp
 
     sret

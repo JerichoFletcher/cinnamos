@@ -10,8 +10,9 @@ use crate::{
 
 #[derive(Debug)]
 pub struct BumpAllocator {
-    curr_addr: PAddr,
-    end_addr: PAddr,
+    start: PAddr,
+    next: PAddr,
+    end: PAddr,
 }
 
 impl BumpAllocator {
@@ -20,8 +21,9 @@ impl BumpAllocator {
     pub unsafe fn new(start: PAddr, end: PAddr) -> Self {
         debug_assert!(start < end);
         Self {
-            curr_addr: start,
-            end_addr: end,
+            start,
+            next: start,
+            end,
         }
     }
 
@@ -49,18 +51,18 @@ impl BumpAllocator {
     /// # Safety
     /// `layout` must be a non-zero-sized layout.
     unsafe fn alloc(&mut self, layout: Layout) -> Option<PAddr> {
-        let head = self.curr_addr.addr();
+        let head = self.next.addr();
         let alloc = if head % layout.align() == 0 {
             head
         } else {
             head.next_multiple_of(layout.align())
         };
         let next = alloc + layout.size();
-        if next > self.end_addr.addr() {
+        if next > self.end.addr() {
             return None;
         }
 
-        self.curr_addr = PAddr::new(next);
+        self.next = PAddr::new(next);
         Some(PAddr::new(alloc))
     }
 }
@@ -68,12 +70,14 @@ impl BumpAllocator {
 static BUMP_ALLOC: Mutex<Option<BumpAllocator>> = Mutex::new(None);
 
 pub fn init() {
-    *BUMP_ALLOC.lock() = unsafe {
-        Some(BumpAllocator {
-            curr_addr: bump_heap_start_p!(),
-            end_addr: bump_heap_end_p!(),
-        })
-    };
+    *BUMP_ALLOC.lock() =
+        unsafe { Some(BumpAllocator::new(bump_heap_start_p!(), bump_heap_end_p!())) };
+}
+
+pub fn get_bump_area() -> Option<(PAddr, PAddr, PAddr)> {
+    let g = BUMP_ALLOC.lock();
+    let bump = g.as_ref()?;
+    Some((bump.start, bump.next, bump.end))
 }
 
 /// # Safety

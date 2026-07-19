@@ -2,9 +2,9 @@ use core::ptr::NonNull;
 
 use spin::Mutex;
 
-use crate::mem::PAGE_SIZE;
+use crate::mem::{PAGE_SIZE, palloc};
 
-const LO_HEAP_SIZE: usize = 2 * PAGE_SIZE;
+const LO_HEAP_PAGES: usize = 2;
 
 const SIZES_LO: [usize; 4] = [64, 128, 256, 512];
 
@@ -32,11 +32,13 @@ impl FreeListHeap {
                 let next = unsafe { block.as_ref().next };
                 *head = next;
                 block.as_ptr().cast()
-            },
-            None => {
-                // TODO: Allocate more pages
-                core::ptr::null_mut()
             }
+            None => match palloc::alloc(LO_HEAP_PAGES) {
+                Some(alloc) => {
+                    todo!("Map new frame")
+                }
+                None => core::ptr::null_mut(),
+            },
         }
     }
 }

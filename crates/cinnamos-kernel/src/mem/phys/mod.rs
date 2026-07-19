@@ -1,18 +1,12 @@
-mod freelist;
-// mod buddy;
-pub use freelist::FreeListAllocator as FrameAllocator;
-pub use freelist::FreeListFrameAlloc as FrameAllocation;
+pub mod buddy;
 
 use crate::arch::PAddr;
 
-pub trait FrameAlloc {
+pub trait PhysFrameAlloc {
     fn base_addr(&self) -> PAddr;
 }
 
-pub trait PhysFrameAllocator<T: FrameAlloc> {
-    fn size(start: PAddr, end: PAddr) -> usize;
-
-    fn alloc(&mut self, size_bytes: usize) -> Option<T>;
+pub trait PhysFrameAllocator<T: PhysFrameAlloc> {
+    fn alloc(&mut self, frame_count: usize) -> Option<T>;
     fn dealloc(&mut self, handle: &mut T);
-    fn reserve(&mut self, start: PAddr, end: PAddr);
 }

@@ -2,12 +2,12 @@ pub use crate::arch::PAGE_SIZE;
 use crate::arch::PAddr;
 
 mod phys;
-pub use phys::FrameAlloc;
+pub use phys::PhysFrameAlloc;
 
-pub mod palloc;
-// pub mod valloc;
 pub mod bump;
 pub mod heap;
+pub mod palloc;
+// pub mod valloc;
 pub mod vms;
 
 #[derive(Debug, Clone, Copy)]
@@ -74,14 +74,6 @@ impl SizedMemoryRegion {
     /// `size` must be non-zero.
     pub unsafe fn new_unchecked(base: PAddr, size: usize) -> Self {
         Self { base, size }
-    }
-
-    pub fn start(&self) -> PAddr {
-        self.base
-    }
-
-    pub fn size(&self) -> usize {
-        self.size
     }
 
     pub fn end(&self) -> PAddr {

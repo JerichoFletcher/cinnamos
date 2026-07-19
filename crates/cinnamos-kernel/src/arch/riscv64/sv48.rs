@@ -3,7 +3,7 @@ use core::mem::MaybeUninit;
 use bitflags::bitflags;
 use riscv::{register::satp::{self, Satp}};
 
-use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{FrameAlloc, palloc::{self, Alloc}}};
+use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{PhysFrameAlloc, palloc::{self, Alloc}}};
 
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
@@ -159,6 +159,16 @@ impl PageTableAllocMap {
             core::mem::forget(v);
         }
     }
+
+    pub fn take_new_allocs(self) -> impl Iterator<Item = Alloc> {
+        core::iter::from_coroutine(#[coroutine] || {
+            for v in self.allocs.into_iter().rev() {
+                if let PageTableAlloc::New(alloc) = v {
+                    yield alloc
+                }
+            }
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -270,8 +280,9 @@ pub fn activate_vmap(root_pt_pa: PAddr) -> usize {
     unsafe { satp::write(satp); }
     satp = satp::read();
 
+    
     let max_asid = satp.asid();
-    satp.set_ppn(root_pt_pa.addr() >> 12);
+    satp.set_ppn(root_pt_pa.ppn());
     satp.set_asid(0);
     satp.set_mode(satp::Mode::Sv48);
     unsafe { satp::write(satp); }

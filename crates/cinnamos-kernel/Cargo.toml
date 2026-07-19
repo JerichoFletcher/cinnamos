@@ -13,8 +13,7 @@ test = false
 bench = false
 
 [dependencies]
-# bootinfo = { path = "../bootinfo" }
-# structs = { path = "../structs" }
+structs = { path = "../structs" }
 riscv = { version = "0.16.0", features = ["s-mode"] }
 bitflags = "2.13.0"
 sbi = "0.3.0"

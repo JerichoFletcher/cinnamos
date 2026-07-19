@@ -54,7 +54,7 @@ SECTIONS {
     PROVIDE(_trap_stack_end = .);
 
     PROVIDE(_bump_heap_start = .);
-    . += 0x10000;
+    . += 0x20000;
     PROVIDE(_bump_heap_end = .);
     PROVIDE(_kmem_end = .);
 

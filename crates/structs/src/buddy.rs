@@ -1,175 +1,231 @@
-use core::{alloc::Layout, ptr::NonNull, u8};
+use core::fmt::Debug;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuddyTreeNode {
-    Free,
-    Used,
-    Split { max_free_order: u8 },
+pub const MAX_ORDER: usize = 32;
+
+pub type BlockIndex = u32;
+
+pub struct BuddyAllocator<'a> {
+    order: usize,
+    free_lists: [BlockIndex; MAX_ORDER],
+    next: &'a mut [BlockIndex],
+    bitmap: &'a mut [u64],
+    total: usize,
+    free: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct BuddyTreeAllocation {
-    start: usize,
-    count: usize,
-}
-
-impl BuddyTreeAllocation {
-    pub const fn start(&self) -> usize {
-        self.start
+impl<'a> BuddyAllocator<'a> {
+    pub const fn next_buf_size(order: usize) -> usize {
+        2 << order
     }
 
-    pub const fn count(&self) -> usize {
-        self.count
-    }
-
-    pub const fn end(&self) -> usize {
-        self.start + self.count
-    }
-}
-
-pub struct BuddyTreeAllocator {
-    max_order: u8,
-    nodes: [BuddyTreeNode],
-}
-
-impl BuddyTreeAllocator {
-    pub fn layout(max_order: u8) -> Option<Layout> {
-        let layout = Layout::new::<u8>();
-        let node_count: usize = (1 << (max_order + 1)) - 1;
-        let (layout, _) = layout
-            .extend(Layout::new::<BuddyTreeNode>().repeat(node_count).ok()?.0)
-            .ok()?;
-        Some(layout.pad_to_align())
+    pub fn bitmap_buf_size(order: usize) -> usize {
+        (1 << order).max(64) / 64
     }
 
     /// # Safety
-    /// `at` must point to a memory region that respects [BuddyTreeAllocator::layout](BuddyTreeAllocator::layout).
-    pub unsafe fn create(at: *mut (), max_order: u8) -> NonNull<Self> {
-        let node_count: usize = (1 << (max_order + 1)) - 1;
-        let ptr: *mut Self = core::ptr::from_raw_parts_mut(at, node_count);
+    /// - `next` must point to an aligned buffer of [BlockIndex](BlockIndex) with at least [next_buf_size(order)](Self::next_buf_size) items of capacity.
+    /// - `bitmap` must point to an aligned buffer of [u64](u64) with at least [bitmap_buf_size(order)](Self::bitmap_buf_size) items of capacity.
+    pub unsafe fn new(order: usize, next: *mut BlockIndex, bitmap: *mut u64) -> Self {
+        assert!(order < MAX_ORDER, "Invalid order: {}", order);
+        let next_size = Self::next_buf_size(order);
+        let bitmap_size = Self::bitmap_buf_size(order);
 
-        unsafe {
-            (&raw mut (*ptr).max_order).write(max_order);
+        let next =
+            unsafe { core::ptr::slice_from_raw_parts_mut(next, next_size).as_mut_unchecked() };
+        let bitmap =
+            unsafe { core::ptr::slice_from_raw_parts_mut(bitmap, bitmap_size).as_mut_unchecked() };
+
+        Self {
+            order,
+            free_lists: [BlockIndex::MAX; MAX_ORDER],
+            next,
+            bitmap,
+            total: 0,
+            free: 0,
         }
-        for i in 0..node_count {
-            unsafe {
-                (&raw mut (*ptr).nodes[i]).write(BuddyTreeNode::Free);
+    }
+
+    pub fn alloc(&mut self, order: usize) -> Option<BlockIndex> {
+        assert!(order < MAX_ORDER, "Invalid order: {}", order);
+
+        // Find smallest free_order >= order
+        let free_order = (order..=self.order).find(|&o| self.free_lists[o] != BlockIndex::MAX)?;
+
+        // Pop block from free list
+        let block = self.free_lists[free_order];
+        let idx = self.next_idx(free_order, block);
+        self.free_lists[free_order] = self.next[idx];
+        self.next[idx] = BlockIndex::MAX;
+        self.bitmap_bit_toggle(free_order, block);
+
+        // Split and push children
+        let mut current = block;
+        for o in (order..free_order).rev() {
+            let child_l = current;
+            let child_r = child_l + (1 << o);
+
+            self.free_list_push(o, child_r);
+            self.bitmap_bit_toggle(o, child_r);
+
+            current = child_l;
+        }
+
+        self.free -= 1 << order;
+        Some(current)
+    }
+
+    pub fn dealloc(&mut self, order: usize, block: BlockIndex) {
+        assert!(order < MAX_ORDER, "Invalid order: {}", order);
+
+        let mut curr_order = order;
+        let mut curr_block = block;
+
+        loop {
+            self.bitmap_bit_toggle(curr_order, curr_block);
+
+            if curr_order < self.order && !self.bitmap_bit_get(curr_order, curr_block) {
+                // Bit is 0: buddy is also deallocated and safe to merge
+                let buddy = Self::buddy_of(curr_order, curr_block);
+                self.free_list_remove(curr_order, buddy);
+                curr_block &= !(1 << curr_order);
+                curr_order += 1;
+            } else {
+                break;
             }
         }
-        unsafe { NonNull::new_unchecked(ptr) }
+        self.free_list_push(curr_order, curr_block);
+        self.free += 1 << order;
     }
 
-    pub fn alloc(&mut self, count: usize) -> Option<BuddyTreeAllocation> {
-        let (eff_count, eff_order) = Self::get_effective_count(count);
-        if eff_order > self.max_order {
-            return None;
+    pub fn add_blocks(&mut self, start: BlockIndex, count: BlockIndex) {
+        assert!(
+            start.checked_add(count).is_some(),
+            "Block index overflow: {} + {}",
+            start,
+            count,
+        );
+        assert!(
+            start + count <= self.max_block_count(),
+            "Blocks out of range: {} vs. {}",
+            start + count,
+            self.max_block_count(),
+        );
+
+        let mut idx = start;
+        let end = start + count;
+
+        while idx < end {
+            let remaining = end - idx;
+
+            // Available order by alignment
+            let align_order = if idx == 0 {
+                self.order
+            } else {
+                (idx.trailing_zeros() as usize).min(self.order)
+            };
+
+            // Available order by size
+            // size_order = floor(log2(remaining))
+            let size_order = (BlockIndex::BITS - 1 - remaining.leading_zeros()) as usize;
+            let size_order = size_order.min(self.order);
+
+            // Choose smaller available order
+            let eff_order = align_order.min(size_order);
+            let eff_size = 1 << eff_order;
+
+            self.dealloc(eff_order, idx);
+            self.total += eff_size;
+
+            idx += eff_size as BlockIndex;
         }
+    }
 
-        let mut i: usize = 0;
-        for order in ((eff_order + 1)..=self.max_order).rev() {
-            match self.nodes[i] {
-                BuddyTreeNode::Used => return None,
-                BuddyTreeNode::Free => {
-                    self.nodes[i] = BuddyTreeNode::Split {
-                        max_free_order: order - 1,
-                    };
+    pub const fn max_order(&self) -> usize {
+        self.order
+    }
 
-                    let (l, r) = Self::children_of(i);
-                    self.nodes[l] = BuddyTreeNode::Free;
-                    self.nodes[r] = BuddyTreeNode::Free;
-                    i = l;
+    pub const fn max_block_count(&self) -> BlockIndex {
+        1 << self.order
+    }
+
+    pub const fn free_count(&self) -> usize {
+        self.free
+    }
+
+    fn free_list_push(&mut self, order: usize, block: BlockIndex) {
+        debug_assert_eq!(block % (1 << order), 0);
+        debug_assert!(block <= self.max_block_count());
+        
+        let idx = self.next_idx(order, block);
+        self.next[idx] = self.free_lists[order];
+        self.free_lists[order] = block;
+    }
+    
+    fn free_list_remove(&mut self, order: usize, block: BlockIndex) {
+        debug_assert_eq!(block % (1 << order), 0);
+        debug_assert!(block <= self.max_block_count());
+
+        let mut prev: Option<usize> = None;
+        let mut curr = self.free_lists[order];
+
+        while curr != BlockIndex::MAX {
+            let curr_idx = self.next_idx(order, curr);
+            if curr == block {
+                if let Some(p) = prev {
+                    self.next[p] = self.next[curr_idx];
+                } else {
+                    self.free_lists[order] = self.next[curr_idx];
                 }
-                BuddyTreeNode::Split { max_free_order } => {
-                    if eff_order > max_free_order {
-                        return None;
-                    }
-                    let (l, r) = Self::children_of(i);
-
-                    if let BuddyTreeNode::Free = self.nodes[l] {
-                        i = l;
-                    } else if let BuddyTreeNode::Free = self.nodes[r] {
-                        i = r;
-                    } else if let BuddyTreeNode::Split { max_free_order } = self.nodes[l]
-                        && max_free_order != u8::MAX
-                        && eff_order < max_free_order
-                    {
-                        i = l;
-                    } else if let BuddyTreeNode::Split { max_free_order } = self.nodes[r]
-                        && max_free_order != u8::MAX
-                        && eff_order < max_free_order
-                    {
-                        i = r;
-                    } else {
-                        return None;
-                    }
-                }
+                self.next[curr_idx] = BlockIndex::MAX;
+                return;
             }
+            prev = Some(curr_idx);
+            curr = self.next[curr_idx];
         }
-
-        self.nodes[i] = BuddyTreeNode::Used;
-        let a = BuddyTreeAllocation {
-            start: i,
-            count: eff_count,
-        };
-
-        i = Self::parent_of(i);
-        for order in (eff_order + 1)..=self.max_order {
-            if let BuddyTreeNode::Split { max_free_order: _ } = self.nodes[i] {
-                let (l, r) = Self::children_of(i);
-                if let BuddyTreeNode::Used = self.nodes[l]
-                    && let BuddyTreeNode::Used = self.nodes[r]
-                {
-                    self.nodes[i] = BuddyTreeNode::Split {
-                        max_free_order: u8::MAX,
-                    };
-                } else if let BuddyTreeNode::Free = self.nodes[l] {
-                    self.nodes[i] = BuddyTreeNode::Split {
-                        max_free_order: order,
-                    };
-                } else if let BuddyTreeNode::Free = self.nodes[r] {
-                    self.nodes[i] = BuddyTreeNode::Split {
-                        max_free_order: order,
-                    };
-                } else if let BuddyTreeNode::Split {
-                    max_free_order: l_ord,
-                } = self.nodes[l]
-                    && let BuddyTreeNode::Split {
-                        max_free_order: r_ord,
-                    } = self.nodes[r]
-                {
-                    let ord = if l_ord == u8::MAX {
-                        r_ord
-                    } else if r_ord == u8::MAX {
-                        l_ord
-                    } else {
-                        l_ord.max(r_ord)
-                    };
-                    self.nodes[i] = BuddyTreeNode::Split {
-                        max_free_order: ord,
-                    };
-                }
-            }
-        }
-        Some(a)
+        panic!("Block {} not found at order {}", block, order);
     }
 
-    pub const fn total_page_count(&self) -> usize {
-        1 << self.max_order
+    const fn order_offset(&self, order: usize) -> usize {
+        (2 << self.order) - (2 << (self.order - order))
     }
 
-    const fn get_effective_count(count: usize) -> (usize, u8) {
-        let eff_count = count.next_power_of_two();
-        let eff_order = eff_count.trailing_zeros() as u8;
-        (eff_count, eff_order)
+    const fn next_idx(&self, order: usize, block: BlockIndex) -> usize {
+        self.order_offset(order) + (block as usize >> (order + 1))
     }
 
-    #[inline]
-    const fn children_of(index: usize) -> (usize, usize) {
-        (2 * index + 1, 2 * index + 2)
+    fn bitmap_bit_get(&self, order: usize, block: BlockIndex) -> bool {
+        debug_assert_eq!(block % (1 << order), 0);
+        debug_assert!(block <= self.max_block_count());
+
+        let flat = self.order_offset(order) / 2 + (block as usize >> (order + 1));
+        let idx = flat / 64;
+        let bit = flat % 64;
+        (self.bitmap[idx] >> bit) & 1 == 1
     }
 
-    #[inline]
-    const fn parent_of(index: usize) -> usize {
-        index / 2
+    fn bitmap_bit_toggle(&mut self, order: usize, block: BlockIndex) {
+        debug_assert_eq!(block % (1 << order), 0);
+        debug_assert!(block <= self.max_block_count());
+
+        let flat = self.order_offset(order) / 2 + (block as usize >> (order + 1));
+        let idx = flat / 64;
+        let bit = flat % 64;
+        self.bitmap[idx] ^= 1 << bit;
+    }
+
+    fn buddy_of(order: usize, block: BlockIndex) -> BlockIndex {
+        debug_assert_eq!(block % (1 << order), 0);
+        block ^ (1 << order)
+    }
+}
+
+impl Debug for BuddyAllocator<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BuddyAllocator")
+            .field("order", &self.order)
+            .field("total", &self.total)
+            .field("free", &self.free)
+            .field("free_lists", &self.free_lists.split_at(self.order + 1).0)
+            .finish()
     }
 }

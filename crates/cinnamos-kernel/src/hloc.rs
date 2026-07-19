@@ -8,8 +8,9 @@ use crate::{
 #[repr(C)]
 #[derive(Debug)]
 pub struct HartLocal {
-    pub kernel_stack_ptr: VAddr,
     pub hid: usize,
+    pub kernel_stack_ptr: VAddr,
+    pub scratch: usize,
 }
 
 impl HartLocal {
@@ -17,16 +18,16 @@ impl HartLocal {
         Self {
             kernel_stack_ptr,
             hid,
+            scratch: 0,
         }
     }
 }
 
 static mut BOOT_HLOC: MaybeUninit<HartLocal> = MaybeUninit::zeroed();
 
-/// # Safety
-/// This function can only be safely called by the boot hart.
+/// Should only be called by the boot hart
 #[inline]
-pub unsafe fn load_boot_hart_local(hid: usize) {
+pub fn load_boot_hart_local(hid: usize) {
     unsafe {
         let ptr = &raw mut (BOOT_HLOC) as *mut HartLocal;
         ptr.write(HartLocal::new(hid, trap_stack_end_v!()));

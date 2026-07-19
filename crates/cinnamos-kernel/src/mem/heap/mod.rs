@@ -2,8 +2,8 @@ use core::alloc::{GlobalAlloc, Layout};
 
 use spin::Mutex;
 
+mod freelist;
 mod linked;
-// mod freelist;
 
 use super::bump;
 use crate::{
@@ -63,7 +63,6 @@ unsafe impl GlobalAlloc for HeapImpl {
 static ALLOCATOR: HeapImpl = HeapImpl;
 
 pub fn init_bump() {
-    // let heap = HeapAllocator::new(VAddr::new(HEAP_MAP_BASE), HEAP_BUMP_SIZE)?;
     *HEAP.lock() = Some(SendHeap::Bump(&mem::vms::phys_identity));
 }
 
@@ -78,5 +77,5 @@ pub fn shift_bump(p2v: &'static impl Fn(PAddr) -> VAddr) {
 }
 
 pub fn init_heap() -> Result<(), HeapError> {
-    todo!()
+    todo!("Initialize heap allocator")
 }
