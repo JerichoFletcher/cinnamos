@@ -2,7 +2,7 @@ use core::mem::MaybeUninit;
 
 use crate::{
     arch::{self, VAddr},
-    *,
+    sym::trap_stack_end_v,
 };
 
 #[repr(C)]
@@ -30,7 +30,7 @@ static mut BOOT_HLOC: MaybeUninit<HartLocal> = MaybeUninit::zeroed();
 pub fn load_boot_hart_local(hid: usize) {
     unsafe {
         let ptr = &raw mut (BOOT_HLOC) as *mut HartLocal;
-        ptr.write(HartLocal::new(hid, trap_stack_end_v!()));
+        ptr.write(HartLocal::new(hid, trap_stack_end_v()));
         arch::load_boot_hart_local(ptr);
     }
 }

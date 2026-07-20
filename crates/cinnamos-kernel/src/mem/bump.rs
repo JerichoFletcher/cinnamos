@@ -4,8 +4,8 @@ use spin::Mutex;
 
 use crate::{
     arch::{PAddr, VAddr},
-    bump_heap_end_p, bump_heap_start_p,
     mem::PAGE_SIZE,
+    sym::{bump_heap_end_p, bump_heap_start_p},
 };
 
 #[derive(Debug)]
@@ -71,7 +71,7 @@ static BUMP_ALLOC: Mutex<Option<BumpAllocator>> = Mutex::new(None);
 
 pub fn init() {
     *BUMP_ALLOC.lock() =
-        unsafe { Some(BumpAllocator::new(bump_heap_start_p!(), bump_heap_end_p!())) };
+        unsafe { Some(BumpAllocator::new(bump_heap_start_p(), bump_heap_end_p())) };
 }
 
 pub fn get_bump_area() -> Option<(PAddr, PAddr, PAddr)> {

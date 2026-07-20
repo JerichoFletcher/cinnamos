@@ -1,349 +1,59 @@
-#[macro_export]
-macro_rules! kernel_start_v {
-    () => {{
-        unsafe extern "C" {
-            static _kernel_start: u8;
+use crate::arch::{PAddr, VAddr};
+use pastey::paste;
+
+macro_rules! def_symbols {
+    ($name:ident) => {
+        paste! {
+            #[inline]
+            pub fn [<$name _start_v>]() -> VAddr {
+                unsafe extern "C" {
+                    static [<_ $name _start>]: u8;
+                }
+                VAddr::from_ptr(&raw const [<_ $name _start>])
+            }
+
+            #[inline]
+            pub fn [<$name _start_p>]() -> PAddr {
+                unsafe extern "C" {
+                    static [<_ $name _start>]: u8;
+                }
+                PAddr::new((&raw const ([<_ $name _start>]) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()))
+            }
+
+            #[inline]
+            pub fn [<$name _end_v>]() -> VAddr {
+                unsafe extern "C" {
+                    static [<_ $name _end>]: u8;
+                }
+                VAddr::from_ptr(&raw const [<_ $name _end>])
+            }
+
+            #[inline]
+            pub fn [<$name _end_p>]() -> PAddr {
+                unsafe extern "C" {
+                    static [<_ $name _end>]: u8;
+                }
+                PAddr::new((&raw const ([<_ $name _end>]) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()))
+            }
+
+            #[inline]
+            pub fn [<$name _size>]() -> usize {
+                unsafe extern "C" {
+                    static [<_ $name _start>]: u8;
+                    static [<_ $name _end>]: u8;
+                }
+                (&raw const [<_ $name _end>] as usize) - (&raw const [<_ $name _start>] as usize)
+            }
         }
-        $crate::arch::VAddr::from_ptr(&_kernel_start)
-    }};
+    };
 }
 
-#[macro_export]
-macro_rules! kernel_start_p {
-    () => {{
-        unsafe extern "C" {
-            static _kernel_start: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_kernel_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! kernel_end_v {
-    () => {{
-        unsafe extern "C" {
-            static _kernel_end: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_kernel_end)
-    }};
-}
-
-#[macro_export]
-macro_rules! kernel_end_p {
-    () => {{
-        unsafe extern "C" {
-            static _kernel_end: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_kernel_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! text_start_v {
-    () => {{
-        unsafe extern "C" {
-            static _text_start: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_text_start)
-    }};
-}
-
-#[macro_export]
-macro_rules! text_start_p {
-    () => {{
-        unsafe extern "C" {
-            static _text_start: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_text_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! text_end_v {
-    () => {{
-        unsafe extern "C" {
-            static _text_end: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_text_end)
-    }};
-}
-
-#[macro_export]
-macro_rules! text_end_p {
-    () => {{
-        unsafe extern "C" {
-            static _text_end: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_text_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! rodata_start_v {
-    () => {{
-        unsafe extern "C" {
-            static _rodata_start: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_rodata_start)
-    }};
-}
-
-#[macro_export]
-macro_rules! rodata_start_p {
-    () => {{
-        unsafe extern "C" {
-            static _rodata_start: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_rodata_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! rodata_end_v {
-    () => {{
-        unsafe extern "C" {
-            static _rodata_end: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_rodata_end)
-    }};
-}
-
-#[macro_export]
-macro_rules! rodata_end_p {
-    () => {{
-        unsafe extern "C" {
-            static _rodata_end: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_rodata_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! data_start_v {
-    () => {{
-        unsafe extern "C" {
-            static _data_start: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_data_start)
-    }};
-}
-
-#[macro_export]
-macro_rules! data_start_p {
-    () => {{
-        unsafe extern "C" {
-            static _data_start: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_data_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! data_end_v {
-    () => {{
-        unsafe extern "C" {
-            static _data_end: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_data_end)
-    }};
-}
-
-#[macro_export]
-macro_rules! data_end_p {
-    () => {{
-        unsafe extern "C" {
-            static _data_end: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_data_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! kmem_start_v {
-    () => {{
-        unsafe extern "C" {
-            static _kmem_start: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_kmem_start)
-    }};
-}
-
-#[macro_export]
-macro_rules! kmem_start_p {
-    () => {{
-        unsafe extern "C" {
-            static _kmem_start: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_kmem_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! kmem_end_v {
-    () => {{
-        unsafe extern "C" {
-            static _kmem_end: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_kmem_end)
-    }};
-}
-
-#[macro_export]
-macro_rules! kmem_end_p {
-    () => {{
-        unsafe extern "C" {
-            static _kmem_end: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_kmem_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! stack_start_v {
-    () => {{
-        unsafe extern "C" {
-            static _stack_start: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_stack_start)
-    }};
-}
-
-#[macro_export]
-macro_rules! stack_start_p {
-    () => {{
-        unsafe extern "C" {
-            static _stack_start: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_stack_start) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! stack_end_v {
-    () => {{
-        unsafe extern "C" {
-            static _stack_end: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_stack_end)
-    }};
-}
-
-#[macro_export]
-macro_rules! stack_end_p {
-    () => {{
-        unsafe extern "C" {
-            static _stack_end: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_stack_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! trap_stack_start_v {
-    () => {{
-        unsafe extern "C" {
-            static _trap_stack_start: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_trap_stack_start)
-    }};
-}
-
-#[macro_export]
-macro_rules! trap_stack_start_p {
-    () => ({
-        unsafe extern "C" { static _trap_stack_start: u8; }
-        $crate::arch::PAddr:new((&raw const _trap_stack_start() as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()))
-    })
-}
-
-#[macro_export]
-macro_rules! trap_stack_end_v {
-    () => {{
-        unsafe extern "C" {
-            static _trap_stack_end: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_trap_stack_end)
-    }};
-}
-
-#[macro_export]
-macro_rules! trap_stack_end_p {
-    () => {{
-        unsafe extern "C" {
-            static _trap_stack_end: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_trap_stack_end) as usize)
-                .wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! bump_heap_start_v {
-    () => {{
-        unsafe extern "C" {
-            static _bump_heap_start: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_bump_heap_start)
-    }};
-}
-
-#[macro_export]
-macro_rules! bump_heap_start_p {
-    () => {{
-        unsafe extern "C" {
-            static _bump_heap_start: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_bump_heap_start) as usize)
-                .wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! bump_heap_end_v {
-    () => {{
-        unsafe extern "C" {
-            static _bump_heap_end: u8;
-        }
-        $crate::arch::VAddr::from_ptr(&_bump_heap_end)
-    }};
-}
-
-#[macro_export]
-macro_rules! bump_heap_end_p {
-    () => {{
-        unsafe extern "C" {
-            static _bump_heap_end: u8;
-        }
-        $crate::arch::PAddr::new(
-            (&raw const (_bump_heap_end) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()),
-        )
-    }};
-}
+def_symbols!(kernel);
+def_symbols!(text);
+def_symbols!(rodata);
+def_symbols!(data);
+def_symbols!(bss);
+def_symbols!(kmem);
+def_symbols!(stack);
+def_symbols!(trap_stack);
+def_symbols!(bump_heap);

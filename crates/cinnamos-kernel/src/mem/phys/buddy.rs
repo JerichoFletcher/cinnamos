@@ -133,6 +133,8 @@ impl<'a> BuddyFrameAllocator<'a> {
         let align_order = BuddyRegion::max_align_order_of(reg.base);
 
         if size_order != align_order {
+            // Base address alignment max order doesn't match max order for region size
+            // Split the region into L and R with max-order-aligned base addresses
             let r_base = PAddr::new(reg.base.addr().next_multiple_of(PAGE_SIZE << size_order));
 
             let mut l_base = r_base;
@@ -146,6 +148,7 @@ impl<'a> BuddyFrameAllocator<'a> {
             let r_size = reg.end() - r_base;
             let r_order = BuddyRegion::order_of_size(r_size);
 
+            // Carve out memory for L and R metadata buffer (excluded from managed region)
             let mut buf_ptr = reg.base;
             let l_bitmap_ptr = buf_ptr;
             buf_ptr = buf_ptr + BuddyAllocator::bitmap_buf_size(l_order) * size_of::<u64>();
@@ -163,12 +166,15 @@ impl<'a> BuddyFrameAllocator<'a> {
                 while pa < pa_end {
                     let va = phys_to_virt(pa);
                     let size = PageSize::select_size(va, pa, pa_end - pa).unwrap();
-                    let _ = g.map_page(va, pa, size, PTEFlags::RW).map(|o| o.forget());
+                    let _ = g
+                        .map_page(va, pa, size, PTEFlags::GLOBAL | PTEFlags::RW)
+                        .map(|o| o.forget());
                     pa = pa + size.size();
                 }
             });
             let l_start = buf_ptr.next_multiple_of(PAGE_SIZE);
 
+            // Only actually create the allocator for L if metadata buffers don't exceed the size of L
             if l_start < r_base {
                 let mut l_alloc = unsafe {
                     BuddyRegion::new(
@@ -191,6 +197,7 @@ impl<'a> BuddyFrameAllocator<'a> {
                 );
             }
 
+            // Now create the allocator for R
             let mut r_alloc = unsafe {
                 BuddyRegion::new(
                     self.regions.len(),
@@ -212,6 +219,7 @@ impl<'a> BuddyFrameAllocator<'a> {
                 reg.end()
             );
         } else {
+            // Carve out memory for L and R metadata buffer (excluded from managed region)
             let mut buf_ptr = reg.base;
             let bitmap_ptr = buf_ptr;
             buf_ptr = buf_ptr + BuddyAllocator::bitmap_buf_size(size_order) * size_of::<u64>();
@@ -225,7 +233,9 @@ impl<'a> BuddyFrameAllocator<'a> {
                 while pa < pa_end {
                     let va = phys_to_virt(pa);
                     let size = PageSize::select_size(va, pa, pa_end - pa).unwrap();
-                    let _ = g.map_page(va, pa, size, PTEFlags::RW).map(|o| o.forget());
+                    let _ = g
+                        .map_page(va, pa, size, PTEFlags::GLOBAL | PTEFlags::RW)
+                        .map(|o| o.forget());
                     pa = pa + size.size();
                 }
             });

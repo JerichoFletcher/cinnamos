@@ -7,6 +7,7 @@ use spin::{Mutex, MutexGuard, Spin};
 use crate::{
     arch::*,
     mem::{PAGE_SIZE, PhysFrameAlloc, SizedMemoryRegion, palloc::Alloc},
+    sym::*,
     *,
 };
 
@@ -53,8 +54,8 @@ pub struct VirtualMemoryInfo {
 #[macro_export]
 macro_rules! phys_to_kernel_dynslide {
     () => {{
-        use $crate::{arch::KERNEL_LOAD_BASE, kernel_start_v};
-        kernel_start_v!().addr().wrapping_sub(KERNEL_LOAD_BASE)
+        use $crate::{arch::KERNEL_LOAD_BASE, sym::kernel_start_v};
+        kernel_start_v().addr().wrapping_sub(KERNEL_LOAD_BASE)
     }};
 }
 
@@ -98,158 +99,156 @@ pub fn init_kernel_map(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, Vm
     acquire_with_p2v(&VAddr::identity, |mut g| {
         let mut pt_frames = Vec::with_capacity(32);
 
-        unsafe {
-            println!(
-                "id-map text\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
-                text_start_p!(),
-                text_end_p!(),
-                VAddr::identity(text_start_p!()),
-                VAddr::identity(text_end_p!()),
+        println!(
+            "id-map text\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            text_start_p(),
+            text_end_p(),
+            VAddr::identity(text_start_p()),
+            VAddr::identity(text_end_p()),
+        );
+        let mut pa = text_start_p();
+        while pa < text_end_p() {
+            let va = VAddr::identity(pa);
+            let next_size =
+                PageSize::select_size(va, pa, text_end_p() - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::RX)?
+                    .take_new_allocs(),
             );
-            let mut pa = text_start_p!();
-            while pa < text_end_p!() {
-                let va = VAddr::identity(pa);
-                let next_size =
-                    PageSize::select_size(va, pa, text_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-                pt_frames.extend(
-                    g.map_page(va, pa, next_size, PTEFlags::RX)?
-                        .take_new_allocs(),
-                );
-                pa = pa + next_size.size();
-            }
+            pa = pa + next_size.size();
+        }
 
-            println!(
-                "id-map rodata\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
-                rodata_start_p!(),
-                rodata_end_p!(),
-                VAddr::identity(rodata_start_p!()),
-                VAddr::identity(rodata_end_p!()),
+        println!(
+            "id-map rodata\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            rodata_start_p(),
+            rodata_end_p(),
+            VAddr::identity(rodata_start_p()),
+            VAddr::identity(rodata_end_p()),
+        );
+        let mut pa = rodata_start_p();
+        while pa < rodata_end_p() {
+            let va = VAddr::identity(pa);
+            let next_size =
+                PageSize::select_size(va, pa, rodata_end_p() - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::READ)?
+                    .take_new_allocs(),
             );
-            let mut pa = rodata_start_p!();
-            while pa < rodata_end_p!() {
-                let va = VAddr::identity(pa);
-                let next_size = PageSize::select_size(va, pa, rodata_end_p!() - pa)
-                    .ok_or(VmsError::Unaligned)?;
-                pt_frames.extend(
-                    g.map_page(va, pa, next_size, PTEFlags::READ)?
-                        .take_new_allocs(),
-                );
-                pa = pa + next_size.size();
-            }
+            pa = pa + next_size.size();
+        }
 
-            println!(
-                "id-map data\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
-                data_start_p!(),
-                data_end_p!(),
-                VAddr::identity(data_start_p!()),
-                VAddr::identity(data_end_p!()),
+        println!(
+            "id-map data\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            data_start_p(),
+            data_end_p(),
+            VAddr::identity(data_start_p()),
+            VAddr::identity(data_end_p()),
+        );
+        let mut pa = data_start_p();
+        while pa < data_end_p() {
+            let va = VAddr::identity(pa);
+            let next_size =
+                PageSize::select_size(va, pa, data_end_p() - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::RW)?
+                    .take_new_allocs(),
             );
-            let mut pa = data_start_p!();
-            while pa < data_end_p!() {
-                let va = VAddr::identity(pa);
-                let next_size =
-                    PageSize::select_size(va, pa, data_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-                pt_frames.extend(
-                    g.map_page(va, pa, next_size, PTEFlags::RW)?
-                        .take_new_allocs(),
-                );
-                pa = pa + next_size.size();
-            }
+            pa = pa + next_size.size();
+        }
 
-            println!(
-                "id-map kmem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
-                kmem_start_p!(),
-                kmem_end_p!(),
-                VAddr::identity(kmem_start_p!()),
-                VAddr::identity(kmem_end_p!()),
+        println!(
+            "id-map kmem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            kmem_start_p(),
+            kmem_end_p(),
+            VAddr::identity(kmem_start_p()),
+            VAddr::identity(kmem_end_p()),
+        );
+        let mut pa = kmem_start_p();
+        while pa < kmem_end_p() {
+            let va = VAddr::identity(pa);
+            let next_size =
+                PageSize::select_size(va, pa, kmem_end_p() - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::RW)?
+                    .take_new_allocs(),
             );
-            let mut pa = kmem_start_p!();
-            while pa < kmem_end_p!() {
-                let va = VAddr::identity(pa);
-                let next_size =
-                    PageSize::select_size(va, pa, kmem_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-                pt_frames.extend(
-                    g.map_page(va, pa, next_size, PTEFlags::RW)?
-                        .take_new_allocs(),
-                );
-                pa = pa + next_size.size();
-            }
+            pa = pa + next_size.size();
+        }
 
-            println!(
-                "hi-map text\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
-                text_start_p!(),
-                text_end_p!(),
-                phys_to_kernel(text_start_p!()),
-                phys_to_kernel(text_end_p!()),
+        println!(
+            "hi-map text\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            text_start_p(),
+            text_end_p(),
+            phys_to_kernel(text_start_p()),
+            phys_to_kernel(text_end_p()),
+        );
+        let mut pa = text_start_p();
+        while pa < text_end_p() {
+            let va = phys_to_kernel(pa);
+            let next_size =
+                PageSize::select_size(va, pa, text_end_p() - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RX)?
+                    .take_new_allocs(),
             );
-            let mut pa = text_start_p!();
-            while pa < text_end_p!() {
-                let va = phys_to_kernel(pa);
-                let next_size =
-                    PageSize::select_size(va, pa, text_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-                pt_frames.extend(
-                    g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RX)?
-                        .take_new_allocs(),
-                );
-                pa = pa + next_size.size();
-            }
+            pa = pa + next_size.size();
+        }
 
-            println!(
-                "hi-map rodata\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
-                rodata_start_p!(),
-                rodata_end_p!(),
-                phys_to_kernel(rodata_start_p!()),
-                phys_to_kernel(rodata_end_p!()),
+        println!(
+            "hi-map rodata\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            rodata_start_p(),
+            rodata_end_p(),
+            phys_to_kernel(rodata_start_p()),
+            phys_to_kernel(rodata_end_p()),
+        );
+        let mut pa = rodata_start_p();
+        while pa < rodata_end_p() {
+            let va = phys_to_kernel(pa);
+            let next_size =
+                PageSize::select_size(va, pa, rodata_end_p() - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::READ)?
+                    .take_new_allocs(),
             );
-            let mut pa = rodata_start_p!();
-            while pa < rodata_end_p!() {
-                let va = phys_to_kernel(pa);
-                let next_size = PageSize::select_size(va, pa, rodata_end_p!() - pa)
-                    .ok_or(VmsError::Unaligned)?;
-                pt_frames.extend(
-                    g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::READ)?
-                        .take_new_allocs(),
-                );
-                pa = pa + next_size.size();
-            }
+            pa = pa + next_size.size();
+        }
 
-            println!(
-                "hi-map data\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
-                data_start_p!(),
-                data_end_p!(),
-                phys_to_kernel(data_start_p!()),
-                phys_to_kernel(data_end_p!()),
+        println!(
+            "hi-map data\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            data_start_p(),
+            data_end_p(),
+            phys_to_kernel(data_start_p()),
+            phys_to_kernel(data_end_p()),
+        );
+        let mut pa = data_start_p();
+        while pa < data_end_p() {
+            let va = phys_to_kernel(pa);
+            let next_size =
+                PageSize::select_size(va, pa, data_end_p() - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RW)?
+                    .take_new_allocs(),
             );
-            let mut pa = data_start_p!();
-            while pa < data_end_p!() {
-                let va = phys_to_kernel(pa);
-                let next_size =
-                    PageSize::select_size(va, pa, data_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-                pt_frames.extend(
-                    g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RW)?
-                        .take_new_allocs(),
-                );
-                pa = pa + next_size.size();
-            }
+            pa = pa + next_size.size();
+        }
 
-            println!(
-                "hi-map kmem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
-                kmem_start_p!(),
-                kmem_end_p!(),
-                phys_to_kernel(kmem_start_p!()),
-                phys_to_kernel(kmem_end_p!()),
+        println!(
+            "hi-map kmem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            kmem_start_p(),
+            kmem_end_p(),
+            phys_to_kernel(kmem_start_p()),
+            phys_to_kernel(kmem_end_p()),
+        );
+        let mut pa = kmem_start_p();
+        while pa < kmem_end_p() {
+            let va = phys_to_kernel(pa);
+            let next_size =
+                PageSize::select_size(va, pa, kmem_end_p() - pa).ok_or(VmsError::Unaligned)?;
+            pt_frames.extend(
+                g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RW)?
+                    .take_new_allocs(),
             );
-            let mut pa = kmem_start_p!();
-            while pa < kmem_end_p!() {
-                let va = phys_to_kernel(pa);
-                let next_size =
-                    PageSize::select_size(va, pa, kmem_end_p!() - pa).ok_or(VmsError::Unaligned)?;
-                pt_frames.extend(
-                    g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RW)?
-                        .take_new_allocs(),
-                );
-                pa = pa + next_size.size();
-            }
+            pa = pa + next_size.size();
         }
 
         let (usable_regs, _) = devicetree::get_region_slices(
@@ -258,8 +257,8 @@ pub fn init_kernel_map(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, Vm
                 // Safety: Used symbols are defined in the linker script
                 unsafe {
                     SizedMemoryRegion::new_unchecked(
-                        kernel_start_p!(),
-                        kernel_end_p!() - kernel_start_p!(),
+                        kernel_start_p(),
+                        kernel_end_p() - kernel_start_p(),
                     )
                 },
                 // Safety: The size of the devicetree blob is nonzero
@@ -397,12 +396,12 @@ pub fn init_kernel_map(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, Vm
 
         #[cfg(debug_assertions)]
         {
-            use crate::{kernel_end_p, kernel_start_p};
+            use crate::sym::{kernel_end_p, kernel_start_p};
 
             println!("debug : testing mappings");
 
-            let mut pa_orig = unsafe { kernel_start_p!() };
-            while pa_orig < unsafe { kernel_end_p!() } {
+            let mut pa_orig = kernel_start_p();
+            while pa_orig < kernel_end_p() {
                 let va = phys_to_kernel(pa_orig);
                 let pa_trns = arch::translate_virt(g.root_pt()?, va, VAddr::identity);
                 let va_addr = va.addr();
@@ -437,8 +436,8 @@ pub fn init_kernel_map(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, Vm
             }
             println!("debug : phys-to-direct translation success");
 
-            pa_orig = unsafe { kernel_start_p!() };
-            while pa_orig < unsafe { kernel_end_p!() } {
+            pa_orig = kernel_start_p();
+            while pa_orig < kernel_end_p() {
                 let va = VAddr::identity(pa_orig);
                 let pa_trns = arch::translate_virt(g.root_pt()?, va, VAddr::identity);
                 let va_addr = va.addr();
@@ -466,20 +465,12 @@ pub fn init_kernel_map(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, Vm
 /// Should only be called from the kernel address space.
 pub fn uninit_identity_map() -> Result<(), VmsError> {
     acquire(|mut g| {
-        unsafe {
-            println!(
-                "unmapping id-map kernel\t: 0x{:016x} .. 0x{:016x}",
-                kernel_start_p!(),
-                kernel_end_p!()
-            );
-            let mut pa = kernel_start_p!();
-            while pa < kernel_end_p!() {
-                let va = VAddr::identity(pa);
-                let next_size = g.unmap_page(va)?;
-                pa = pa + next_size.size();
-            }
-        }
-        Ok(())
+        println!(
+            "unmapping id-map kernel\t: 0x{:016x} .. 0x{:016x}",
+            kernel_start_p(),
+            kernel_end_p()
+        );
+        g.unmap_pages(VAddr::identity(kernel_start_p()), kernel_size())
     })
 }
 
@@ -541,6 +532,16 @@ impl<F: Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
         let unmapped_size = arch::unmap_page(root_pt, va, p2v).map_err(|e| VmsError::Unmap(e))?;
         self.flush = true;
         Ok(unmapped_size)
+    }
+
+    pub fn unmap_pages(&mut self, va: VAddr, size_bytes: usize) -> Result<(), VmsError> {
+        let mut va = va;
+        let va_end = va + size_bytes;
+        while va < va_end {
+            let next_size = self.unmap_page(va)?;
+            va = va + next_size.size();
+        }
+        Ok(())
     }
 
     fn attach_virt(&mut self, va: VAddr) -> Result<(), VmsError> {

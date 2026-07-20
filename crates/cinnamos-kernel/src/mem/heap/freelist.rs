@@ -90,7 +90,7 @@ impl FreeListHeap {
                         let pa_end = alloc.end_addr();
                         while pa < pa_end {
                             let next_size = PageSize::select_size(va, pa, pa_end - pa).ok_or(())?;
-                            g.map_page(va, pa, next_size, PTEFlags::RW)
+                            g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RW)
                                 .map_err(|_| ())?
                                 .forget();
                             pa = pa + next_size.size();

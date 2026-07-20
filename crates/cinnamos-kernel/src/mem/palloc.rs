@@ -10,6 +10,7 @@ use crate::{
             buddy::{BuddyFrameAlloc, BuddyFrameAllocator},
         },
     },
+    sym::*,
     *,
 };
 
@@ -96,8 +97,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
             // Safety: Used symbols are defined in the linker script
             unsafe {
                 SizedMemoryRegion::new_unchecked(
-                    kernel_start_p!(),
-                    kernel_end_p!() - kernel_start_p!(),
+                    kernel_start_p(),
+                    kernel_end_p() - kernel_start_p(),
                 )
             },
             // Safety: The size of the devicetree blob is nonzero

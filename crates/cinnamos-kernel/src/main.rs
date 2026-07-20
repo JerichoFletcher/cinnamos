@@ -7,6 +7,7 @@ use core::ptr::NonNull;
 
 use cinnamos_kernel::{
     arch::{PAddr, VAddr},
+    sym::*,
     *,
 };
 use fdt::Fdt;
@@ -64,7 +65,7 @@ unsafe fn jump_higher_half(
     let ventry = mem::vms::phys_to_kernel(PAddr::from_ptr(entry));
     let vdtb = mem::vms::phys_to_virt(PAddr::from_ptr(dtb_ptr));
     let vdyn = mem::vms::phys_to_kernel(PAddr::from_ptr(dyn_ptr));
-    let vsp = mem::vms::phys_to_kernel(unsafe { stack_end_p!() });
+    let vsp = mem::vms::phys_to_kernel(stack_end_p());
     unsafe {
         arch::jump_higher_half(ventry.as_ptr(), hid, vdtb, vdyn, vsp);
     }

@@ -20,3 +20,4 @@ sbi = "0.3.0"
 fdt = "0.1.5"
 spin = "0.12.0"
 uart = { version = "3.0.2", default-features = false, features = ["address_impl"] }
+pastey = "0.2.3"
