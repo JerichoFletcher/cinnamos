@@ -1,24 +1,21 @@
 use core::mem::MaybeUninit;
 
-use crate::{
-    arch::{self, VAddr},
-    sym::trap_stack_end_v,
-};
+use crate::{arch, sched::task::Task};
 
 #[repr(C)]
 #[derive(Debug)]
 pub struct HartLocal {
     pub hid: usize,
-    pub kernel_stack_ptr: VAddr,
     pub scratch: usize,
+    pub task: *mut Task,
 }
 
 impl HartLocal {
-    fn new(hid: usize, kernel_stack_ptr: VAddr) -> Self {
+    fn new(hid: usize) -> Self {
         Self {
-            kernel_stack_ptr,
             hid,
             scratch: 0,
+            task: core::ptr::null_mut(),
         }
     }
 }
@@ -30,7 +27,7 @@ static mut BOOT_HLOC: MaybeUninit<HartLocal> = MaybeUninit::zeroed();
 pub fn load_boot_hart_local(hid: usize) {
     unsafe {
         let ptr = &raw mut (BOOT_HLOC) as *mut HartLocal;
-        ptr.write(HartLocal::new(hid, trap_stack_end_v()));
+        ptr.write(HartLocal::new(hid));
         arch::load_boot_hart_local(ptr);
     }
 }

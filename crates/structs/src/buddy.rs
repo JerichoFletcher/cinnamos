@@ -35,6 +35,9 @@ impl<'a> BuddyAllocator<'a> {
         let bitmap =
             unsafe { core::ptr::slice_from_raw_parts_mut(bitmap, bitmap_size).as_mut_unchecked() };
 
+        next.fill(BlockIndex::MAX);
+        bitmap.fill(0);
+
         Self {
             order,
             free_lists: [BlockIndex::MAX; MAX_ORDER],

@@ -43,9 +43,7 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
     mem::bump::init();
     mem::heap::init_bump();
     mem::palloc::init_bump();
-    mem::vms::init().expect("Failed to initialize VMS");
-    mem::vms::init_kernel_map(&fdt, PAddr::from_ptr(dtb_ptr))
-        .expect("Failed to initialize virtual map");
+    mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("Failed to initialize VMS");
     unsafe {
         jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr, dyn_ptr);
     }

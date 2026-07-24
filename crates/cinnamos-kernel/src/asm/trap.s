@@ -1,11 +1,17 @@
+.equ HLOC_SCRATCH_OFFSET,   8
+.equ HLOC_TASKPTR_OFFSET,   16
+.equ TASK_KSP_OFFSET,       16
+
 .section .text
 .align 2
 .global _trap_entry
 _trap_entry:
-# Load trap handler stack pointer from sscratch
+# Load hart-local pointer from sscratch
+# Load kernel stack pointer from current task
     csrrw           tp, sscratch, tp
-    sd              sp, 16(tp)
-    ld              sp, 8(tp)
+    sd              sp, HLOC_SCRATCH_OFFSET(tp)
+    ld              sp, HLOC_TASKPTR_OFFSET(tp)
+    ld              sp, TASK_KSP_OFFSET(sp)
     addi            sp, sp, -288
 
 # Save registers (except tp and sp)
@@ -39,7 +45,7 @@ _trap_entry:
     sd              x30, 240(sp)
     sd              x31, 248(sp)
 
-# Save task tp, sp, context, and trap information
+# Save task tp, sp, CSRs, and trap information
     ld              t0, (tp)
     csrr            t1, sscratch
     csrr            t2, sstatus
@@ -54,17 +60,21 @@ _trap_entry:
     sd              t4, 272(sp)
     sd              t5, 280(sp)
 
+# Restore hart-local pointer to sscratch
+    csrw            sscratch, tp
+
 # Call Rust handler
     mv              a0, sp
+    mv              a1, tp
     call            trap_handler
 
-# Restore new context
+# Restore CSRs
     ld              t0, 16(sp)
     ld              t1, 32(sp)
     ld              t2, 256(sp)
     ld              t3, 264(sp)
 
-    sd              t0, (tp)
+    sd              t0, HLOC_SCRATCH_OFFSET(tp)
     csrw            sscratch, t1
     csrw            sstatus, t2
     csrw            sepc, t3
@@ -102,7 +112,6 @@ _trap_entry:
 
 # Restore context stack pointer
     addi            sp, sp, 288
-    ld              sp, 16(tp)
+    ld              sp, HLOC_SCRATCH_OFFSET(tp)
     csrrw           tp, sscratch, tp
-
     sret

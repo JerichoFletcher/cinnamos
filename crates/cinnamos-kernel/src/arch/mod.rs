@@ -38,6 +38,7 @@ cfg_select! {
             MapError,
             UnmapError,
         };
+        pub use riscv64::trap::TrapFrame;
         pub use riscv64::interrupt::{
             register_irq_handler,
             InterruptError,

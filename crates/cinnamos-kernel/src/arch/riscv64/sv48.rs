@@ -183,9 +183,9 @@ pub enum UnmapError {
 }
 
 #[cfg(debug_assertions)]
-pub fn translate_virt(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Option<PAddr> {
+pub fn translate_virt(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Option<PAddr> {
     let vpn = va.vpn();
-    let mut table = root_pt as *mut PageTable;
+    let mut table = root_pt;
 
     for level in (0..=3).rev() {
         let pte = unsafe { &mut (*table).entries[vpn[level]] };
@@ -211,9 +211,9 @@ pub fn translate_virt(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) ->
     None
 }
 
-pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, size: PageSize, flags: PTEFlags, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageTableAllocMap, MapError> {
+pub fn map_page(root_pt: *mut PageTable, va: VAddr, pa: PAddr, size: PageSize, flags: PTEFlags, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageTableAllocMap, MapError> {
     let vpn = va.vpn();
-    let mut table = root_pt as *mut PageTable;
+    let mut table = root_pt;
     let mut table_directory: [Option<PageTableAlloc>; 3] = [const { None }; 3];
     
     // table_directory[3] = Some(PageTableAlloc::Existing(table));
@@ -250,9 +250,9 @@ pub fn map_page(root_pt: &mut PageTable, va: VAddr, pa: PAddr, size: PageSize, f
     unreachable!()
 }
 
-pub fn unmap_page(root_pt: &mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageSize, UnmapError> {
+pub fn unmap_page(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageSize, UnmapError> {
     let vpn = va.vpn();
-    let mut table = root_pt as *mut PageTable;
+    let mut table = root_pt;
     let mut table_directory: [*mut PageTable; 4] = [const { core::ptr::null_mut() }; 4];
 
     table_directory[3] = table;

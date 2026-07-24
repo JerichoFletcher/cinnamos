@@ -1,4 +1,4 @@
-use crate::arch::Context;
+use crate::arch::{TrapFrame, VAddr};
 
 pub enum TaskState {
     Ready,
@@ -6,8 +6,10 @@ pub enum TaskState {
     Stopped,
 }
 
+#[repr(C)]
 pub struct Task {
-    id: usize,
-    state: TaskState,
-    ctx: Context,
+    pub id: usize,
+    pub state: TaskState,
+    pub kernel_stack_ptr: VAddr,
+    pub frame: TrapFrame,
 }

@@ -3,7 +3,7 @@ use core::{alloc::Layout, ptr::NonNull};
 use spin::Mutex;
 
 use crate::{
-    arch::{PTEFlags, PageSize, VAddr},
+    arch::{PTEFlags, VAddr},
     mem::{PhysFrameAlloc, palloc, vms},
 };
 
@@ -85,18 +85,12 @@ impl FreeListHeap {
                     self.next_va = end_va;
 
                     if vms::acquire(|mut g| {
-                        let mut va = base_va;
-                        let mut pa = alloc.start_addr();
-                        let pa_end = alloc.end_addr();
-                        while pa < pa_end {
-                            let next_size = PageSize::select_size(va, pa, pa_end - pa).ok_or(())?;
-                            g.map_page(va, pa, next_size, PTEFlags::GLOBAL | PTEFlags::RW)
-                                .map_err(|_| ())?
-                                .forget();
-                            pa = pa + next_size.size();
-                            va = va + next_size.size();
-                        }
-                        Ok::<(), ()>(())
+                        g.map_pages_and_forget(
+                            alloc.start_addr(),
+                            alloc.end_addr(),
+                            base_va,
+                            PTEFlags::GLOBAL | PTEFlags::RW,
+                        )
                     })
                     .is_ok()
                     {
@@ -144,19 +138,23 @@ impl FreeListHeap {
     }
 
     fn lookup_block_size(size: usize) -> BlockSizeLookup {
-        for (i, s) in SIZES_LO.iter().enumerate() {
-            if size == *s {
-                return BlockSizeLookup::Lo(i);
+        if size <= SIZES_LO[4] {
+            for (i, s) in SIZES_LO.iter().enumerate() {
+                if size == *s {
+                    return BlockSizeLookup::Lo(i);
+                }
             }
-        }
-        for (i, s) in SIZES_MD.iter().enumerate() {
-            if size == *s {
-                return BlockSizeLookup::Md(i);
+        } else if size <= SIZES_MD[4] {
+            for (i, s) in SIZES_MD.iter().enumerate() {
+                if size == *s {
+                    return BlockSizeLookup::Md(i);
+                }
             }
-        }
-        for (i, s) in SIZES_HI.iter().enumerate() {
-            if size == *s {
-                return BlockSizeLookup::Hi(i);
+        } else if size <= SIZES_HI[4] {
+            for (i, s) in SIZES_HI.iter().enumerate() {
+                if size == *s {
+                    return BlockSizeLookup::Hi(i);
+                }
             }
         }
         BlockSizeLookup::Invalid

@@ -3,14 +3,14 @@ use riscv::{interrupt::{Exception, Interrupt, Trap}, register::{scause::Scause, 
 use crate::{arch::{self, context::Context, interrupt}, hloc::HartLocal, *};
 
 #[repr(C)]
-struct TrapFrame {
+pub struct TrapFrame {
     ctx: Context,
     scause: Scause,
     stval: usize,
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn trap_handler(frame: &mut TrapFrame) {
+extern "C" fn trap_handler(frame: &mut TrapFrame, _hloc: &mut HartLocal) {
     let tcause = frame.scause.cause().try_into::<Interrupt, Exception>().unwrap();
 
     match tcause {
@@ -56,7 +56,7 @@ pub fn init() {
         fn _trap_entry();
     }
 
-    let trap_entry_addr = _trap_entry as *const() as usize;
+    let trap_entry_addr = _trap_entry as *const () as usize;
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe {
         stvec::write(stvec);
@@ -69,7 +69,7 @@ pub fn init_higher_half() {
         fn _trap_entry();
     }
 
-    let trap_entry_addr = _trap_entry as *const() as usize;
+    let trap_entry_addr = _trap_entry as *const () as usize;
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe {
         stvec::write(stvec);

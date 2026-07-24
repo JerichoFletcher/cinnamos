@@ -5,8 +5,6 @@ use riscv::register::{sepc, sstatus};
 
 use crate::{devicetree, mem, *};
 
-mod trap;
-
 pub mod hloc;
 pub mod device;
 pub mod context;
@@ -15,6 +13,7 @@ pub mod paddr;
 pub mod vaddr;
 pub mod sv48;
 pub mod interrupt;
+pub mod trap;
 
 use paddr::PAddr;
 use vaddr::VAddr;
