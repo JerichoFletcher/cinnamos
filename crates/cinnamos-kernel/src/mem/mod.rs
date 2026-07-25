@@ -6,9 +6,10 @@ pub use phys::PhysFrameAlloc;
 
 pub mod bump;
 pub mod heap;
-pub mod palloc;
+pub mod physalloc;
 // pub mod valloc;
 pub mod addrsp;
+pub mod alloc;
 pub mod vms;
 
 #[derive(Debug, Clone, Copy)]

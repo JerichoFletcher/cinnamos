@@ -9,6 +9,8 @@ cfg_select! {
         pub const HEAP_MAP_BASE: usize = 0xffff_ff00_0000_0000;
         pub const HEAP_BUMP_SIZE: usize = PageSize::Page4K.size() * 32;
 
+        pub const SWITCH_FRAME_SIZE: usize = 13 * size_of::<usize>();
+
         pub use riscv64::{
             wait_for_interrupt,
             init,
@@ -38,7 +40,10 @@ cfg_select! {
             MapError,
             UnmapError,
         };
-        pub use riscv64::trap::TrapFrame;
+        pub use riscv64::trap::{
+            create_task_init_stack,
+            TrapFrame,
+        };
         pub use riscv64::interrupt::{
             register_irq_handler,
             InterruptError,

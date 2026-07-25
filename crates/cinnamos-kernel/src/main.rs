@@ -42,7 +42,7 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
 
     mem::bump::init();
     mem::heap::init_bump();
-    mem::palloc::init_bump();
+    mem::physalloc::init_bump();
     mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("Failed to initialize VMS");
     unsafe {
         jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr, dyn_ptr);
@@ -83,7 +83,7 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
             .interrupts()
             .map(|mut c| c.next().unwrap_or(0))
             .expect("Failed to get interrupt ID for UART");
-        let pa = arch::PAddr::from_ptr(uart_reg.start_ptr());
+        let pa = PAddr::from_ptr(uart_reg.start_ptr());
         device::uart::init(
             unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) },
             irq_id as u16,
@@ -93,12 +93,13 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
     #[cfg(debug_assertions)]
     println!("debug : higher-half entry (HID {})", hid);
 
-    mem::palloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));
+    mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));
     mem::vms::uninit_identity_map().expect("Failed to uninitialize identity map");
 
+    #[cfg(debug_assertions)]
     if let Some((bump_start, bump_next, bump_end)) = mem::bump::get_bump_area() {
         println!(
-            "bump : area=0x{:016x} .. 0x{:016x}, head=0x{:016x}, used={}/{}",
+            "debug : bump area=0x{:016x} .. 0x{:016x}, head=0x{:016x}, used={}/{}",
             bump_start,
             bump_end,
             bump_next,
@@ -107,11 +108,16 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
         );
     }
     mem::heap::init_heap();
+    sched::enqueue(sched::task::new_kernel_task(idle as _));
 
     arch::init_interrupts(hid, &fdt);
 
     #[cfg(debug_assertions)]
-    println!("debug : waiting for interrupt (HID {})", hid);
+    println!("debug : starting scheduler (HID {})", hid);
+    sched::start();
+}
+
+fn idle() -> ! {
     loop {
         arch::wait_for_interrupt();
     }

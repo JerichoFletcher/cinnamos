@@ -3,7 +3,7 @@ use core::mem::MaybeUninit;
 use bitflags::bitflags;
 use riscv::{register::satp::{self, Satp}};
 
-use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{PhysFrameAlloc, palloc::{self, Alloc}}};
+use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{PhysFrameAlloc, physalloc::{self, Alloc}}};
 
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
@@ -232,7 +232,7 @@ pub fn map_page(root_pt: *mut PageTable, va: VAddr, pa: PAddr, size: PageSize, f
                 table = p2v(next_pa).as_mut();
                 table_directory[level - 1] = Some(PageTableAlloc::Existing(table));
             } else if !pte.is_valid() {
-                let alloc = palloc::alloc(1).ok_or(MapError::OutOfMemory)?;
+                let alloc = physalloc::alloc(1).ok_or(MapError::OutOfMemory)?;
                 let next_pa = alloc.start_addr();
                 
                 // Safety: p2v(next_pa) has the same alignment as next_pa, which points to an allocated physical page

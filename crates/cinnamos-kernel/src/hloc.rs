@@ -7,7 +7,7 @@ use crate::{arch, sched::task::Task};
 pub struct HartLocal {
     pub hid: usize,
     pub scratch: usize,
-    pub task: *mut Task,
+    pub curr_task: *mut Task,
 }
 
 impl HartLocal {
@@ -15,8 +15,22 @@ impl HartLocal {
         Self {
             hid,
             scratch: 0,
-            task: core::ptr::null_mut(),
+            curr_task: core::ptr::null_mut(),
         }
+    }
+
+    #[inline]
+    pub const fn hid(&self) -> usize {
+        self.hid
+    }
+
+    pub const fn curr_task(&self) -> Option<&mut Task> {
+        // Safety: self is only accessed by its owning hart
+        unsafe { self.curr_task.as_mut() }
+    }
+
+    pub const fn set_curr_task(&mut self, task: *mut Task) {
+        self.curr_task = task;
     }
 }
 

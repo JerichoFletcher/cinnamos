@@ -70,8 +70,6 @@ impl<'a> SendAllocator<'a> {
             Self::Buddy(alloc) => {
                 if let Alloc::BuddyAlloc(handle) = handle {
                     alloc.dealloc(handle);
-                } else {
-                    panic!("Invalid handle for current allocator: {:?}", handle);
                 }
             }
         }

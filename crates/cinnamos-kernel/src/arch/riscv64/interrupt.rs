@@ -1,5 +1,7 @@
 use core::{num::NonZero, sync::atomic::{AtomicPtr, Ordering}};
 
+use riscv::register::sie;
+
 use crate::arch::device::plic::INTERRUPT_COUNT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,4 +38,12 @@ pub fn dispatch_irq(irq: NonZero<u16>) -> Result<(), InterruptError> {
         }
     }
     Err(InterruptError::InvalidInterruptSource)
+}
+
+pub fn enable_interrupts() {
+    let mut sie = sie::read();
+    sie.set_stimer(true);
+    sie.set_ssoft(true);
+    sie.set_sext(true);
+    unsafe { sie::write(sie); }
 }

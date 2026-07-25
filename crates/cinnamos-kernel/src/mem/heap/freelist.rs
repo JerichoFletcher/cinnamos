@@ -4,7 +4,7 @@ use spin::Mutex;
 
 use crate::{
     arch::{PTEFlags, VAddr},
-    mem::{PhysFrameAlloc, palloc, vms},
+    mem::{PhysFrameAlloc, physalloc, vms},
 };
 
 const LO_HEAP_FRAMES: usize = 1;
@@ -77,7 +77,7 @@ impl FreeListHeap {
                 *head = next;
                 block.as_ptr().cast()
             }
-            None => match palloc::alloc(heap_grow_frames) {
+            None => match physalloc::alloc(heap_grow_frames) {
                 Some(alloc) => {
                     let alloc_size = alloc.size();
                     let base_va = self.next_va;

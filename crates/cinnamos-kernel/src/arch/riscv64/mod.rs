@@ -1,7 +1,6 @@
 use core::{arch::asm, ptr::NonNull};
 
 use fdt::Fdt;
-use riscv::register::{sepc, sstatus};
 
 use crate::{devicetree, mem, *};
 
@@ -29,9 +28,6 @@ pub fn init() {
 
 pub fn init_higher_half() {
     trap::init_higher_half();
-    
-    timer::schedule_timer();
-    timer::enable_timer();
 }
 
 pub fn init_interrupts(hid: usize, fdt: &Fdt) {
@@ -51,6 +47,9 @@ pub fn init_interrupts(hid: usize, fdt: &Fdt) {
             plic.set_threshold(hid, 0);
         }).ok();
     }
+
+    timer::schedule_timer();
+    interrupt::enable_interrupts();
 }
 
 /// # Safety
@@ -58,22 +57,18 @@ pub fn init_interrupts(hid: usize, fdt: &Fdt) {
 /// - `hid` must be equal to the executing hart ID.
 pub unsafe fn jump_higher_half(target: *const (), hid: usize, dtb_ptr: VAddr, dyn_ptr: VAddr, new_sp: VAddr) -> ! {
     unsafe {
-        let mut sstatus = sstatus::read();
-        sstatus.set_spp(sstatus::SPP::Supervisor);
-        sstatus.set_spie(sstatus.sie());
-        sstatus::write(sstatus);
-        sepc::write(target as usize);
-
         asm!(
             "mv sp, {0}",
             "mv a0, {1}",
             "mv a1, {2}",
             "mv a2, {3}",
+            "jr {4}",
             in(reg) new_sp.addr(),
             in(reg) hid,
             in(reg) dtb_ptr.addr(),
             in(reg) dyn_ptr.addr(),
+            in(reg) target,
+            options(noreturn),
         );
-        asm!("sret", options(noreturn));
     }
 }

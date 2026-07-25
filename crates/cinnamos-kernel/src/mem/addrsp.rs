@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use crate::{
     arch::{PAddr, PageTable},
-    mem::{PhysFrameAlloc, palloc::Alloc},
+    mem::{PhysFrameAlloc, physalloc::Alloc},
 };
 
 #[derive(Debug)]

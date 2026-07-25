@@ -6,7 +6,7 @@ use spin::{Mutex, MutexGuard, Spin};
 
 use crate::{
     arch::*,
-    mem::{PAGE_SIZE, PhysFrameAlloc, SizedMemoryRegion, addrsp::AddressSpace, palloc::Alloc},
+    mem::{PAGE_SIZE, PhysFrameAlloc, SizedMemoryRegion, addrsp::AddressSpace, physalloc::Alloc},
     sym::*,
     *,
 };
@@ -135,7 +135,7 @@ fn map_and_take_allocs(
 pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
     let mut g = ROOT_ADDRSP.lock();
     if let None = g.as_mut() {
-        let root_alloc = mem::palloc::alloc(1).ok_or(VmsError::FrameAllocFailed)?;
+        let root_alloc = mem::physalloc::alloc(1).ok_or(VmsError::FrameAllocFailed)?;
         let root_pt =
             phys_identity(root_alloc.start_addr()).as_mut() as *mut MaybeUninit<PageTable>;
         unsafe {
@@ -600,10 +600,7 @@ where
     F: Fn(PAddr) -> VAddr,
 {
     let guard = ROOT_ADDRSP.lock();
-    let guard = VmsAccessGuard {
-        guard,
-        p2v: &p2v,
-    };
+    let guard = VmsAccessGuard { guard, p2v: &p2v };
     f(guard)
 }
 
