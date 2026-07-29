@@ -1,9 +1,9 @@
 #[inline]
-pub unsafe fn load_boot_hart_local<T>(hloc: *const T) {
+pub fn load_boot_hart_local<T>(hloc: *const T) {
     unsafe {
         core::arch::asm!(
             "mv tp, {0}",
-            in(reg) hloc,
+            in(reg) hloc as usize,
             options(nomem, nostack, preserves_flags)
         );
     }

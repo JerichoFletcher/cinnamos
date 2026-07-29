@@ -39,7 +39,7 @@ impl MemoryRegion {
     }
 
     pub fn start_ptr(&self) -> *const u8 {
-        core::ptr::without_provenance(self.base.addr())
+        self.base.addr() as _
     }
 }
 
@@ -60,15 +60,11 @@ pub struct SizedMemoryRegion {
 
 impl SizedMemoryRegion {
     pub fn new(base: PAddr, size: Option<usize>) -> Option<Self> {
-        match size {
-            Some(size) => {
-                if size > 0 {
-                    Some(Self { base, size })
-                } else {
-                    None
-                }
-            }
-            None => None,
+        let size = size?;
+        if size > 0 {
+            Some(Self { base, size })
+        } else {
+            None
         }
     }
 
@@ -83,7 +79,7 @@ impl SizedMemoryRegion {
     }
 
     pub fn start_ptr(&self) -> *const u8 {
-        core::ptr::without_provenance(self.base.addr())
+        self.base.addr() as _
     }
 
     pub fn subtract(&self, other: &Self) -> RegionSubtract {

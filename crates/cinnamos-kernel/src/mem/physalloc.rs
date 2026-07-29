@@ -1,3 +1,5 @@
+use core::cmp::Reverse;
+
 use fdt::Fdt;
 use spin::Mutex;
 
@@ -58,7 +60,7 @@ impl<'a> SendAllocator<'a> {
             Self::Bump => {
                 mem::bump::alloc_frame(frame_count).map(|pa| Alloc::BumpAlloc((pa, frame_count)))
             }
-            Self::Buddy(alloc) => alloc.alloc(frame_count).map(|a| Alloc::BuddyAlloc(a)),
+            Self::Buddy(alloc) => alloc.alloc(frame_count).map(Alloc::BuddyAlloc),
         }
     }
 
@@ -75,8 +77,6 @@ impl<'a> SendAllocator<'a> {
         }
     }
 }
-
-// struct SendAllocator(NonNull<FrameAllocator>);
 
 unsafe impl Send for SendAllocator<'_> {}
 
@@ -103,22 +103,17 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
             unsafe {
                 SizedMemoryRegion::new_unchecked(
                     dtb_pa,
-                    (fdt.total_size() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1),
+                    fdt.total_size().next_multiple_of(PAGE_SIZE),
                 )
             },
         ],
     );
-    usable_regs.sort_unstable_by(|a, b| b.size.cmp(&a.size));
+    usable_regs.sort_unstable_by_key(|a| Reverse(a.size));
     for r in &usable_regs {
         println!("palloc : usable at 0x{:016x} .. 0x{:016x}", r.base, r.end());
     }
 
-    let mut alloc = BuddyFrameAllocator::new(&[usable_regs[0]]);
-    let (_, regs) = usable_regs.split_at(1);
-    for reg in regs {
-        alloc.add_region(reg);
-    }
-
+    let alloc = BuddyFrameAllocator::new(usable_regs.as_slice());
     *ALLOCATOR.lock() = Some(SendAllocator::Buddy(alloc));
 }
 

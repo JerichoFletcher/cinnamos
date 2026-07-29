@@ -24,8 +24,8 @@ impl HartLocal {
         self.hid
     }
 
-    pub const fn curr_task(&self) -> Option<&mut Task> {
-        // Safety: self is only accessed by its owning hart
+    pub const fn curr_task(&mut self) -> Option<&mut Task> {
+        // Safety: self is mutably borrowed
         unsafe { self.curr_task.as_mut() }
     }
 
@@ -39,11 +39,11 @@ static mut BOOT_HLOC: MaybeUninit<HartLocal> = MaybeUninit::zeroed();
 /// Should only be called by the boot hart
 #[inline]
 pub fn load_boot_hart_local(hid: usize) {
+    let ptr = &raw mut (BOOT_HLOC) as *mut HartLocal;
     unsafe {
-        let ptr = &raw mut (BOOT_HLOC) as *mut HartLocal;
         ptr.write(HartLocal::new(hid));
-        arch::load_boot_hart_local(ptr);
     }
+    arch::load_boot_hart_local(ptr);
 }
 
 /// Should only be called after the [HartLocal](HartLocal) for the caller has been loaded.

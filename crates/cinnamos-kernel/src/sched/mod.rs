@@ -1,8 +1,11 @@
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use alloc::collections::vec_deque::VecDeque;
 use spin::Mutex;
 
 use crate::{
     hloc,
+    mem::alloc::slab::SlabBox,
     sched::task::{Task, TaskState},
 };
 
@@ -14,51 +17,44 @@ unsafe extern "C" {
 }
 
 pub struct Scheduler {
-    run_queue: Mutex<(usize, VecDeque<*mut Task>)>,
+    next_free_id: AtomicUsize,
+    run_queue: Mutex<VecDeque<SlabBox<Task>>>,
 }
 
 impl Scheduler {
-    pub const EMPTY: Self = Self {
-        run_queue: Mutex::new((0, VecDeque::new())),
-    };
+    pub fn enqueue(&self, mut task: SlabBox<Task>) {
+        let next_free_id = self.next_free_id.fetch_add(1, Ordering::Relaxed);
+        let mut rq = self.run_queue.lock();
 
-    pub fn enqueue(&self, task: *mut Task) {
-        if !task.is_null() && task.is_aligned() {
-            let mut rq = self.run_queue.lock();
-
-            // Safety: task points to a valid task
-            let curr = unsafe { task.as_mut_unchecked() };
-            curr.id = (*rq).0;
-            (*rq).0 += 1;
-
-            curr.state = TaskState::Ready;
-            curr.time_quantum = 128;
-            (*rq).1.push_back(task);
-        }
+        task.id = next_free_id;
+        task.state = TaskState::Ready;
+        task.time_quantum = 128;
+        rq.push_back(task);
     }
 
     pub fn schedule(&self) {
         let hloc = hloc::hart_local();
         let mut rq = self.run_queue.lock();
 
-        let curr = hloc.curr_task().expect("schedule() expects a current task");
+        let curr = hloc
+            .curr_task()
+            .expect("Scheduler::schedule() expects a current task");
         if curr.state == TaskState::Running {
             curr.state = TaskState::Ready;
         }
-        (*rq).1.push_back(curr);
 
-        match (*rq).1.pop_front() {
-            Some(next) => {
-                // Safety: The scheduler run queue always stores valid pointers to ready tasks
-                unsafe {
-                    (*next).state = TaskState::Running;
-                }
+        match rq.pop_front() {
+            Some(mut next) => {
+                next.state = TaskState::Running;
+                let next_ptr = next.as_ptr();
+
+                rq.push_back(next);
                 drop(rq);
-                let curr_ptr = curr as *mut Task;
-                hloc.set_curr_task(next);
 
+                let curr_ptr = curr as *mut Task;
+                hloc.set_curr_task(next_ptr);
                 unsafe {
-                    __switch(next as *const _, curr_ptr as *mut _);
+                    __switch(next_ptr as _, curr_ptr as _);
                 }
             }
             None => {
@@ -72,19 +68,19 @@ impl Scheduler {
         let hloc = hloc::hart_local();
         let mut rq = self.run_queue.lock();
 
-        match (*rq).1.pop_front() {
-            Some(next) => {
-                // Safety: The scheduler run queue always stores valid pointers to ready tasks
-                unsafe {
-                    (*next).state = TaskState::Running;
-                }
-                drop(rq);
-                hloc.set_curr_task(next);
+        match rq.pop_front() {
+            Some(mut next) => {
+                next.state = TaskState::Running;
+                let next_ptr = next.as_ptr();
 
+                rq.push_back(next);
+                drop(rq);
+
+                hloc.set_curr_task(next_ptr);
                 unsafe {
-                    __switch_noprev(next as *const _);
+                    __switch_noprev(next_ptr as _);
                 }
-                panic!("__switch_noprev returned to Scheduler::start");
+                unreachable!("__switch_noprev should never return to Scheduler::start()");
             }
             None => {
                 drop(rq);
@@ -96,13 +92,16 @@ impl Scheduler {
 
 unsafe impl Sync for Scheduler {}
 
-static GLOBAL_SCHEDULER: Scheduler = Scheduler::EMPTY;
+static GLOBAL_SCHEDULER: Scheduler = Scheduler {
+    next_free_id: AtomicUsize::new(0),
+    run_queue: Mutex::new(VecDeque::new()),
+};
 
 pub fn start() -> ! {
     GLOBAL_SCHEDULER.start()
 }
 
-pub fn enqueue(task: *mut Task) {
+pub fn enqueue(task: SlabBox<Task>) {
     GLOBAL_SCHEDULER.enqueue(task);
 }
 

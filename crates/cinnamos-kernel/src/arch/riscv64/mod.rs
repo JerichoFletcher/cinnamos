@@ -58,16 +58,13 @@ pub fn init_interrupts(hid: usize, fdt: &Fdt) {
 pub unsafe fn jump_higher_half(target: *const (), hid: usize, dtb_ptr: VAddr, dyn_ptr: VAddr, new_sp: VAddr) -> ! {
     unsafe {
         asm!(
-            "mv sp, {0}",
-            "mv a0, {1}",
-            "mv a1, {2}",
-            "mv a2, {3}",
-            "jr {4}",
-            in(reg) new_sp.addr(),
-            in(reg) hid,
-            in(reg) dtb_ptr.addr(),
-            in(reg) dyn_ptr.addr(),
-            in(reg) target,
+            "mv sp, {sp}",
+            "jr t0",
+            sp = in(reg) new_sp.addr(),
+            in("a0") hid,
+            in("a1") dtb_ptr.addr(),
+            in("a2") dyn_ptr.addr(),
+            in("t0") target,
             options(noreturn),
         );
     }

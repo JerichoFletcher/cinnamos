@@ -28,23 +28,25 @@ struct FreeBlock {
 }
 
 pub struct FreeListHeap {
-    next_va: VAddr,
+    next_va: Mutex<VAddr>,
     pool_heads_lo: [Mutex<*mut FreeBlock>; SIZES_LO.len()],
     pool_heads_md: [Mutex<*mut FreeBlock>; SIZES_MD.len()],
     pool_heads_hi: [Mutex<*mut FreeBlock>; SIZES_HI.len()],
 }
 
+unsafe impl Sync for FreeListHeap {}
+
 impl FreeListHeap {
-    pub fn new(base: VAddr) -> Self {
+    pub const fn new(base: VAddr) -> Self {
         Self {
-            next_va: base,
+            next_va: Mutex::new(base),
             pool_heads_lo: [const { Mutex::new(core::ptr::null_mut()) }; SIZES_LO.len()],
             pool_heads_md: [const { Mutex::new(core::ptr::null_mut()) }; SIZES_MD.len()],
             pool_heads_hi: [const { Mutex::new(core::ptr::null_mut()) }; SIZES_HI.len()],
         }
     }
 
-    pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
+    pub fn alloc(&self, layout: Layout) -> *mut u8 {
         let layout = layout.pad_to_align();
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);
         if block_size <= SIZES_LO[SIZES_LO.len() - 1] {
@@ -54,7 +56,7 @@ impl FreeListHeap {
         }
     }
 
-    pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+    pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let layout = layout.pad_to_align();
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);
         if block_size <= SIZES_LO[SIZES_LO.len() - 1] {
@@ -62,7 +64,7 @@ impl FreeListHeap {
         }
     }
 
-    fn alloc_block(&mut self, size: usize) -> *mut u8 {
+    fn alloc_block(&self, size: usize) -> *mut u8 {
         let (pool, heap_grow_frames) = match Self::lookup_block_size(size) {
             BlockSizeLookup::Lo(i) => (&self.pool_heads_lo[i], LO_HEAP_FRAMES),
             BlockSizeLookup::Md(i) => (&self.pool_heads_md[i], MD_HEAP_FRAMES),
@@ -80,9 +82,11 @@ impl FreeListHeap {
             None => match physalloc::alloc(heap_grow_frames) {
                 Some(alloc) => {
                     let alloc_size = alloc.size();
-                    let base_va = self.next_va;
+                    let mut next_va = self.next_va.lock();
+
+                    let base_va = *next_va;
                     let end_va = base_va + alloc_size;
-                    self.next_va = end_va;
+                    *next_va = end_va;
 
                     if vms::acquire(|mut g| {
                         g.map_pages_and_forget(
@@ -119,14 +123,12 @@ impl FreeListHeap {
         }
     }
 
-    fn dealloc_block(&mut self, ptr: *mut u8, size: usize) {
-        let pool = match size {
-            8 => &self.pool_heads_lo[0],
-            16 => &self.pool_heads_lo[1],
-            32 => &self.pool_heads_lo[2],
-            64 => &self.pool_heads_lo[3],
-            128 => &self.pool_heads_lo[4],
-            _ => panic!("Invalid size {}", size),
+    fn dealloc_block(&self, ptr: *mut u8, size: usize) {
+        let pool = match Self::lookup_block_size(size) {
+            BlockSizeLookup::Lo(i) => &self.pool_heads_lo[i],
+            BlockSizeLookup::Md(i) => &self.pool_heads_md[i],
+            BlockSizeLookup::Hi(i) => &self.pool_heads_hi[i],
+            BlockSizeLookup::Invalid => panic!("Invalid block size {size}"),
         };
 
         let mut head = pool.lock();

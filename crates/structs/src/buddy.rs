@@ -4,6 +4,15 @@ pub const MAX_ORDER: usize = 32;
 
 pub type BlockIndex = u32;
 
+pub const fn order_of(size: BlockIndex) -> usize {
+    if size != 0 {
+        // Equal to floor(log2(size))
+        (BlockIndex::BITS - 1 - size.leading_zeros()) as usize
+    } else {
+        0
+    }
+}
+
 pub struct BuddyAllocator<'a> {
     order: usize,
     free_lists: [BlockIndex; MAX_ORDER],
@@ -25,15 +34,27 @@ impl<'a> BuddyAllocator<'a> {
     /// # Safety
     /// - `next` must point to an aligned buffer of [BlockIndex](BlockIndex) with at least [next_buf_size(order)](Self::next_buf_size) items of capacity.
     /// - `bitmap` must point to an aligned buffer of [u64](u64) with at least [bitmap_buf_size(order)](Self::bitmap_buf_size) items of capacity.
-    pub unsafe fn new(order: usize, next: *mut BlockIndex, bitmap: *mut u64) -> Self {
-        assert!(order < MAX_ORDER, "Invalid order: {}", order);
+    pub unsafe fn new(order: usize, next: *mut [BlockIndex], bitmap: *mut [u64]) -> Self {
         let next_size = Self::next_buf_size(order);
         let bitmap_size = Self::bitmap_buf_size(order);
+        assert!(order < MAX_ORDER, "Invalid order: {}", order);
+        assert!(
+            next.len() >= next_size,
+            "next buffer too small ({} vs. {})",
+            next.len(),
+            next_size
+        );
+        assert!(
+            bitmap.len() >= bitmap_size,
+            "bitmap buffer too small ({} vs. {})",
+            bitmap.len(),
+            bitmap_size
+        );
 
-        let next =
-            unsafe { core::ptr::slice_from_raw_parts_mut(next, next_size).as_mut_unchecked() };
-        let bitmap =
-            unsafe { core::ptr::slice_from_raw_parts_mut(bitmap, bitmap_size).as_mut_unchecked() };
+        // Safety: next is valid and will only be accessed from this allocator
+        let next = unsafe { next.as_mut_unchecked() };
+        // Safety: bitmap is valid and will only be accessed from this allocator
+        let bitmap = unsafe { bitmap.as_mut_unchecked() };
 
         next.fill(BlockIndex::MAX);
         bitmap.fill(0);
@@ -128,8 +149,7 @@ impl<'a> BuddyAllocator<'a> {
             };
 
             // Available order by size
-            // size_order = floor(log2(remaining))
-            let size_order = (BlockIndex::BITS - 1 - remaining.leading_zeros()) as usize;
+            let size_order = order_of(remaining);
             let size_order = size_order.min(self.order);
 
             // Choose smaller available order
@@ -228,7 +248,7 @@ impl Debug for BuddyAllocator<'_> {
             .field("order", &self.order)
             .field("total", &self.total)
             .field("free", &self.free)
-            .field("free_lists", &self.free_lists.split_at(self.order + 1).0)
+            .field("free_lists", &&self.free_lists[..self.order + 1])
             .finish()
     }
 }

@@ -46,6 +46,12 @@ impl Writer {
     }
 }
 
+impl Default for Writer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl core::fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         let drv = unsafe { &mut (&raw mut (UART)).as_mut_unchecked().assume_init_mut().0 };

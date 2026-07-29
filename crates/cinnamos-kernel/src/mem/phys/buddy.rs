@@ -1,16 +1,19 @@
+use core::num::NonZero;
+
 use alloc::collections::linked_list::LinkedList;
-use structs::buddy::{BlockIndex, BuddyAllocator};
+use structs::buddy::{BlockIndex, BuddyAllocator, order_of};
 
 use crate::{
     arch::{PAddr, PTEFlags, PageSize},
     mem::{self, PAGE_SIZE, SizedMemoryRegion, vms::phys_to_virt},
+    *,
 };
 
 #[derive(Debug)]
 pub struct BuddyFrameAlloc {
     id: usize,
     base: PAddr,
-    order: usize,
+    frame_count: NonZero<usize>,
 }
 
 impl super::PhysFrameAlloc for BuddyFrameAlloc {
@@ -19,7 +22,7 @@ impl super::PhysFrameAlloc for BuddyFrameAlloc {
     }
 
     fn end_addr(&self) -> PAddr {
-        self.base + (PAGE_SIZE << self.order)
+        self.base + self.frame_count.get() * PAGE_SIZE
     }
 }
 
@@ -33,21 +36,23 @@ struct BuddyRegion<'a> {
 impl<'a> BuddyRegion<'a> {
     /// # Safety
     /// - `base` must be aligned to `order` orders of page boundary.
-    /// - `next` must point to an aligned buffer of [BlockIndex](BlockIndex) with at least `2 << order` items of capacity.
-    /// - `bitmap` must point to an aligned buffer of [u64](u64) with at least `(1 << order).max(64) / 64` items of capacity.
+    /// - `next` must have at least `2 << order` items of capacity.
+    /// - `bitmap` must have at least `(1 << order).max(64) / 64` items of capacity.
     unsafe fn new(
         id: usize,
         base: PAddr,
         order: usize,
-        next: *mut BlockIndex,
-        bitmap: *mut u64,
+        next: *mut [BlockIndex],
+        bitmap: *mut [u64],
     ) -> Self {
         assert!(
-            Self::max_align_order_of(base) as usize >= order,
+            Self::max_align_order_of(base) >= order,
             "Base address not aligned: {:016x}, order {}",
             base.addr(),
             order
         );
+
+        // Safety: next and bitmap fulfills the safety condition
         let buddy = unsafe { BuddyAllocator::new(order, next, bitmap) };
         Self { id, base, buddy }
     }
@@ -56,17 +61,19 @@ impl<'a> BuddyRegion<'a> {
     fn add_range(&mut self, start: PAddr, end: PAddr) {
         assert!(
             self.base <= start && start < self.base + (PAGE_SIZE << self.buddy.max_order()),
-            "Range start not within bounds: !(0x{:016x} <= 0x{:016x} < 0x{:016x})",
+            "Range start not within bounds: !(0x{:016x} <= 0x{:016x} < 0x{:016x}), ord={}",
             self.base,
             start,
             self.base + (PAGE_SIZE << self.buddy.max_order()),
+            self.buddy.max_order(),
         );
         assert!(
             self.base <= end && end <= self.base + (PAGE_SIZE << self.buddy.max_order()),
-            "Range end not within bounds: !(0x{:016x} <= 0x{:016x} < 0x{:016x})",
+            "Range end not within bounds: !(0x{:016x} <= 0x{:016x} < 0x{:016x}), ord={}",
             self.base,
             end,
             self.base + (PAGE_SIZE << self.buddy.max_order()),
+            self.buddy.max_order(),
         );
         assert!(
             start <= end,
@@ -81,19 +88,22 @@ impl<'a> BuddyRegion<'a> {
     }
 
     fn alloc(&mut self, frame_count: usize) -> Option<BuddyFrameAlloc> {
-        let order = (BlockIndex::BITS - 1 - (frame_count as BlockIndex).leading_zeros()) as usize;
+        let frame_count = NonZero::new(frame_count)?;
+        let order = order_of(frame_count.get().try_into().ok()?);
         let block = self.buddy.alloc(order)?;
         let base = self.base + block as usize * PAGE_SIZE;
+
         Some(BuddyFrameAlloc {
             id: self.id,
             base,
-            order,
+            frame_count,
         })
     }
 
     fn dealloc(&mut self, handle: &mut BuddyFrameAlloc) {
         let block = (handle.base - self.base) / PAGE_SIZE;
-        self.buddy.dealloc(handle.order, block as BlockIndex);
+        self.buddy
+            .dealloc(order_of(handle.frame_count.get() as _), block as BlockIndex);
     }
 
     const fn free_count(&self) -> usize {
@@ -108,7 +118,7 @@ impl<'a> BuddyRegion<'a> {
         if size == 0 {
             return 0;
         }
-        (BlockIndex::BITS - 1 - ((size / PAGE_SIZE) as BlockIndex).leading_zeros()) as usize
+        order_of((size / PAGE_SIZE) as _)
     }
 }
 
@@ -181,19 +191,22 @@ impl<'a> BuddyFrameAllocator<'a> {
                         self.regions.len(),
                         l_base,
                         l_order,
-                        phys_to_virt(l_next_ptr).as_mut(),
-                        phys_to_virt(l_bitmap_ptr).as_mut(),
+                        core::ptr::slice_from_raw_parts_mut(
+                            phys_to_virt(l_next_ptr).as_mut(),
+                            BuddyAllocator::next_buf_size(l_order),
+                        ),
+                        core::ptr::slice_from_raw_parts_mut(
+                            phys_to_virt(l_bitmap_ptr).as_mut(),
+                            BuddyAllocator::bitmap_buf_size(l_order),
+                        ),
                     )
                 };
 
                 l_alloc.add_range(l_start, r_base);
                 self.regions.push_back(l_alloc);
-                crate::println!(
+                println!(
                     "palloc : ORD={} BASE={:?} RANGE={:?} .. {:?}",
-                    l_order,
-                    l_base,
-                    l_start,
-                    r_base
+                    l_order, l_base, l_start, r_base
                 );
             }
 
@@ -203,15 +216,21 @@ impl<'a> BuddyFrameAllocator<'a> {
                     self.regions.len(),
                     r_base,
                     r_order,
-                    phys_to_virt(r_next_ptr).as_mut(),
-                    phys_to_virt(r_bitmap_ptr).as_mut(),
+                    core::ptr::slice_from_raw_parts_mut(
+                        phys_to_virt(r_next_ptr).as_mut(),
+                        BuddyAllocator::next_buf_size(r_order),
+                    ),
+                    core::ptr::slice_from_raw_parts_mut(
+                        phys_to_virt(r_bitmap_ptr).as_mut(),
+                        BuddyAllocator::bitmap_buf_size(r_order),
+                    ),
                 )
             };
 
             let r_start = Ord::max(l_start, r_base);
             r_alloc.add_range(r_start, reg.end());
             self.regions.push_back(r_alloc);
-            crate::println!(
+            println!(
                 "palloc : ORD={} BASE={:?} RANGE={:?} .. {:?}",
                 r_order,
                 r_base,
@@ -245,13 +264,19 @@ impl<'a> BuddyFrameAllocator<'a> {
                     self.regions.len(),
                     reg.base,
                     size_order,
-                    phys_to_virt(next_ptr).as_mut(),
-                    phys_to_virt(bitmap_ptr).as_mut(),
+                    core::ptr::slice_from_raw_parts_mut(
+                        phys_to_virt(next_ptr).as_mut(),
+                        BuddyAllocator::next_buf_size(size_order),
+                    ),
+                    core::ptr::slice_from_raw_parts_mut(
+                        phys_to_virt(bitmap_ptr).as_mut(),
+                        BuddyAllocator::bitmap_buf_size(size_order),
+                    ),
                 )
             };
             alloc.add_range(reg.base, reg.end());
             self.regions.push_back(alloc);
-            crate::println!(
+            println!(
                 "palloc : ORD={} BASE={:?} RANGE={:?} .. {:?}",
                 size_order,
                 reg.base,

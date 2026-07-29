@@ -86,7 +86,7 @@ impl PTE {
     pub const EMPTY: Self = Self(0);
 
     pub fn new(page_addr: PAddr, flags: PTEFlags) -> Self {
-        debug_assert_eq!(page_addr.addr() & PAGE_SIZE - 1, 0);
+        debug_assert_eq!(page_addr.addr() & (PAGE_SIZE - 1), 0);
         let flags = flags.bits() as usize & 0xff;
         let paddr = (page_addr.addr() & 0xff_ffff_ffff_f000) >> 2;
         Self(paddr | flags)
@@ -135,7 +135,9 @@ pub struct PageTable {
 }
 
 impl PageTable {
-    pub fn init(slot: *mut MaybeUninit<Self>) {
+    /// # Safety
+    /// `slot` must be dereferenceable to [PageTable](PageTable).
+    pub unsafe fn init(slot: *mut MaybeUninit<Self>) {
         if !slot.is_null() && slot.is_aligned() {
             // Safety: slot is not null and aligned
             unsafe { (*slot).write(Self { entries: [PTE::EMPTY; 512] }); }
@@ -237,7 +239,7 @@ pub fn map_page(root_pt: *mut PageTable, va: VAddr, pa: PAddr, size: PageSize, f
                 
                 // Safety: p2v(next_pa) has the same alignment as next_pa, which points to an allocated physical page
                 let table_uninit = unsafe { p2v(next_pa).as_mut::<MaybeUninit<PageTable>>().as_mut_unchecked() };
-                PageTable::init(table_uninit);
+                unsafe { PageTable::init(table_uninit); }
                 table = table_uninit.as_mut_ptr();
 
                 pte.set_table(alloc.start_addr());
@@ -279,7 +281,6 @@ pub fn activate_vmap(root_pt_pa: PAddr) -> usize {
     satp.set_asid(usize::MAX);
     unsafe { satp::write(satp); }
     satp = satp::read();
-
     
     let max_asid = satp.asid();
     satp.set_ppn(root_pt_pa.ppn());

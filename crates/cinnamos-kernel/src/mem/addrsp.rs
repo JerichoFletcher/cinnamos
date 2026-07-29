@@ -9,7 +9,7 @@ use crate::{
 pub struct AddressSpace {
     root_ptr: *mut PageTable,
     root: Alloc,
-    tables: Vec<Alloc>,
+    _tables: Vec<Alloc>,
 }
 
 impl AddressSpace {
@@ -17,7 +17,7 @@ impl AddressSpace {
         Self {
             root_ptr,
             root,
-            tables,
+            _tables: tables,
         }
     }
 

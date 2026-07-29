@@ -2,7 +2,7 @@
 macro_rules! print {
     ($($arg:tt)*) => ({
         use core::fmt::Write;
-        let _ = write!(crate::device::uart::Writer::new(), $($arg)*);
+        let _ = write!($crate::device::uart::Writer::new(), $($arg)*);
     });
 }
 

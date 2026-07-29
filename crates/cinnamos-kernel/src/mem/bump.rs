@@ -52,7 +52,7 @@ impl BumpAllocator {
     /// `layout` must be a non-zero-sized layout.
     unsafe fn alloc(&mut self, layout: Layout) -> Option<PAddr> {
         let head = self.next.addr();
-        let alloc = if head % layout.align() == 0 {
+        let alloc = if head.is_multiple_of(layout.align()) {
             head
         } else {
             head.next_multiple_of(layout.align())

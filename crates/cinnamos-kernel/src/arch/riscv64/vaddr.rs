@@ -1,4 +1,4 @@
-use core::{fmt::{Debug, LowerHex}, ops::{Add, Sub}};
+use core::{fmt::{Debug, LowerHex}, ops::{Add, Sub}, ptr::NonNull};
 
 use crate::arch::{PAddr, sv48::PT_MAX_ENTRIES};
 
@@ -42,6 +42,10 @@ impl VAddr {
 
     pub const fn as_mut<T>(&self) -> *mut T {
         self.0 as *mut T
+    }
+
+    pub const fn as_nonnull<T>(&self) -> Option<NonNull<T>> {
+        NonNull::new(self.0 as *mut T)
     }
 
     pub const fn addr(&self) -> usize {

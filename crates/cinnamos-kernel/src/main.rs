@@ -44,6 +44,7 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
     mem::heap::init_bump();
     mem::physalloc::init_bump();
     mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("Failed to initialize VMS");
+
     unsafe {
         jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr, dyn_ptr);
     }
@@ -53,7 +54,7 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
 /// - `entry` must point to a physical location and be virtually mapped.
 /// - `hid` must be equal to the executing hart ID.
 /// - `dtb_ptr` must point to a physical location and be direct-mapped.
-/// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol and be direct-mapped.
+/// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol and be virtually mapped.
 unsafe fn jump_higher_half(
     entry: *const (),
     hid: usize,
@@ -64,6 +65,7 @@ unsafe fn jump_higher_half(
     let vdtb = mem::vms::phys_to_virt(PAddr::from_ptr(dtb_ptr));
     let vdyn = mem::vms::phys_to_kernel(PAddr::from_ptr(dyn_ptr));
     let vsp = mem::vms::phys_to_kernel(stack_end_p());
+
     unsafe {
         arch::jump_higher_half(ventry.as_ptr(), hid, vdtb, vdyn, vsp);
     }
@@ -108,7 +110,7 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
         );
     }
     mem::heap::init_heap();
-    sched::enqueue(sched::task::new_kernel_task(idle as _));
+    sched::enqueue(sched::task::new_kernel_task(idle as _).expect("Failed to create idle task"));
 
     arch::init_interrupts(hid, &fdt);
 

@@ -99,7 +99,7 @@ fn map_and_forget(
     while pa < pa_end {
         let next_size = PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
         arch::map_page(root_pt, va, pa, next_size, flags, p2v)
-            .map_err(|e| VmsError::Map(e))?
+            .map_err(VmsError::Map)?
             .forget();
         pa = pa + next_size.size();
         va = va + next_size.size();
@@ -122,7 +122,7 @@ fn map_and_take_allocs(
         let next_size = PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
         alloc_out.extend(
             arch::map_page(root_pt, va, pa, next_size, flags, p2v)
-                .map_err(|e| VmsError::Map(e))?
+                .map_err(VmsError::Map)?
                 .take_new_allocs(),
         );
         pa = pa + next_size.size();
@@ -134,10 +134,9 @@ fn map_and_take_allocs(
 /// Should only be called once in early phase
 pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
     let mut g = ROOT_ADDRSP.lock();
-    if let None = g.as_mut() {
+    if g.as_mut().is_none() {
         let root_alloc = mem::physalloc::alloc(1).ok_or(VmsError::FrameAllocFailed)?;
-        let root_pt =
-            phys_identity(root_alloc.start_addr()).as_mut() as *mut MaybeUninit<PageTable>;
+        let root_pt = phys_identity(root_alloc.start_addr()).as_mut::<MaybeUninit<_>>();
         unsafe {
             PageTable::init(root_pt.as_mut_unchecked());
         }
@@ -295,7 +294,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                 unsafe {
                     SizedMemoryRegion::new_unchecked(
                         dtb_pa,
-                        (fdt.total_size() + PAGE_SIZE - 1) & !(PAGE_SIZE - 1),
+                        fdt.total_size().next_multiple_of(PAGE_SIZE),
                     )
                 },
             ],
@@ -397,14 +396,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
         while let Some(alloc) = item {
             let pa = alloc.start_addr();
             let pa_end = alloc.end_addr();
-            println!(
-                "di-map pt {}\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
-                i,
-                pa,
-                pa_end,
-                phys_to_virt(pa),
-                phys_to_virt(pa_end),
-            );
+            let pt_frames_n0 = pt_frames.len();
             map_and_take_allocs(
                 root_pt,
                 pa,
@@ -414,6 +406,16 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                 &p2v,
                 &mut pt_frames,
             )?;
+            println!(
+                "di-map pt {}\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} (next unmapped frames {}->{})",
+                i,
+                pa,
+                pa_end,
+                phys_to_virt(pa),
+                phys_to_virt(pa_end),
+                pt_frames_n0,
+                pt_frames.len(),
+            );
 
             pt_frames_mapped.push(alloc);
             item = pt_frames.pop_front();
@@ -544,8 +546,7 @@ impl<F: Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
         let p2v = self.p2v;
         let root_pt = self.root_pt()?;
 
-        let allocs =
-            arch::map_page(root_pt, va, pa, size, flags, p2v).map_err(|e| VmsError::Map(e))?;
+        let allocs = arch::map_page(root_pt, va, pa, size, flags, p2v).map_err(VmsError::Map)?;
         Ok(allocs)
     }
 
@@ -553,7 +554,7 @@ impl<F: Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
         let p2v = self.p2v;
         let root_pt = self.root_pt()?;
 
-        let unmapped_size = arch::unmap_page(root_pt, va, p2v).map_err(|e| VmsError::Unmap(e))?;
+        let unmapped_size = arch::unmap_page(root_pt, va, p2v).map_err(VmsError::Unmap)?;
         Ok(unmapped_size)
     }
 

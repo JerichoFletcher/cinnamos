@@ -49,7 +49,6 @@ pub fn get_region_slices<const N: usize>(
             SizedMemoryRegion::new_unchecked(PAddr::from_ptr(r.address()), r.size())
         })
         .chain(add_rsv)
-        .into_iter()
         .collect();
     if let Some(rsv) = fdt.find_node("/reserved-memory") {
         rsv_regs.extend(
@@ -63,7 +62,7 @@ pub fn get_region_slices<const N: usize>(
                     })
                 })
                 .flatten()
-                .filter_map(|r| r),
+                .flatten(),
         );
     }
     rsv_regs.sort();
@@ -72,8 +71,7 @@ pub fn get_region_slices<const N: usize>(
     for r in fdt
         .memory()
         .regions()
-        .map(|r| SizedMemoryRegion::new(PAddr::from_ptr(r.starting_address), r.size))
-        .filter_map(|r| r)
+        .filter_map(|r| SizedMemoryRegion::new(PAddr::from_ptr(r.starting_address), r.size))
     {
         slice_usable_region(r, &mut rsv_regs, &mut usable_regs);
     }
@@ -88,9 +86,9 @@ fn slice_usable_region(
     rsv.sort_unstable();
 
     let mut reg = reg;
-    for i in 0..rsv.len() {
-        if reg.overlaps(&rsv[i]) {
-            match reg.subtract(&rsv[i]) {
+    for rsv in rsv {
+        if reg.overlaps(rsv) {
+            match reg.subtract(rsv) {
                 RegionSubtract::None => return,
                 RegionSubtract::Left(reg_l) => {
                     out.push(reg_l);

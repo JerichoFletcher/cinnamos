@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, num::NonZero, ptr::NonNull, u32};
+use core::{marker::PhantomData, num::NonZero, ptr::NonNull};
 
 use spin::Mutex;
 
@@ -49,7 +49,7 @@ impl Plic {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         debug_assert!((1..INTERRUPT_COUNT as u16).contains(&source));
         unsafe {
-            const CTX_WIDTH: usize = INTERRUPT_COUNT as usize / 8;
+            const CTX_WIDTH: usize = INTERRUPT_COUNT / 8;
             let ptr = self.base_addr.byte_add(OFFSET_INTERRUPT_ENABLE + Self::plic_ctx_id(hid) * CTX_WIDTH).add(source as usize / 32);
             let shift = source % 32;
 
@@ -70,7 +70,7 @@ impl Plic {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         unsafe {
             let ptr = self.plic_ctx(hid);
-            return (&raw mut (*ptr).irq_claim_complete).read_volatile() as u16
+            (&raw mut (*ptr).irq_claim_complete).read_volatile() as u16
         }
     }
 
@@ -124,7 +124,7 @@ pub fn init(base_addr: NonNull<u8>) {
 
 pub fn acquire<T>(f: impl FnOnce(&Plic) -> T) -> Result<T, ()> {
     let guard = PLIC.lock();
-    guard.as_ref().ok_or(()).map(|drv| f(drv))
+    guard.as_ref().ok_or(()).map(f)
 }
 
 pub fn claim_irq(hid: usize) -> Option<PlicIrqClaim> {
