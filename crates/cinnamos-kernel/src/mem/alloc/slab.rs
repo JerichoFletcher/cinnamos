@@ -5,7 +5,7 @@ use core::{
 };
 
 use alloc::{collections::linked_list::LinkedList, vec::Vec};
-use spin::Mutex;
+use spin::{Mutex, RwLock};
 
 use crate::{
     arch::VAddr,
@@ -106,17 +106,13 @@ impl<T> Slab<T> {
                 .enumerate()
                 .find(|(_, bits)| **bits != u64::MAX)
         {
-            for bit_index in 0..u64::BITS as usize {
-                let mask = 1 << bit_index;
-                if *bits & mask == 0 {
-                    *bits |= mask;
-                    let index = bitmap_index * u64::BITS as usize + bit_index;
-                    return self.index_to_va(index).as_nonnull().map(|ptr| {
-                        data.free -= 1;
-                        SlabBox { ptr, slab: self }
-                    });
-                }
-            }
+            let bit_index = (!*bits).trailing_zeros();
+            *bits |= 1 << bit_index;
+            let index = bitmap_index * u64::BITS as usize + bit_index as usize;
+            return self.index_to_va(index).as_nonnull().map(|ptr| {
+                data.free -= 1;
+                SlabBox { ptr, slab: self }
+            });
         }
         None
     }
@@ -153,21 +149,19 @@ impl<T> Slab<T> {
 
 pub struct SlabAllocator<T: SlabInit> {
     slab_frame_count: usize,
-    slabs: Mutex<LinkedList<Slab<T>>>,
+    slabs: RwLock<LinkedList<Slab<T>>>,
 }
 
 impl<T: SlabInit> SlabAllocator<T> {
     pub const fn new(slab_frame_count: usize) -> Self {
         Self {
             slab_frame_count,
-            slabs: Mutex::new(LinkedList::new()),
+            slabs: RwLock::new(LinkedList::new()),
         }
     }
 
     pub fn alloc(&self) -> Option<SlabBox<T>> {
-        let mut slabs = self.slabs.lock();
-
-        for slab in slabs.iter_mut() {
+        for slab in self.slabs.read().iter() {
             if let Some(mut handle) = slab.alloc() {
                 *handle = SlabInit::init()?;
                 return Some(handle);
@@ -177,7 +171,7 @@ impl<T: SlabInit> SlabAllocator<T> {
         let slab = Slab::new(self.slab_frame_count)?;
         let handle = slab.alloc();
 
-        slabs.push_front(slab);
+        self.slabs.write().push_front(slab);
         let mut handle = handle?;
         *handle = SlabInit::init()?;
         Some(handle)

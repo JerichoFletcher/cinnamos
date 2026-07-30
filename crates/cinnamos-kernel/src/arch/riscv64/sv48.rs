@@ -7,6 +7,7 @@ use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{PhysFrameAlloc, physalloc:
 
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
+pub const PAGE_TABLE_DEPTH: usize = PageSize::ALL.len();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PageSize {
@@ -137,11 +138,12 @@ pub struct PageTable {
 impl PageTable {
     /// # Safety
     /// `slot` must be dereferenceable to [PageTable](PageTable).
-    pub unsafe fn init(slot: *mut MaybeUninit<Self>) {
+    pub unsafe fn init(slot: *mut MaybeUninit<Self>) -> *mut Self {
         if !slot.is_null() && slot.is_aligned() {
             // Safety: slot is not null and aligned
             unsafe { (*slot).write(Self { entries: [PTE::EMPTY; 512] }); }
         }
+        slot.cast()
     }
 }
 
@@ -176,7 +178,7 @@ impl PageTableAllocMap {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MapError {
     OutOfMemory,
-    AlreadyMapped,
+    AlreadyMapped(VAddr, PAddr),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,57 +215,106 @@ pub fn translate_virt(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) ->
     None
 }
 
-pub fn map_page(root_pt: *mut PageTable, va: VAddr, pa: PAddr, size: PageSize, flags: PTEFlags, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageTableAllocMap, MapError> {
-    let vpn = va.vpn();
-    let mut table = root_pt;
-    let mut table_directory: [Option<PageTableAlloc>; 3] = [const { None }; 3];
+pub fn map_page(
+    root_pt: *mut PageTable,
+    va: VAddr,
+    pa: PAddr,
+    size: PageSize,
+    flags: PTEFlags,
+    p2v: &impl Fn(PAddr) -> VAddr
+) -> impl Iterator<Item = Result<Alloc, MapError>> {
+    core::iter::from_coroutine(#[coroutine] move || {
+        let vpn = va.vpn();
+        let mut table = root_pt;
+        
+        for level in (0..=3).rev() {
+            let pte = unsafe { &mut (*table).entries[vpn[level]] };
     
-    // table_directory[3] = Some(PageTableAlloc::Existing(table));
-    for level in (0..=3).rev() {
-        let pte = unsafe { &mut (*table).entries[vpn[level]] };
-
-        if level == size.level() {
-            if pte.is_valid() {
-                return Err(MapError::AlreadyMapped)
-            }
-            pte.set_leaf(pa, size, flags);
-            return Ok(PageTableAllocMap { allocs: table_directory.map(|v| v.unwrap_or(PageTableAlloc::None)) })
-        } else {
-            if pte.is_valid() && !pte.is_leaf() {
-                let next_pa = pte.phys_addr();
-                table = p2v(next_pa).as_mut();
-                table_directory[level - 1] = Some(PageTableAlloc::Existing(table));
-            } else if !pte.is_valid() {
-                let alloc = physalloc::alloc(1).ok_or(MapError::OutOfMemory)?;
-                let next_pa = alloc.start_addr();
-                
-                // Safety: p2v(next_pa) has the same alignment as next_pa, which points to an allocated physical page
-                let table_uninit = unsafe { p2v(next_pa).as_mut::<MaybeUninit<PageTable>>().as_mut_unchecked() };
-                unsafe { PageTable::init(table_uninit); }
-                table = table_uninit.as_mut_ptr();
-
-                pte.set_table(alloc.start_addr());
-                table_directory[level - 1] = Some(PageTableAlloc::New(alloc));
+            if level == size.level() {
+                if pte.is_valid() {
+                    yield Err(MapError::AlreadyMapped(va, pte.phys_addr()));
+                    return;
+                }
+                pte.set_leaf(pa, size, flags);
+                return;
             } else {
-                return Err(MapError::AlreadyMapped)
+                if pte.is_valid() && !pte.is_leaf() {
+                    let next_pa = pte.phys_addr();
+                    table = p2v(next_pa).as_mut();
+                } else if !pte.is_valid() {
+                    match physalloc::alloc(1) {
+                        Some(alloc) => {
+                            let next_pa = alloc.start_addr();
+                            
+                            let table_uninit = p2v(next_pa).as_mut::<MaybeUninit<_>>();
+                            table = unsafe { PageTable::init(table_uninit) };
+                            // crate::println!("SV48 alloc {:?}", &alloc);
+            
+                            pte.set_table(alloc.start_addr());
+                            yield Ok(alloc);
+                        },
+                        None => {
+                            yield Err(MapError::OutOfMemory);
+                            return;
+                        }
+                    }
+                } else {
+                    yield Err(MapError::AlreadyMapped(va, pte.phys_addr()));
+                    return;
+                }
             }
         }
-    }
-    unreachable!()
+    })
 }
+
+// pub fn map_page(root_pt: *mut PageTable, va: VAddr, pa: PAddr, size: PageSize, flags: PTEFlags, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageTableAllocMap, MapError> {
+//     let vpn = va.vpn();
+//     let mut table = root_pt;
+//     let mut table_directory: [Option<PageTableAlloc>; 3] = [const { None }; 3];
+    
+//     // table_directory[3] = Some(PageTableAlloc::Existing(table));
+//     for level in (0..=3).rev() {
+//         let pte = unsafe { &mut (*table).entries[vpn[level]] };
+
+//         if level == size.level() {
+//             if pte.is_valid() {
+//                 return Err(MapError::AlreadyMapped)
+//             }
+//             pte.set_leaf(pa, size, flags);
+//             return Ok(PageTableAllocMap { allocs: table_directory.map(|v| v.unwrap_or(PageTableAlloc::None)) })
+//         } else {
+//             if pte.is_valid() && !pte.is_leaf() {
+//                 let next_pa = pte.phys_addr();
+//                 table = p2v(next_pa).as_mut();
+//                 table_directory[level - 1] = Some(PageTableAlloc::Existing(table));
+//             } else if !pte.is_valid() {
+//                 let alloc = physalloc::alloc(1).ok_or(MapError::OutOfMemory)?;
+//                 let next_pa = alloc.start_addr();
+                
+//                 // Safety: p2v(next_pa) has the same alignment as next_pa, which points to an allocated physical page
+//                 let table_uninit = unsafe { p2v(next_pa).as_mut::<MaybeUninit<PageTable>>().as_mut_unchecked() };
+//                 unsafe { PageTable::init(table_uninit); }
+//                 table = table_uninit.as_mut_ptr();
+
+//                 pte.set_table(alloc.start_addr());
+//                 table_directory[level - 1] = Some(PageTableAlloc::New(alloc));
+//             } else {
+//                 return Err(MapError::AlreadyMapped)
+//             }
+//         }
+//     }
+//     unreachable!()
+// }
 
 pub fn unmap_page(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageSize, UnmapError> {
     let vpn = va.vpn();
     let mut table = root_pt;
-    let mut table_directory: [*mut PageTable; 4] = [const { core::ptr::null_mut() }; 4];
 
-    table_directory[3] = table;
     for level in (0..=3).rev() {
         let pte = unsafe { &mut (*table).entries[vpn[level]] };
         if pte.is_valid() && !pte.is_leaf() {
             let next_pa = pte.phys_addr();
             table = p2v(next_pa).as_mut();
-            table_directory[level - 1] = table;
         } else if pte.is_valid() {
             pte.clear();
             riscv::asm::sfence_vma(0, va.addr());

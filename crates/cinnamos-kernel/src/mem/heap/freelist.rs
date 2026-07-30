@@ -1,4 +1,8 @@
-use core::{alloc::Layout, ptr::NonNull};
+use core::{
+    alloc::Layout,
+    ptr::NonNull,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use spin::Mutex;
 
@@ -28,7 +32,7 @@ struct FreeBlock {
 }
 
 pub struct FreeListHeap {
-    next_va: Mutex<VAddr>,
+    next_va: AtomicUsize,
     pool_heads_lo: [Mutex<*mut FreeBlock>; SIZES_LO.len()],
     pool_heads_md: [Mutex<*mut FreeBlock>; SIZES_MD.len()],
     pool_heads_hi: [Mutex<*mut FreeBlock>; SIZES_HI.len()],
@@ -39,7 +43,7 @@ unsafe impl Sync for FreeListHeap {}
 impl FreeListHeap {
     pub const fn new(base: VAddr) -> Self {
         Self {
-            next_va: Mutex::new(base),
+            next_va: AtomicUsize::new(base.addr()),
             pool_heads_lo: [const { Mutex::new(core::ptr::null_mut()) }; SIZES_LO.len()],
             pool_heads_md: [const { Mutex::new(core::ptr::null_mut()) }; SIZES_MD.len()],
             pool_heads_hi: [const { Mutex::new(core::ptr::null_mut()) }; SIZES_HI.len()],
@@ -49,19 +53,13 @@ impl FreeListHeap {
     pub fn alloc(&self, layout: Layout) -> *mut u8 {
         let layout = layout.pad_to_align();
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);
-        if block_size <= SIZES_LO[SIZES_LO.len() - 1] {
-            self.alloc_block(block_size)
-        } else {
-            core::ptr::null_mut()
-        }
+        self.alloc_block(block_size)
     }
 
     pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let layout = layout.pad_to_align();
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);
-        if block_size <= SIZES_LO[SIZES_LO.len() - 1] {
-            self.dealloc_block(ptr, block_size);
-        }
+        self.dealloc_block(ptr, block_size);
     }
 
     fn alloc_block(&self, size: usize) -> *mut u8 {
@@ -81,42 +79,90 @@ impl FreeListHeap {
             }
             None => match physalloc::alloc(heap_grow_frames) {
                 Some(alloc) => {
+                    drop(head);
+
                     let alloc_size = alloc.size();
-                    let mut next_va = self.next_va.lock();
-
-                    let base_va = *next_va;
+                    let next_va = self.next_va.fetch_add(alloc_size, Ordering::Relaxed);
+                    let base_va = VAddr::new(next_va);
                     let end_va = base_va + alloc_size;
-                    *next_va = end_va;
 
-                    if vms::acquire(|mut g| {
-                        g.map_pages_and_forget(
-                            alloc.start_addr(),
-                            alloc.end_addr(),
-                            base_va,
-                            PTEFlags::GLOBAL | PTEFlags::RW,
-                        )
-                    })
-                    .is_ok()
-                    {
-                        core::mem::forget(alloc);
+                    match vms::map_raw(
+                        base_va,
+                        alloc.start_addr(),
+                        alloc_size,
+                        PTEFlags::GLOBAL | PTEFlags::RW,
+                    ) {
+                        Ok(()) => {
+                            let mut next_va = VAddr::NULL;
+                            let mut prev_va = end_va - size;
+                            let tail_block = prev_va.as_mut::<FreeBlock>();
 
-                        let mut next_va = VAddr::NULL;
-                        let mut prev_va = end_va - size;
-                        while prev_va >= base_va {
-                            unsafe {
-                                *prev_va.as_mut::<FreeBlock>() = FreeBlock {
-                                    next: next_va.as_mut(),
+                            while prev_va >= base_va {
+                                // Safety: prev_va is within base_va and end_va, which is mapped
+                                unsafe {
+                                    *prev_va.as_mut::<FreeBlock>() = FreeBlock {
+                                        next: next_va.as_mut(),
+                                    }
+                                }
+                                next_va = prev_va;
+                                prev_va = prev_va - size;
+                            }
+                            let head_block = next_va.as_mut::<FreeBlock>();
+
+                            let mut head = pool.lock();
+                            if !(*head).is_null() {
+                                // Safety: tail is the last block within the pages we allocated
+                                unsafe {
+                                    (*tail_block).next = *head;
                                 }
                             }
-                            next_va = prev_va;
-                            prev_va = prev_va - size;
+                            // Safety: head_block is the first block within the pages we allocated
+                            *head = unsafe { (*head_block).next };
+                            head_block.cast()
                         }
-                        let head_block = next_va.as_mut::<FreeBlock>();
-                        *head = unsafe { (*head_block).next };
-                        head_block.cast()
-                    } else {
-                        core::ptr::null_mut()
+                        Err(_) => core::ptr::null_mut(),
                     }
+                    // if vms::acquire(|mut g| {
+                    //     g.map_pages_and_forget(
+                    //         alloc.start_addr(),
+                    //         alloc.end_addr(),
+                    //         base_va,
+                    //         PTEFlags::GLOBAL | PTEFlags::RW,
+                    //     )
+                    // })
+                    // .is_ok()
+                    // {
+                    //     core::mem::forget(alloc);
+
+                    //     let mut next_va = VAddr::NULL;
+                    //     let mut prev_va = end_va - size;
+                    //     let tail_block = prev_va.as_mut::<FreeBlock>();
+
+                    //     while prev_va >= base_va {
+                    //         // Safety: prev_va is within base_va and end_va, which is mapped
+                    //         unsafe {
+                    //             *prev_va.as_mut::<FreeBlock>() = FreeBlock {
+                    //                 next: next_va.as_mut(),
+                    //             }
+                    //         }
+                    //         next_va = prev_va;
+                    //         prev_va = prev_va - size;
+                    //     }
+                    //     let head_block = next_va.as_mut::<FreeBlock>();
+
+                    //     let mut head = pool.lock();
+                    //     if !(*head).is_null() {
+                    //         // Safety: tail is the last block within the pages we allocated
+                    //         unsafe {
+                    //             (*tail_block).next = *head;
+                    //         }
+                    //     }
+                    //     // Safety: head_block is the first block within the pages we allocated
+                    //     *head = unsafe { (*head_block).next };
+                    //     head_block.cast()
+                    // } else {
+                    //     core::ptr::null_mut()
+                    // }
                 }
                 None => core::ptr::null_mut(),
             },

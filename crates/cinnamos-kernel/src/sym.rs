@@ -17,7 +17,7 @@ macro_rules! def_symbols {
                 unsafe extern "C" {
                     static [<_ $name _start>]: u8;
                 }
-                PAddr::new((&raw const ([<_ $name _start>]) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()))
+                PAddr::new((&raw const ([<_ $name _start>]) as usize).wrapping_sub($crate::mem::vms::phys_to_kernel_dynslide()))
             }
 
             #[inline]
@@ -33,7 +33,7 @@ macro_rules! def_symbols {
                 unsafe extern "C" {
                     static [<_ $name _end>]: u8;
                 }
-                PAddr::new((&raw const ([<_ $name _end>]) as usize).wrapping_sub($crate::phys_to_kernel_dynslide!()))
+                PAddr::new((&raw const ([<_ $name _end>]) as usize).wrapping_sub($crate::mem::vms::phys_to_kernel_dynslide()))
             }
 
             #[inline]

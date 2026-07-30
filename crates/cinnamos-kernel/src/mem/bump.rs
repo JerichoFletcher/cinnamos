@@ -1,6 +1,9 @@
-use core::alloc::Layout;
+use core::{
+    alloc::Layout,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
-use spin::Mutex;
+use spin::Once;
 
 use crate::{
     arch::{PAddr, VAddr},
@@ -11,8 +14,8 @@ use crate::{
 #[derive(Debug)]
 pub struct BumpAllocator {
     start: PAddr,
-    next: PAddr,
     end: PAddr,
+    next: AtomicUsize,
 }
 
 impl BumpAllocator {
@@ -22,8 +25,8 @@ impl BumpAllocator {
         debug_assert!(start < end);
         Self {
             start,
-            next: start,
             end,
+            next: AtomicUsize::new(start.addr()),
         }
     }
 
@@ -31,7 +34,7 @@ impl BumpAllocator {
     /// - `layout` must be a non-zero-sized layout.
     /// - `p2v` must be a valid physical-to-virtual address translation function within the active virtual address map.
     /// - `p2v` must also not change the alignment of physical addresses after translating into virtual addresses.
-    pub unsafe fn alloc_virt(&mut self, layout: Layout, p2v: impl Fn(PAddr) -> VAddr) -> *mut u8 {
+    pub unsafe fn alloc_virt(&self, layout: Layout, p2v: impl Fn(PAddr) -> VAddr) -> *mut u8 {
         // Safety: Passed layout is non-zero-sized
         match unsafe { self.alloc(layout) } {
             Some(pa) => p2v(pa).as_mut(),
@@ -39,7 +42,7 @@ impl BumpAllocator {
         }
     }
 
-    pub fn alloc_frame(&mut self, count: usize) -> Option<PAddr> {
+    pub fn alloc_frame(&self, count: usize) -> Option<PAddr> {
         if count == 0 {
             None
         } else {
@@ -50,34 +53,39 @@ impl BumpAllocator {
 
     /// # Safety
     /// `layout` must be a non-zero-sized layout.
-    unsafe fn alloc(&mut self, layout: Layout) -> Option<PAddr> {
-        let head = self.next.addr();
-        let alloc = if head.is_multiple_of(layout.align()) {
-            head
-        } else {
-            head.next_multiple_of(layout.align())
-        };
-        let next = alloc + layout.size();
-        if next > self.end.addr() {
-            return None;
-        }
+    unsafe fn alloc(&self, layout: Layout) -> Option<PAddr> {
+        loop {
+            let head = self.next.load(Ordering::Relaxed);
+            let alloc = head.next_multiple_of(layout.align());
+            let next = alloc.checked_add(layout.size())?;
+            if next > self.end.addr() {
+                return None;
+            }
 
-        self.next = PAddr::new(next);
-        Some(PAddr::new(alloc))
+            match self
+                .next
+                .compare_exchange_weak(head, next, Ordering::AcqRel, Ordering::Relaxed)
+            {
+                Ok(_) => return Some(PAddr::new(alloc)),
+                Err(_) => continue,
+            }
+        }
     }
 }
 
-static BUMP_ALLOC: Mutex<Option<BumpAllocator>> = Mutex::new(None);
+static BUMP_ALLOC: Once<BumpAllocator> = Once::new();
 
-pub fn init() {
-    *BUMP_ALLOC.lock() =
-        unsafe { Some(BumpAllocator::new(bump_heap_start_p(), bump_heap_end_p())) };
+fn get_bump<'a>() -> &'a BumpAllocator {
+    BUMP_ALLOC.call_once(|| unsafe { BumpAllocator::new(bump_heap_start_p(), bump_heap_end_p()) })
 }
 
 pub fn get_bump_area() -> Option<(PAddr, PAddr, PAddr)> {
-    let g = BUMP_ALLOC.lock();
-    let bump = g.as_ref()?;
-    Some((bump.start, bump.next, bump.end))
+    let bump = get_bump();
+    Some((
+        bump.start,
+        PAddr::new(bump.next.load(Ordering::Relaxed)),
+        bump.end,
+    ))
 }
 
 /// # Safety
@@ -85,16 +93,10 @@ pub fn get_bump_area() -> Option<(PAddr, PAddr, PAddr)> {
 /// - `p2v` must be a valid physical-to-virtual address translation function within the active virtual address map.
 /// - `p2v` must also not change the alignment of physical addresses after translating into virtual addresses.
 pub unsafe fn alloc(layout: Layout, p2v: impl Fn(PAddr) -> VAddr) -> *mut u8 {
-    let mut g = BUMP_ALLOC.lock();
-    if let Some(bump) = g.as_mut() {
-        unsafe { bump.alloc_virt(layout, p2v) }
-    } else {
-        core::ptr::null_mut()
-    }
+    // Safety: All safety rules are fulfilled by caller
+    unsafe { get_bump().alloc_virt(layout, p2v) }
 }
 
 pub fn alloc_frame(count: usize) -> Option<PAddr> {
-    let mut g = BUMP_ALLOC.lock();
-    let bump = g.as_mut()?;
-    bump.alloc_frame(count)
+    get_bump().alloc_frame(count)
 }

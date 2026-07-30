@@ -1,8 +1,10 @@
 use core::fmt::Debug;
 
-pub const MAX_ORDER: usize = 32;
+use alloc::collections::BTreeMap;
 
-pub type BlockIndex = u32;
+pub const MAX_ORDER: usize = 36;
+
+pub type BlockIndex = usize;
 
 pub const fn order_of(size: BlockIndex) -> usize {
     if size != 0 {
@@ -13,30 +15,97 @@ pub const fn order_of(size: BlockIndex) -> usize {
     }
 }
 
-pub struct BuddyAllocator<'a> {
+pub const fn next_buf_size(order: usize) -> usize {
+    2 << order
+}
+
+pub fn bitmap_buf_size(order: usize) -> usize {
+    (1 << order).max(64) / 64
+}
+
+pub trait BackingBuffer {
+    fn get_next(&self, index: &BlockIndex) -> BlockIndex;
+    fn get_bitmap(&self, index: &BlockIndex) -> u64;
+
+    fn set_next(&mut self, index: &BlockIndex, value: BlockIndex);
+    fn set_bitmap(&mut self, index: &BlockIndex, value: u64);
+}
+
+pub struct FlatArray {
+    next: *mut [BlockIndex],
+    bitmap: *mut [u64],
+}
+impl BackingBuffer for FlatArray {
+    fn get_next(&self, index: &BlockIndex) -> BlockIndex {
+        // Safety: self.next is valid and exclusive to the backing buffer
+        unsafe { (*self.next)[*index] }
+    }
+
+    fn get_bitmap(&self, index: &BlockIndex) -> u64 {
+        // Safety: self.bitmap is valid and exclusive to the backing buffer
+        unsafe { (*self.bitmap)[*index] }
+    }
+
+    fn set_next(&mut self, index: &BlockIndex, value: BlockIndex) {
+        // Safety: self.next is valid and exclusive to the backing buffer
+        unsafe {
+            (*self.next)[*index] = value;
+        }
+    }
+
+    fn set_bitmap(&mut self, index: &BlockIndex, value: u64) {
+        // Safety: self.bitmap is valid and exclusive to the backing buffer
+        unsafe {
+            (*self.bitmap)[*index] = value;
+        }
+    }
+}
+
+pub struct AllocMap {
+    next: BTreeMap<BlockIndex, BlockIndex>,
+    bitmap: BTreeMap<BlockIndex, u64>,
+}
+impl BackingBuffer for AllocMap {
+    fn get_next(&self, index: &BlockIndex) -> BlockIndex {
+        self.next.get(index).copied().unwrap_or(BlockIndex::MAX)
+    }
+
+    fn get_bitmap(&self, index: &BlockIndex) -> u64 {
+        self.bitmap.get(index).copied().unwrap_or(0)
+    }
+
+    fn set_next(&mut self, index: &BlockIndex, value: BlockIndex) {
+        if value == BlockIndex::MAX {
+            self.next.remove(index);
+        } else {
+            self.next.insert(*index, value);
+        }
+    }
+
+    fn set_bitmap(&mut self, index: &BlockIndex, value: u64) {
+        if value == 0 {
+            self.bitmap.remove(index);
+        } else {
+            self.bitmap.insert(*index, value);
+        }
+    }
+}
+
+pub struct BuddyAllocator<B: BackingBuffer> {
     order: usize,
     free_lists: [BlockIndex; MAX_ORDER],
-    next: &'a mut [BlockIndex],
-    bitmap: &'a mut [u64],
+    buffers: B,
     total: usize,
     free: usize,
 }
 
-impl<'a> BuddyAllocator<'a> {
-    pub const fn next_buf_size(order: usize) -> usize {
-        2 << order
-    }
-
-    pub fn bitmap_buf_size(order: usize) -> usize {
-        (1 << order).max(64) / 64
-    }
-
+impl BuddyAllocator<FlatArray> {
     /// # Safety
     /// - `next` must point to an aligned buffer of [BlockIndex](BlockIndex) with at least [next_buf_size(order)](Self::next_buf_size) items of capacity.
     /// - `bitmap` must point to an aligned buffer of [u64](u64) with at least [bitmap_buf_size(order)](Self::bitmap_buf_size) items of capacity.
     pub unsafe fn new(order: usize, next: *mut [BlockIndex], bitmap: *mut [u64]) -> Self {
-        let next_size = Self::next_buf_size(order);
-        let bitmap_size = Self::bitmap_buf_size(order);
+        let next_size = next_buf_size(order);
+        let bitmap_size = bitmap_buf_size(order);
         assert!(order < MAX_ORDER, "Invalid order: {}", order);
         assert!(
             next.len() >= next_size,
@@ -51,24 +120,41 @@ impl<'a> BuddyAllocator<'a> {
             bitmap_size
         );
 
-        // Safety: next is valid and will only be accessed from this allocator
-        let next = unsafe { next.as_mut_unchecked() };
-        // Safety: bitmap is valid and will only be accessed from this allocator
-        let bitmap = unsafe { bitmap.as_mut_unchecked() };
-
-        next.fill(BlockIndex::MAX);
-        bitmap.fill(0);
+        // Safety: next is valid and is only accessed from this allocator
+        unsafe {
+            (*next).fill(BlockIndex::MAX);
+        }
+        // Safety: bitmap is valid and is only accessed from this allocator
+        unsafe {
+            (*bitmap).fill(0);
+        }
 
         Self {
             order,
             free_lists: [BlockIndex::MAX; MAX_ORDER],
-            next,
-            bitmap,
+            buffers: FlatArray { next, bitmap },
             total: 0,
             free: 0,
         }
     }
+}
 
+impl BuddyAllocator<AllocMap> {
+    pub fn new(order: usize) -> Self {
+        Self {
+            order,
+            free_lists: [BlockIndex::MAX; MAX_ORDER],
+            buffers: AllocMap {
+                next: BTreeMap::new(),
+                bitmap: BTreeMap::new(),
+            },
+            total: 0,
+            free: 0,
+        }
+    }
+}
+
+impl<B: BackingBuffer> BuddyAllocator<B> {
     pub fn alloc(&mut self, order: usize) -> Option<BlockIndex> {
         assert!(order < MAX_ORDER, "Invalid order: {}", order);
 
@@ -78,8 +164,8 @@ impl<'a> BuddyAllocator<'a> {
         // Pop block from free list
         let block = self.free_lists[free_order];
         let idx = self.next_idx(free_order, block);
-        self.free_lists[free_order] = self.next[idx];
-        self.next[idx] = BlockIndex::MAX;
+        self.free_lists[free_order] = self.buffers.get_next(&idx);
+        self.buffers.set_next(&idx, BlockIndex::MAX);
         self.bitmap_bit_toggle(free_order, block);
 
         // Split and push children
@@ -180,7 +266,7 @@ impl<'a> BuddyAllocator<'a> {
         debug_assert!(block <= self.max_block_count());
 
         let idx = self.next_idx(order, block);
-        self.next[idx] = self.free_lists[order];
+        self.buffers.set_next(&idx, self.free_lists[order]);
         self.free_lists[order] = block;
     }
 
@@ -195,15 +281,15 @@ impl<'a> BuddyAllocator<'a> {
             let curr_idx = self.next_idx(order, curr);
             if curr == block {
                 if let Some(p) = prev {
-                    self.next[p] = self.next[curr_idx];
+                    self.buffers.set_next(&p, self.buffers.get_next(&curr_idx));
                 } else {
-                    self.free_lists[order] = self.next[curr_idx];
+                    self.free_lists[order] = self.buffers.get_next(&curr_idx);
                 }
-                self.next[curr_idx] = BlockIndex::MAX;
+                self.buffers.set_next(&curr_idx, BlockIndex::MAX);
                 return;
             }
             prev = Some(curr_idx);
-            curr = self.next[curr_idx];
+            curr = self.buffers.get_next(&curr_idx);
         }
         panic!("Block {} not found at order {}", block, order);
     }
@@ -223,7 +309,9 @@ impl<'a> BuddyAllocator<'a> {
         let flat = self.order_offset(order) / 2 + (block as usize >> (order + 1));
         let idx = flat / 64;
         let bit = flat % 64;
-        (self.bitmap[idx] >> bit) & 1 == 1
+
+        let bits = self.buffers.get_bitmap(&idx);
+        (bits >> bit) & 1 == 1
     }
 
     fn bitmap_bit_toggle(&mut self, order: usize, block: BlockIndex) {
@@ -233,7 +321,9 @@ impl<'a> BuddyAllocator<'a> {
         let flat = self.order_offset(order) / 2 + (block as usize >> (order + 1));
         let idx = flat / 64;
         let bit = flat % 64;
-        self.bitmap[idx] ^= 1 << bit;
+
+        let bits = self.buffers.get_bitmap(&idx);
+        self.buffers.set_bitmap(&idx, bits ^ (1 << bit));
     }
 
     fn buddy_of(order: usize, block: BlockIndex) -> BlockIndex {
@@ -242,7 +332,7 @@ impl<'a> BuddyAllocator<'a> {
     }
 }
 
-impl Debug for BuddyAllocator<'_> {
+impl<B: BackingBuffer> Debug for BuddyAllocator<B> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("BuddyAllocator")
             .field("order", &self.order)

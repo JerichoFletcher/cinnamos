@@ -1,6 +1,6 @@
 use core::{fmt::{Debug, LowerHex}, ops::{Add, Sub}, ptr::NonNull};
 
-use crate::arch::{PAddr, sv48::PT_MAX_ENTRIES};
+use crate::{arch::{PAddr, sv48::PT_MAX_ENTRIES}, mem::PAGE_SIZE};
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -59,6 +59,10 @@ impl VAddr {
             (self.0 >> 30) & 0x1ff,
             (self.0 >> 39) & 0x1ff,
         ]
+    }
+
+    pub const fn vpn_all(&self) -> usize {
+        self.0 / PAGE_SIZE
     }
 }
 

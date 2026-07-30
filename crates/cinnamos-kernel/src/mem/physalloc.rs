@@ -1,7 +1,7 @@
 use core::cmp::Reverse;
 
 use fdt::Fdt;
-use spin::Mutex;
+use spin::RwLock;
 
 use crate::{
     arch::PAddr,
@@ -49,13 +49,13 @@ impl PhysFrameAlloc for Alloc {
     }
 }
 
-enum SendAllocator<'a> {
+enum SendAllocator {
     Bump,
-    Buddy(BuddyFrameAllocator<'a>),
+    Buddy(BuddyFrameAllocator),
 }
 
-impl<'a> SendAllocator<'a> {
-    fn alloc(&mut self, frame_count: usize) -> Option<Alloc> {
+impl SendAllocator {
+    fn alloc(&self, frame_count: usize) -> Option<Alloc> {
         match self {
             Self::Bump => {
                 mem::bump::alloc_frame(frame_count).map(|pa| Alloc::BumpAlloc((pa, frame_count)))
@@ -66,7 +66,7 @@ impl<'a> SendAllocator<'a> {
 
     /// # Safety
     /// `alloc` must be an allocation from the currently active allocator.
-    unsafe fn dealloc(&mut self, handle: &mut Alloc) {
+    unsafe fn dealloc(&self, handle: &mut Alloc) {
         match self {
             Self::Bump => (),
             Self::Buddy(alloc) => {
@@ -78,14 +78,9 @@ impl<'a> SendAllocator<'a> {
     }
 }
 
-unsafe impl Send for SendAllocator<'_> {}
+unsafe impl Sync for SendAllocator {}
 
-static ALLOCATOR: Mutex<Option<SendAllocator>> = Mutex::new(None);
-
-/// Should only be called once on early phase
-pub fn init_bump() {
-    *ALLOCATOR.lock() = Some(SendAllocator::Bump);
-}
+static ALLOCATOR: RwLock<SendAllocator> = RwLock::new(SendAllocator::Bump);
 
 /// Should only be called once on higher-half phase
 pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
@@ -114,21 +109,18 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
     }
 
     let alloc = BuddyFrameAllocator::new(usable_regs.as_slice());
-    *ALLOCATOR.lock() = Some(SendAllocator::Buddy(alloc));
+    *ALLOCATOR.write() = SendAllocator::Buddy(alloc);
 }
 
 pub fn alloc(frame_count: usize) -> Option<Alloc> {
-    let mut guard = ALLOCATOR.lock();
-    let sa = guard.as_mut()?;
-    (*sa).alloc(frame_count)
+    let a = ALLOCATOR.read();
+    a.alloc(frame_count)
 }
 
 fn dealloc(handle: &mut Alloc) {
-    let mut guard = ALLOCATOR.lock();
-    if let Some(sa) = guard.as_mut() {
-        // Safety: Bump-backed frames are never deallocated
-        unsafe {
-            (*sa).dealloc(handle);
-        }
+    let a = ALLOCATOR.read();
+    // Safety: Bump-backed frames are never deallocated
+    unsafe {
+        a.dealloc(handle);
     }
 }

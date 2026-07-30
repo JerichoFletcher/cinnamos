@@ -12,6 +12,6 @@ pub trait PhysFrameAlloc {
 }
 
 pub trait PhysFrameAllocator<T: PhysFrameAlloc> {
-    fn alloc(&mut self, frame_count: usize) -> Option<T>;
-    fn dealloc(&mut self, handle: &mut T);
+    fn alloc(&self, frame_count: usize) -> Option<T>;
+    fn dealloc(&self, handle: &mut T);
 }

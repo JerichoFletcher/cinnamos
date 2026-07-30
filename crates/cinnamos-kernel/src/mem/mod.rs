@@ -4,12 +4,14 @@ use crate::arch::PAddr;
 mod phys;
 pub use phys::PhysFrameAlloc;
 
+pub mod virt;
+
+pub mod addrsp;
+pub mod alloc;
 pub mod bump;
 pub mod heap;
 pub mod physalloc;
-// pub mod valloc;
-pub mod addrsp;
-pub mod alloc;
+pub mod vmalloc;
 pub mod vms;
 
 #[derive(Debug, Clone, Copy)]

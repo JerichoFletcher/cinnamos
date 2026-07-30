@@ -40,9 +40,8 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
         );
     }
 
-    mem::bump::init();
-    mem::heap::init_bump();
-    mem::physalloc::init_bump();
+    #[cfg(debug_assertions)]
+    println!("debug : Initializing VMS");
     mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("Failed to initialize VMS");
 
     unsafe {
@@ -96,6 +95,8 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
     println!("debug : higher-half entry (HID {})", hid);
 
     mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));
+    mem::vms::remap_tables().expect("Failed to remap to higher-half");
+    mem::heap::init_heap();
     mem::vms::uninit_identity_map().expect("Failed to uninitialize identity map");
 
     #[cfg(debug_assertions)]
@@ -109,9 +110,8 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
             bump_end - bump_start,
         );
     }
-    mem::heap::init_heap();
     sched::enqueue(sched::task::new_kernel_task(idle as _).expect("Failed to create idle task"));
-
+    
     arch::init_interrupts(hid, &fdt);
 
     #[cfg(debug_assertions)]
