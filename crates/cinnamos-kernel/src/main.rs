@@ -25,7 +25,7 @@ unsafe extern "C" fn kernel_relocate(
 }
 
 unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
-    hloc::load_boot_hart_local(hid);
+    hloc::load_boot_hart_local(hid, VAddr::identity(trap_stack_end_p()));
     arch::init();
 
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("Invalid DTB") };
@@ -40,8 +40,6 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
         );
     }
 
-    #[cfg(debug_assertions)]
-    println!("debug : Initializing VMS");
     mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("Failed to initialize VMS");
 
     unsafe {
@@ -74,7 +72,7 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
     unsafe {
         rel::shift_relocation(dyn_ptr, mem::vms::PHYS_TO_KERNEL_SLIDE);
     }
-    hloc::load_boot_hart_local(hid);
+    hloc::load_boot_hart_local(hid, trap_stack_end_v());
     arch::init_higher_half();
     mem::heap::shift_bump(&mem::vms::phys_to_kernel);
 
@@ -111,7 +109,6 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
         );
     }
     sched::enqueue(sched::task::new_kernel_task(idle as _).expect("Failed to create idle task"));
-    
     arch::init_interrupts(hid, &fdt);
 
     #[cfg(debug_assertions)]

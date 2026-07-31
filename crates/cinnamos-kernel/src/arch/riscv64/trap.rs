@@ -51,13 +51,18 @@ pub fn create_task_init_stack(at: VAddr, entry: *const (), task_sp: VAddr) -> VA
 
 #[unsafe(no_mangle)]
 extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
-    let tcause = frame.scause.cause().try_into::<Interrupt, Exception>().unwrap();
+    let tcause = frame.scause.cause()
+        .try_into::<Interrupt, Exception>()
+        .expect("Invalid trap cause");
 
     match tcause {
-        Trap::Exception(Exception::IllegalInstruction) => panic!("[at 0x{:016x}] Illegal instruction 0x{:016x}", frame.ctx.sepc, frame.stval),
         Trap::Exception(Exception::InstructionMisaligned) => panic!("[at 0x{:016x}] Instruction misaligned 0x{:016x}", frame.ctx.sepc, frame.stval),
+        Trap::Exception(Exception::InstructionFault) => panic!("[at 0x{:016x}] Instruction fault 0x{:016x}", frame.ctx.sepc, frame.stval),
+        Trap::Exception(Exception::IllegalInstruction) => panic!("[at 0x{:016x}] Illegal instruction 0x{:016x}", frame.ctx.sepc, frame.stval),
         Trap::Exception(Exception::LoadMisaligned) => panic!("[at 0x{:016x}] Load misaligned 0x{:016x}", frame.ctx.sepc, frame.stval),
+        Trap::Exception(Exception::LoadFault) => panic!("[at 0x{:016x}] Load fault 0x{:016x}", frame.ctx.sepc, frame.stval),
         Trap::Exception(Exception::StoreMisaligned) => panic!("[at 0x{:016x}] Store misaligned 0x{:016x}", frame.ctx.sepc, frame.stval),
+        Trap::Exception(Exception::StoreFault) => panic!("[at 0x{:016x}] Store fault 0x{:016x}", frame.ctx.sepc, frame.stval),
         Trap::Exception(Exception::InstructionPageFault) => panic!("[at 0x{:016x}] Instruction page fault 0x{:016x}", frame.ctx.sepc, frame.stval),
         Trap::Exception(Exception::LoadPageFault) => panic!("[at 0x{:016x}] Load page fault 0x{:016x}", frame.ctx.sepc, frame.stval),
         Trap::Exception(Exception::StorePageFault) => panic!("[at 0x{:016x}] Store page fault 0x{:016x}", frame.ctx.sepc, frame.stval),
@@ -85,7 +90,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
         Trap::Interrupt(Interrupt::SupervisorSoft) => {
             println!("[at 0x{:016x}] Software interrupt 0x{:016x}", frame.ctx.sepc, frame.stval);
         },
-        _ => (),
+        _ => panic!("[at 0x{:016x}] Unhandled trap {:?} 0x{:016x}", frame.ctx.sepc, tcause, frame.stval),
     }
 }
 

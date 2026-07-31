@@ -1,5 +1,6 @@
 .equ HLOC_SCRATCH_OFFSET,   8
 .equ HLOC_TASKPTR_OFFSET,   16
+.equ HLOC_TSP_OFFSET,       24
 .equ TASK_KSP_OFFSET,       16
 .equ TRAP_FRAME_SIZE,       32*8 + 4*8
 
@@ -14,13 +15,22 @@ __trap_entry:
 
     sd      sp, HLOC_SCRATCH_OFFSET(tp)
     ld      sp, HLOC_TASKPTR_OFFSET(tp)
-    beq     sp, zero, __trap_entry_err_null_task
+    beq     sp, zero, 1f
 
+# Load the task KSP
     ld      sp, TASK_KSP_OFFSET(sp)
-    beq     sp, zero, __trap_entry_err_null_ksp
-    addi    sp, sp, -TRAP_FRAME_SIZE
+    beq     sp, zero, __trap_entry_err_null_task_ksp
+    j       2f
 
+1:
+# Null task pointer means the trap is taken before the scheduler starts
+# Load the hart's trap SP instead
+    ld      sp, HLOC_TSP_OFFSET(tp)
+    beq     sp, zero, __trap_entry_err_null_kernel_tsp
+
+2:
 # Save registers (except tp and sp)
+    addi    sp, sp, -TRAP_FRAME_SIZE
     sd      ra, 1*8(sp)
     sd      gp, 3*8(sp)
     sd      x5, 5*8(sp)
@@ -77,11 +87,20 @@ __trap_entry:
 
 .global __trap_exit
 __trap_exit:
-# Store new KSP ahead of time
-    ld      t0, HLOC_TASKPTR_OFFSET(tp)
-    addi    t1, sp, TRAP_FRAME_SIZE
-    sd      t1, TASK_KSP_OFFSET(t0)
+    addi    t0, sp, TRAP_FRAME_SIZE
+    ld      t1, HLOC_TASKPTR_OFFSET(tp)
+    beq     t1, zero, 1f
 
+# Store new task KSP ahead of time
+    sd      t0, TASK_KSP_OFFSET(t1)
+    j       2f
+
+1:
+# Store new kernel TSP ahead of time
+# Shouldn't matter but will make improper stack switches visible
+    sd      t0, HLOC_TSP_OFFSET(tp)
+
+2:
 # Restore CSRs
     ld      t0, 2*8(sp)
     ld      t1, 4*8(sp)
@@ -130,14 +149,17 @@ __trap_exit:
     csrrw   tp, sscratch, tp
     sret
 
+# Null TP should never happen since we initialized hart-locals early
 __trap_entry_err_null_tp:
 1:
     j       1b
 
-__trap_entry_err_null_task:
-2:
-    j       2b
+# Tasks should never be created with a null KSP
+__trap_entry_err_null_task_ksp:
+1:
+    j       1b
 
-__trap_entry_err_null_ksp:
-3:
-    j       3b
+# Initialized hart-locals should never have a null TSP
+__trap_entry_err_null_kernel_tsp:
+1:
+    j       1b
