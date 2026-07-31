@@ -1,6 +1,9 @@
 use core::mem::MaybeUninit;
 
-use crate::{arch::{self, VAddr}, sched::task::Task};
+use crate::{
+    arch::{self, VAddr},
+    sched::task::Task,
+};
 
 #[repr(C)]
 #[derive(Debug)]

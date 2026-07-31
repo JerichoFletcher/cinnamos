@@ -1,10 +1,7 @@
 use core::{
     alloc::Layout,
-    ptr::NonNull,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
-
-use spin::Mutex;
 
 use crate::{
     arch::{PTEFlags, VAddr},
@@ -33,9 +30,9 @@ struct FreeBlock {
 
 pub struct FreeListHeap {
     next_va: AtomicUsize,
-    pool_heads_lo: [Mutex<*mut FreeBlock>; SIZES_LO.len()],
-    pool_heads_md: [Mutex<*mut FreeBlock>; SIZES_MD.len()],
-    pool_heads_hi: [Mutex<*mut FreeBlock>; SIZES_HI.len()],
+    pool_heads_lo: [AtomicPtr<FreeBlock>; SIZES_LO.len()],
+    pool_heads_md: [AtomicPtr<FreeBlock>; SIZES_MD.len()],
+    pool_heads_hi: [AtomicPtr<FreeBlock>; SIZES_HI.len()],
 }
 
 unsafe impl Sync for FreeListHeap {}
@@ -44,9 +41,9 @@ impl FreeListHeap {
     pub const fn new(base: VAddr) -> Self {
         Self {
             next_va: AtomicUsize::new(base.addr()),
-            pool_heads_lo: [const { Mutex::new(core::ptr::null_mut()) }; SIZES_LO.len()],
-            pool_heads_md: [const { Mutex::new(core::ptr::null_mut()) }; SIZES_MD.len()],
-            pool_heads_hi: [const { Mutex::new(core::ptr::null_mut()) }; SIZES_HI.len()],
+            pool_heads_lo: [const { AtomicPtr::new(core::ptr::null_mut()) }; SIZES_LO.len()],
+            pool_heads_md: [const { AtomicPtr::new(core::ptr::null_mut()) }; SIZES_MD.len()],
+            pool_heads_hi: [const { AtomicPtr::new(core::ptr::null_mut()) }; SIZES_HI.len()],
         }
     }
 
@@ -70,102 +67,74 @@ impl FreeListHeap {
             BlockSizeLookup::Invalid => return core::ptr::null_mut(),
         };
 
-        let mut head = pool.lock();
-        match NonNull::new(*head) {
-            Some(block) => {
-                let next = unsafe { block.as_ref().next };
-                *head = next;
-                block.as_ptr().cast()
+        let mut head = pool.load(Ordering::Acquire);
+        loop {
+            if !head.is_null() {
+                let next = unsafe { (*head).next };
+                match pool.compare_exchange_weak(head, next, Ordering::AcqRel, Ordering::Acquire) {
+                    Ok(_) => return head.cast(),
+                    Err(x) => head = x,
+                }
+            } else {
+                break;
             }
-            None => match physalloc::alloc(heap_grow_frames) {
-                Some(alloc) => {
-                    drop(head);
+        }
 
-                    let alloc_size = alloc.size();
-                    let next_va = self.next_va.fetch_add(alloc_size, Ordering::Relaxed);
-                    let base_va = VAddr::new(next_va);
-                    let end_va = base_va + alloc_size;
+        match physalloc::alloc(heap_grow_frames) {
+            Some(alloc) => {
+                let alloc_size = alloc.size();
+                let next_va = self.next_va.fetch_add(alloc_size, Ordering::Relaxed);
+                let base_va = VAddr::new(next_va);
+                let end_va = base_va + alloc_size;
 
-                    match vms::map_raw(
-                        base_va,
-                        alloc.start_addr(),
-                        alloc_size,
-                        PTEFlags::GLOBAL | PTEFlags::RW,
-                    ) {
-                        Ok(()) => {
-                            let mut next_va = VAddr::NULL;
-                            let mut prev_va = end_va - size;
-                            let tail_block = prev_va.as_mut::<FreeBlock>();
+                match vms::map_raw(
+                    base_va,
+                    alloc.start_addr(),
+                    alloc_size,
+                    PTEFlags::GLOBAL | PTEFlags::RW,
+                ) {
+                    Ok(()) => {
+                        let mut next_va = VAddr::NULL;
+                        let mut prev_va = end_va - size;
+                        let tail_block = prev_va.as_mut::<FreeBlock>();
 
-                            while prev_va >= base_va {
-                                // Safety: prev_va is within base_va and end_va, which is mapped
-                                unsafe {
-                                    *prev_va.as_mut::<FreeBlock>() = FreeBlock {
-                                        next: next_va.as_mut(),
-                                    }
+                        while prev_va >= base_va {
+                            // Safety: prev_va is within base_va and end_va, which is mapped
+                            unsafe {
+                                *prev_va.as_mut::<FreeBlock>() = FreeBlock {
+                                    next: next_va.as_mut(),
                                 }
-                                next_va = prev_va;
-                                prev_va = prev_va - size;
                             }
-                            let head_block = next_va.as_mut::<FreeBlock>();
+                            next_va = prev_va;
+                            prev_va = prev_va - size;
+                        }
+                        let used_block = next_va.as_mut::<FreeBlock>();
+                        // Safety: head_block is the first block within the pages we allocated
+                        let head_block = unsafe { (*used_block).next };
 
-                            let mut head = pool.lock();
-                            if !(*head).is_null() {
+                        let mut head = pool.load(Ordering::Acquire);
+                        loop {
+                            if !head.is_null() {
                                 // Safety: tail is the last block within the pages we allocated
                                 unsafe {
-                                    (*tail_block).next = *head;
+                                    (*tail_block).next = head;
                                 }
                             }
-                            // Safety: head_block is the first block within the pages we allocated
-                            *head = unsafe { (*head_block).next };
-                            head_block.cast()
+                            match pool.compare_exchange_weak(
+                                head,
+                                head_block,
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
+                            ) {
+                                Ok(_) => return used_block.cast(),
+                                Err(x) => head = x,
+                            }
                         }
-                        Err(_) => core::ptr::null_mut(),
                     }
-                    // if vms::acquire(|mut g| {
-                    //     g.map_pages_and_forget(
-                    //         alloc.start_addr(),
-                    //         alloc.end_addr(),
-                    //         base_va,
-                    //         PTEFlags::GLOBAL | PTEFlags::RW,
-                    //     )
-                    // })
-                    // .is_ok()
-                    // {
-                    //     core::mem::forget(alloc);
-
-                    //     let mut next_va = VAddr::NULL;
-                    //     let mut prev_va = end_va - size;
-                    //     let tail_block = prev_va.as_mut::<FreeBlock>();
-
-                    //     while prev_va >= base_va {
-                    //         // Safety: prev_va is within base_va and end_va, which is mapped
-                    //         unsafe {
-                    //             *prev_va.as_mut::<FreeBlock>() = FreeBlock {
-                    //                 next: next_va.as_mut(),
-                    //             }
-                    //         }
-                    //         next_va = prev_va;
-                    //         prev_va = prev_va - size;
-                    //     }
-                    //     let head_block = next_va.as_mut::<FreeBlock>();
-
-                    //     let mut head = pool.lock();
-                    //     if !(*head).is_null() {
-                    //         // Safety: tail is the last block within the pages we allocated
-                    //         unsafe {
-                    //             (*tail_block).next = *head;
-                    //         }
-                    //     }
-                    //     // Safety: head_block is the first block within the pages we allocated
-                    //     *head = unsafe { (*head_block).next };
-                    //     head_block.cast()
-                    // } else {
-                    //     core::ptr::null_mut()
-                    // }
+                    Err(_) => return core::ptr::null_mut(),
                 }
-                None => core::ptr::null_mut(),
-            },
+            }
+            None => return core::ptr::null_mut(),
         }
     }
 
@@ -177,12 +146,17 @@ impl FreeListHeap {
             BlockSizeLookup::Invalid => panic!("Invalid block size {size}"),
         };
 
-        let mut head = pool.lock();
-        let new_head: *mut FreeBlock = ptr.cast();
-        unsafe {
-            (*new_head).next = *head;
+        loop {
+            let head = pool.load(Ordering::Relaxed);
+            let new_head: *mut FreeBlock = ptr.cast();
+            unsafe {
+                (*new_head).next = head;
+            }
+            match pool.compare_exchange_weak(head, new_head, Ordering::AcqRel, Ordering::Relaxed) {
+                Ok(_) => break,
+                Err(_) => continue,
+            }
         }
-        *head = new_head;
     }
 
     fn lookup_block_size(size: usize) -> BlockSizeLookup {

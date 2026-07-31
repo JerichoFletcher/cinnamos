@@ -27,16 +27,6 @@ pub enum VmsError {
 #[derive(Debug)]
 struct SendAddressSpace(AddressSpace<'static, BuddyPageAlloc>);
 
-// impl SendAddressSpace {
-//     fn root_pt_pa(&self) -> PAddr {
-//         self.0.root_pa()
-//     }
-
-//     fn root_pt(&self) -> *mut PageTable {
-//         self.0.root_ptr()
-//     }
-// }
-
 unsafe impl Send for SendAddressSpace {}
 unsafe impl Sync for SendAddressSpace {}
 
@@ -67,51 +57,6 @@ pub fn phys_to_virt(pa: PAddr) -> VAddr {
 pub fn virt_to_phys(va: VAddr) -> PAddr {
     PAddr::new(va.addr().wrapping_sub(DIRECT_MAP_BASE))
 }
-
-// fn map_and_forget(
-//     root_pt: *mut PageTable,
-//     pa_start: PAddr,
-//     pa_end: PAddr,
-//     va: VAddr,
-//     flags: PTEFlags,
-//     p2v: &impl Fn(PAddr) -> VAddr,
-// ) -> Result<(), VmsError> {
-//     let mut pa = pa_start;
-//     let mut va = va;
-//     while pa < pa_end {
-//         let next_size = PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
-//         arch::map_page(root_pt, va, pa, next_size, flags, p2v)
-//             .map_err(VmsError::Map)?
-//             .forget();
-//         pa = pa + next_size.size();
-//         va = va + next_size.size();
-//     }
-//     Ok(())
-// }
-
-// fn map_and_take_allocs(
-//     root_pt: *mut PageTable,
-//     pa_start: PAddr,
-//     pa_end: PAddr,
-//     va: VAddr,
-//     flags: PTEFlags,
-//     p2v: &impl Fn(PAddr) -> VAddr,
-//     alloc_out: &mut impl Extend<Alloc>,
-// ) -> Result<(), VmsError> {
-//     let mut pa = pa_start;
-//     let mut va = va;
-//     while pa < pa_end {
-//         let next_size = PageSize::select_size(va, pa, pa_end - pa).ok_or(VmsError::Unaligned)?;
-//         alloc_out.extend(
-//             arch::map_page(root_pt, va, pa, next_size, flags, p2v)
-//                 .map_err(VmsError::Map)?
-//                 .take_new_allocs(),
-//         );
-//         pa = pa + next_size.size();
-//         va = va + next_size.size();
-//     }
-//     Ok(())
-// }
 
 /// Should only be called once in early phase
 pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
@@ -415,7 +360,10 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
 pub fn remap_tables() -> Result<(), VmsError> {
     let mut g = ROOT_ADDRSP.write();
     let root_addrsp = g.as_mut().ok_or(VmsError::RootTableUninitialized)?;
-    root_addrsp.0.remap(&phys_to_virt).map_err(VmsError::AddressSpace)
+    root_addrsp
+        .0
+        .remap(&phys_to_virt)
+        .map_err(VmsError::AddressSpace)
 }
 
 /// Should only be called once after [remapping the address space](remap_tables) and [initializing the heap](mem::heap::init_heap).
@@ -435,91 +383,6 @@ pub fn uninit_identity_map() -> Result<(), VmsError> {
         .map_err(VmsError::AddressSpace)
 }
 
-// pub struct VmsAccessGuard<'a, F>
-// where
-//     F: Fn(PAddr) -> VAddr,
-// {
-//     guard: MutexGuard<'a, Option<SendAddressSpace>, Spin>,
-//     p2v: &'a F,
-// }
-
-// impl<F: Fn(PAddr) -> VAddr> VmsAccessGuard<'_, F> {
-//     pub fn root_pt_pa(&self) -> Result<PAddr, VmsError> {
-//         let wrapper = self
-//             .guard
-//             .as_ref()
-//             .ok_or(VmsError::RootTableUninitialized)?;
-//         Ok(wrapper.0.root_pa())
-//     }
-
-//     pub fn root_pt(&mut self) -> Result<*mut PageTable, VmsError> {
-//         let wrapper = self
-//             .guard
-//             .as_mut()
-//             .ok_or(VmsError::RootTableUninitialized)?;
-//         Ok(wrapper.0.root_ptr())
-//     }
-
-//     pub fn map_page(
-//         &mut self,
-//         va: VAddr,
-//         pa: PAddr,
-//         size: PageSize,
-//         flags: PTEFlags,
-//     ) -> Result<PageTableAllocMap, VmsError> {
-//         let p2v = self.p2v;
-//         let root_pt = self.root_pt()?;
-
-//         let allocs = arch::map_page(root_pt, va, pa, size, flags, p2v).map_err(VmsError::Map)?;
-//         Ok(allocs)
-//     }
-
-//     pub fn unmap_page(&mut self, va: VAddr) -> Result<PageSize, VmsError> {
-//         let p2v = self.p2v;
-//         let root_pt = self.root_pt()?;
-
-//         let unmapped_size = arch::unmap_page(root_pt, va, p2v).map_err(VmsError::Unmap)?;
-//         Ok(unmapped_size)
-//     }
-
-//     pub fn map_pages_and_forget(
-//         &mut self,
-//         pa_start: PAddr,
-//         pa_end: PAddr,
-//         va: VAddr,
-//         flags: PTEFlags,
-//     ) -> Result<(), VmsError> {
-//         let p2v = self.p2v;
-//         let root_pt = self.root_pt()?;
-
-//         map_and_forget(root_pt, pa_start, pa_end, va, flags, p2v)
-//     }
-
-//     pub fn map_pages_and_take_alloc(
-//         &mut self,
-//         pa_start: PAddr,
-//         pa_end: PAddr,
-//         va: VAddr,
-//         flags: PTEFlags,
-//         alloc_out: &mut impl Extend<Alloc>,
-//     ) -> Result<(), VmsError> {
-//         let p2v = self.p2v;
-//         let root_pt = self.root_pt()?;
-
-//         map_and_take_allocs(root_pt, pa_start, pa_end, va, flags, p2v, alloc_out)
-//     }
-
-//     pub fn unmap_pages(&mut self, va: VAddr, size_bytes: usize) -> Result<(), VmsError> {
-//         let mut va = va;
-//         let va_end = va + size_bytes;
-//         while va < va_end {
-//             let next_size = self.unmap_page(va)?;
-//             va = va + next_size.size();
-//         }
-//         Ok(())
-//     }
-// }
-
 pub fn map_raw(va: VAddr, pa: PAddr, size_bytes: usize, flags: PTEFlags) -> Result<(), VmsError> {
     let g = ROOT_ADDRSP.read();
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
@@ -528,17 +391,3 @@ pub fn map_raw(va: VAddr, pa: PAddr, size_bytes: usize, flags: PTEFlags) -> Resu
         .map_raw(va, pa, size_bytes, flags)
         .map_err(VmsError::AddressSpace)
 }
-
-// pub fn acquire_with_p2v<F, T>(p2v: F, f: impl FnOnce(VmsAccessGuard<'_, F>) -> T) -> T
-// where
-//     F: Fn(PAddr) -> VAddr,
-// {
-//     let guard = ROOT_ADDRSP.lock();
-//     let guard = VmsAccessGuard { guard, p2v: &p2v };
-//     f(guard)
-// }
-
-// pub fn acquire<T>(f: impl FnOnce(VmsAccessGuard<'_, fn(PAddr) -> VAddr>) -> T) -> T {
-//     let p2v: fn(PAddr) -> VAddr = phys_to_virt;
-//     acquire_with_p2v(p2v, f)
-// }
