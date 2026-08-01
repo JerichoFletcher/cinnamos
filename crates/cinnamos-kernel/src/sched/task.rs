@@ -29,26 +29,26 @@ pub struct Task {
 
 impl SlabInit for Task {
     fn init() -> Option<Self> {
-        let kernel_stack_phys = mem::physalloc::alloc(2)?;
+        let kernel_stack_alloc = mem::physalloc::alloc(2)?;
         let task_stack_alloc = mem::physalloc::alloc(16)?;
 
         let val = Self {
             id: 0,
             state: TaskState::Ready,
-            kernel_stack_ptr: mem::vms::phys_to_virt(kernel_stack_phys.start_addr()),
+            kernel_stack_ptr: mem::vms::phys_to_virt(kernel_stack_alloc.start_addr()),
             time_quantum: 0,
-            kernel_stack_alloc: kernel_stack_phys,
+            kernel_stack_alloc,
             task_stack_alloc,
         };
         Some(val)
     }
 }
 
-struct SendAllocator(SlabAllocator<Task>);
+struct SendAllocator(SlabAllocator<1, Task>);
 
 unsafe impl Sync for SendAllocator {}
 
-static TASK_ALLOC: SendAllocator = SendAllocator(SlabAllocator::new(1));
+static TASK_ALLOC: SendAllocator = SendAllocator(SlabAllocator::new());
 
 pub fn new_kernel_task(entry: *const ()) -> Option<SlabBox<Task>> {
     let mut task = TASK_ALLOC.0.alloc()?;

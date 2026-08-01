@@ -1,9 +1,16 @@
 use core::mem::MaybeUninit;
 
 use bitflags::bitflags;
-use riscv::{register::satp};
+use riscv::register::satp;
 
-use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{PhysFrameAlloc, addrsp::AddressSpace, physalloc::{self, FrameAlloc}}};
+use crate::{
+    arch::{paddr::PAddr, vaddr::VAddr},
+    mem::{
+        PhysFrameAlloc,
+        addrsp::AddressSpace,
+        physalloc::{self, FrameAlloc},
+    },
+};
 
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
@@ -33,10 +40,10 @@ impl PageSize {
             if s.size() > size_bytes {
                 continue;
             }
-    
+
             let low_mask = s.size() - 1;
             if va.addr() & low_mask == 0 && pa.addr() & low_mask == 0 {
-                return Some(s)
+                return Some(s);
             }
         }
         None
@@ -64,18 +71,18 @@ impl PageSize {
 bitflags! {
     #[derive(Debug, Clone, Copy)]
     pub struct PTEFlags: u8 {
-        const VALID = 0x01;
-        const READ = 0x02;
-        const WRITE = 0x04;
-        const EXECUTE = 0x08;
-        const USER = 0x10;
-        const GLOBAL = 0x20;
-        const ACCESSED = 0x40;
-        const DIRTY = 0x80;
+        const VALID     = 0x01;
+        const READ      = 0x02;
+        const WRITE     = 0x04;
+        const EXECUTE   = 0x08;
+        const USER      = 0x10;
+        const GLOBAL    = 0x20;
+        const ACCESSED  = 0x40;
+        const DIRTY     = 0x80;
 
-        const RW = 0x06;
-        const RX = 0x0a;
-        const RWX = 0x0e;
+        const RW        = 0x02 | 0x04;
+        const RX        = 0x02 | 0x08;
+        const RWX       = 0x02 | 0x04 | 0x08;
     }
 }
 
@@ -87,14 +94,14 @@ impl PTE {
     pub const EMPTY: Self = Self(0);
 
     pub fn new(page_addr: PAddr, flags: PTEFlags) -> Self {
-        debug_assert_eq!(page_addr.addr() & (PAGE_SIZE - 1), 0);
+        debug_assert!(page_addr.addr().is_multiple_of(PAGE_SIZE), "Address misaligned");
         let flags = flags.bits() as usize & 0xff;
-        let paddr = (page_addr.addr() & 0xff_ffff_ffff_f000) >> 2;
+        let paddr = page_addr.ppn() >> 2;
         Self(paddr | flags)
     }
 
     pub fn phys_addr(&self) -> PAddr {
-        PAddr::new(((self.0 << 10) as isize >> 8) as usize & 0xffff_ffff_ffff_f000)
+        PAddr::new(((self.0 << 10) as isize >> 8) as usize & !(PAGE_SIZE - 1))
     }
 
     pub fn flags(&self) -> PTEFlags {
@@ -106,7 +113,10 @@ impl PTE {
     }
 
     pub fn is_leaf(&self) -> bool {
-        self.is_valid() && self.flags().intersects(PTEFlags::READ | PTEFlags::WRITE | PTEFlags::EXECUTE)
+        self.is_valid()
+            && self
+                .flags()
+                .intersects(PTEFlags::RWX)
     }
 
     pub fn set_table(&mut self, pa: PAddr) {
@@ -141,7 +151,11 @@ impl PageTable {
     pub unsafe fn init(slot: *mut MaybeUninit<Self>) -> *mut Self {
         if !slot.is_null() && slot.is_aligned() {
             // Safety: slot is not null and aligned
-            unsafe { (*slot).write(Self { entries: [PTE::EMPTY; 512] }); }
+            unsafe {
+                (*slot).write(Self {
+                    entries: [PTE::EMPTY; 512],
+                });
+            }
         }
         slot.cast()
     }
@@ -165,13 +179,16 @@ impl PageTableAllocMap {
     }
 
     pub fn take_new_allocs(self) -> impl Iterator<Item = FrameAlloc> {
-        core::iter::from_coroutine(#[coroutine] || {
-            for v in self.allocs.into_iter().rev() {
-                if let PageTableAlloc::New(alloc) = v {
-                    yield alloc
+        core::iter::from_coroutine(
+            #[coroutine]
+            || {
+                for v in self.allocs.into_iter().rev() {
+                    if let PageTableAlloc::New(alloc) = v {
+                        yield alloc
+                    }
                 }
-            }
-        })
+            },
+        )
     }
 }
 
@@ -187,7 +204,11 @@ pub enum UnmapError {
 }
 
 #[cfg(debug_assertions)]
-pub fn translate_virt(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Option<PAddr> {
+pub fn translate_virt(
+    root_pt: *mut PageTable,
+    va: VAddr,
+    p2v: impl Fn(PAddr) -> VAddr,
+) -> Option<PAddr> {
     let vpn = va.vpn();
     let mut table = root_pt;
 
@@ -196,16 +217,16 @@ pub fn translate_virt(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) ->
         let flags = pte.flags();
 
         if !pte.is_valid() || (!flags.contains(PTEFlags::READ) && flags.contains(PTEFlags::WRITE)) {
-            return None
+            return None;
         } else if flags.intersects(PTEFlags::RX) {
             let pa = pte.phys_addr();
             let off_mask = (1usize << (12 + level * 9)) - 1;
 
             if pa.addr() & off_mask != 0 {
-                return None
+                return None;
             } else {
                 let pa = pa + (va.addr() & off_mask);
-                return Some(pa)
+                return Some(pa);
             }
         } else {
             let next_pa = pte.phys_addr();
@@ -221,53 +242,60 @@ pub fn map_page(
     pa: PAddr,
     size: PageSize,
     flags: PTEFlags,
-    p2v: &impl Fn(PAddr) -> VAddr
+    p2v: &impl Fn(PAddr) -> VAddr,
 ) -> impl Iterator<Item = Result<FrameAlloc, MapError>> {
-    core::iter::from_coroutine(#[coroutine] move || {
-        let vpn = va.vpn();
-        let mut table = root_pt;
-        
-        for level in (0..=3).rev() {
-            let pte = unsafe { &mut (*table).entries[vpn[level]] };
-    
-            if level == size.level() {
-                if pte.is_valid() {
-                    yield Err(MapError::AlreadyMapped(va, pte.phys_addr()));
-                    return;
-                }
-                pte.set_leaf(pa, size, flags);
-                return;
-            } else {
-                if pte.is_valid() && !pte.is_leaf() {
-                    let next_pa = pte.phys_addr();
-                    table = p2v(next_pa).as_mut();
-                } else if !pte.is_valid() {
-                    match physalloc::alloc(1) {
-                        Some(alloc) => {
-                            let next_pa = alloc.start_addr();
-                            
-                            let table_uninit = p2v(next_pa).as_mut::<MaybeUninit<_>>();
-                            table = unsafe { PageTable::init(table_uninit) };
-                            // crate::println!("SV48 alloc {:?}", &alloc);
-            
-                            pte.set_table(alloc.start_addr());
-                            yield Ok(alloc);
-                        },
-                        None => {
-                            yield Err(MapError::OutOfMemory);
-                            return;
-                        }
+    core::iter::from_coroutine(
+        #[coroutine]
+        move || {
+            let vpn = va.vpn();
+            let mut table = root_pt;
+
+            for level in (0..=3).rev() {
+                let pte = unsafe { &mut (*table).entries[vpn[level]] };
+
+                if level == size.level() {
+                    if pte.is_valid() {
+                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr()));
+                        return;
                     }
-                } else {
-                    yield Err(MapError::AlreadyMapped(va, pte.phys_addr()));
+                    pte.set_leaf(pa, size, flags);
                     return;
+                } else {
+                    if pte.is_valid() && !pte.is_leaf() {
+                        let next_pa = pte.phys_addr();
+                        table = p2v(next_pa).as_mut();
+                    } else if !pte.is_valid() {
+                        match physalloc::alloc(1) {
+                            Some(alloc) => {
+                                let next_pa = alloc.start_addr();
+
+                                let table_uninit = p2v(next_pa).as_mut::<MaybeUninit<_>>();
+                                table = unsafe { PageTable::init(table_uninit) };
+                                // crate::println!("SV48 alloc {:?}", &alloc);
+
+                                pte.set_table(alloc.start_addr());
+                                yield Ok(alloc);
+                            }
+                            None => {
+                                yield Err(MapError::OutOfMemory);
+                                return;
+                            }
+                        }
+                    } else {
+                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr()));
+                        return;
+                    }
                 }
             }
-        }
-    })
+        },
+    )
 }
 
-pub fn unmap_page(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageSize, UnmapError> {
+pub fn unmap_page(
+    root_pt: *mut PageTable,
+    va: VAddr,
+    p2v: impl Fn(PAddr) -> VAddr,
+) -> Result<PageSize, UnmapError> {
     let vpn = va.vpn();
     let mut table = root_pt;
 
@@ -279,9 +307,9 @@ pub fn unmap_page(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAd
         } else if pte.is_valid() {
             pte.clear();
             riscv::asm::sfence_vma(0, va.addr());
-            return Ok(PageSize::ALL[level])
+            return Ok(PageSize::ALL[level]);
         } else {
-            return Err(UnmapError::NotMapped)
+            return Err(UnmapError::NotMapped);
         }
     }
     unreachable!()
@@ -291,12 +319,16 @@ pub fn get_max_asid() -> usize {
     let mut satp = satp::read();
     let old_asid = satp.asid();
     satp.set_asid(usize::MAX);
-    unsafe { satp::write(satp); }
+    unsafe {
+        satp::write(satp);
+    }
 
     satp = satp::read();
     let max_asid = satp.asid();
     satp.set_asid(old_asid);
-    unsafe { satp::write(satp); }
+    unsafe {
+        satp::write(satp);
+    }
 
     max_asid
 }
@@ -306,7 +338,9 @@ pub fn switch_address_space(addrsp: &AddressSpace) {
     satp.set_ppn(addrsp.root_pa().ppn());
     satp.set_asid(addrsp.id());
     satp.set_mode(satp::Mode::Sv48);
-    unsafe { satp::write(satp); }
+    unsafe {
+        satp::write(satp);
+    }
 }
 
 pub fn flush_address_space(asid: usize) {

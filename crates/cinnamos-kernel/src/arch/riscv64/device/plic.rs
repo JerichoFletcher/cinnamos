@@ -1,6 +1,8 @@
 use core::{marker::PhantomData, num::NonZero, ptr::NonNull};
 
-use spin::Mutex;
+use spin::{Once, RwLock, RwLockReadGuard, rwlock::RwLockWriteGuard};
+
+use crate::hloc;
 
 pub const INTERRUPT_COUNT: usize = 1024;
 pub const MAX_PLIC_CONTEXT: usize = 15872;
@@ -11,13 +13,14 @@ const OFFSET_INTERRUPT_CONTEXT: usize   = 0x200000;
 
 const STRIDE_INTERRUPT_CONTEXT: usize   = 0x001000;
 
+#[repr(C)]
 #[derive(Debug)]
 struct PlicContext {
     priority_threshold: u32,
     irq_claim_complete: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct Plic {
     base_addr: *mut u32,
     max_priority: u32,
@@ -33,32 +36,45 @@ impl Plic {
             probe.write_volatile(u32::MAX);
             let max_priority = probe.read_volatile();
             probe.write_volatile(prev);
-            Self { base_addr, max_priority }
+            Self {
+                base_addr,
+                max_priority,
+            }
         }
     }
 
-    pub fn set_priority(&self, source: u16, priority: u32) {
+    pub fn set_priority(&mut self, source: u16, priority: u32) {
         debug_assert!((1..INTERRUPT_COUNT as u16).contains(&source));
         unsafe {
-            let ptr = self.base_addr.byte_add(OFFSET_INTERRUPT_PRIORITY).add(source as usize);
+            let ptr = self
+                .base_addr
+                .byte_add(OFFSET_INTERRUPT_PRIORITY)
+                .add(source as usize);
             ptr.write_volatile(self.max_priority.min(priority));
         }
     }
 
-    pub fn set_enabled(&self, source: u16, hid: usize, enabled: bool) {
+    pub fn set_enabled(&mut self, source: u16, hid: usize, enabled: bool) {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         debug_assert!((1..INTERRUPT_COUNT as u16).contains(&source));
         unsafe {
             const CTX_WIDTH: usize = INTERRUPT_COUNT / 8;
-            let ptr = self.base_addr.byte_add(OFFSET_INTERRUPT_ENABLE + Self::plic_ctx_id(hid) * CTX_WIDTH).add(source as usize / 32);
+            let ptr = self
+                .base_addr
+                .byte_add(OFFSET_INTERRUPT_ENABLE + Self::plic_ctx_id(hid) * CTX_WIDTH)
+                .add(source as usize / 32);
             let shift = source % 32;
 
             let val = ptr.read_volatile();
-            ptr.write_volatile(if enabled { val | (1u32 << shift) } else { val & !(1u32 << shift) });
+            ptr.write_volatile(if enabled {
+                val | (1u32 << shift)
+            } else {
+                val & !(1u32 << shift)
+            });
         }
     }
 
-    pub fn set_threshold(&self, hid: usize, threshold: u32) {
+    pub fn set_threshold(&mut self, hid: usize, threshold: u32) {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         unsafe {
             let ptr = self.plic_ctx(hid);
@@ -68,6 +84,13 @@ impl Plic {
 
     fn claim_irq(&self, hid: usize) -> u16 {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
+        debug_assert_eq!(
+            hid,
+            hloc::hart_local().hid,
+            "Attempting to claim IRQ for hart {} from hart {}",
+            hloc::hart_local().hid,
+            hid
+        );
         unsafe {
             let ptr = self.plic_ctx(hid);
             (&raw mut (*ptr).irq_claim_complete).read_volatile() as u16
@@ -76,12 +99,19 @@ impl Plic {
 
     fn complete_irq(&self, hid: usize, irq: NonZero<u16>) {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
+        debug_assert_eq!(
+            hid,
+            hloc::hart_local().hid,
+            "Attempting to complete IRQ for hart {} from hart {}",
+            hloc::hart_local().hid,
+            hid
+        );
         unsafe {
             let ptr = self.plic_ctx(hid);
             (&raw mut (*ptr).irq_claim_complete).write_volatile(irq.get() as u32);
         }
     }
-    
+
     const fn plic_ctx(&self, hid: usize) -> *mut PlicContext {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         let off = OFFSET_INTERRUPT_CONTEXT + Self::plic_ctx_id(hid) * STRIDE_INTERRUPT_CONTEXT;
@@ -95,8 +125,9 @@ impl Plic {
 }
 
 unsafe impl Send for Plic {}
+unsafe impl Sync for Plic {}
 
-static PLIC: Mutex<Option<Plic>> = Mutex::new(None);
+static PLIC: Once<RwLock<Plic>> = Once::new();
 
 #[derive(Debug)]
 pub struct PlicIrqClaim {
@@ -113,21 +144,31 @@ impl PlicIrqClaim {
 
 impl Drop for PlicIrqClaim {
     fn drop(&mut self) {
-        let _ = acquire(|plic| plic.complete_irq(self.hid, self.irq_id));
+        get_plic().complete_irq(self.hid, self.irq_id);
     }
 }
 
-pub fn init(base_addr: NonNull<u8>) {
-    let drv = unsafe { Plic::new(base_addr.as_ptr().cast()) };
-    *PLIC.lock() = Some(drv);
+/// # Panic
+/// Will panic if PLIC driver is not initialized.
+pub fn get_plic<'a>() -> RwLockReadGuard<'a, Plic> {
+    PLIC.get().expect("PLIC used before init").read()
 }
 
-pub fn acquire<T>(f: impl FnOnce(&Plic) -> T) -> Result<T, ()> {
-    let guard = PLIC.lock();
-    guard.as_ref().ok_or(()).map(f)
+/// # Panic
+/// Will panic if PLIC driver is not initialized.
+pub fn get_plic_mut<'a>() -> RwLockWriteGuard<'a, Plic> {
+    PLIC.get().expect("PLIC used before init").write()
+}
+
+pub fn init(base_addr: NonNull<u8>) {
+    PLIC.call_once(|| unsafe { RwLock::new(Plic::new(base_addr.as_ptr().cast())) });
 }
 
 pub fn claim_irq(hid: usize) -> Option<PlicIrqClaim> {
-    let irq = acquire(|plic| plic.claim_irq(hid)).ok()?;
-    Some(PlicIrqClaim { hid, irq_id: NonZero::new(irq)?, _no_send: PhantomData })
+    let irq = get_plic().claim_irq(hid);
+    Some(PlicIrqClaim {
+        hid,
+        irq_id: NonZero::new(irq)?,
+        _no_send: PhantomData,
+    })
 }

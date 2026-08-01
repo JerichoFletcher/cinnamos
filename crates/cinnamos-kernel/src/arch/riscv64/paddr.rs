@@ -1,4 +1,7 @@
-use core::{fmt::{Debug, LowerHex}, ops::{Add, Sub}};
+use core::{
+    fmt::{Debug, LowerHex},
+    ops::{Add, Sub},
+};
 
 use crate::mem::PAGE_SIZE;
 
@@ -22,7 +25,7 @@ impl PAddr {
     }
 
     pub const fn ppn(&self) -> usize {
-        self.0 / PAGE_SIZE
+        self.0 & ((1 << 56) - 1) & !(PAGE_SIZE - 1)
     }
 
     pub const fn next_multiple_of(&self, rhs: usize) -> Self {

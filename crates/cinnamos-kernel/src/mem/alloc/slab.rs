@@ -170,15 +170,13 @@ impl<T> Slab<T> {
     }
 }
 
-pub struct SlabAllocator<T: SlabInit + 'static> {
-    slab_page_count: usize,
+pub struct SlabAllocator<const PAGE_COUNT: usize, T: SlabInit + 'static> {
     slabs: RwLock<LinkedList<&'static mut Slab<T>>>,
 }
 
-impl<T: SlabInit> SlabAllocator<T> {
-    pub const fn new(slab_page_count: usize) -> Self {
+impl<const PAGE_COUNT: usize, T: SlabInit> SlabAllocator<PAGE_COUNT, T> {
+    pub const fn new() -> Self {
         Self {
-            slab_page_count,
             slabs: RwLock::new(LinkedList::new()),
         }
     }
@@ -196,8 +194,8 @@ impl<T: SlabInit> SlabAllocator<T> {
             }
         }
 
-        let virt = mem::vmalloc::alloc(self.slab_page_count)?;
-        let phys = mem::physalloc::alloc(self.slab_page_count)?;
+        let virt = mem::vmalloc::alloc(PAGE_COUNT)?;
+        let phys = mem::physalloc::alloc(PAGE_COUNT)?;
 
         // Slabs has to stay valid for the rest of the kernel's life
         let slab = Box::leak(Box::new(Slab::new(virt, phys)));

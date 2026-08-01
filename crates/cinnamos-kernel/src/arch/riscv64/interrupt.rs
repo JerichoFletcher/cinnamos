@@ -1,4 +1,7 @@
-use core::{num::NonZero, sync::atomic::{AtomicPtr, Ordering}};
+use core::{
+    num::NonZero,
+    sync::atomic::{AtomicPtr, Ordering},
+};
 
 use riscv::register::sie;
 
@@ -10,7 +13,8 @@ pub enum InterruptError {
     InterruptUnhandled,
 }
 
-static INTERRUPT_HANDLERS: [AtomicPtr<()>; INTERRUPT_COUNT] = [const { AtomicPtr::null() }; INTERRUPT_COUNT];
+static INTERRUPT_HANDLERS: [AtomicPtr<()>; INTERRUPT_COUNT] =
+    [const { AtomicPtr::null() }; INTERRUPT_COUNT];
 
 pub fn register_irq_handler(source: NonZero<u16>, handler: fn()) -> Result<(), InterruptError> {
     let source = source.get();
@@ -30,10 +34,10 @@ pub fn dispatch_irq(irq: NonZero<u16>) -> Result<(), InterruptError> {
             unsafe {
                 let handler: fn() = core::mem::transmute(ptr);
                 handler();
-                return Ok(())
+                return Ok(());
             }
         } else {
-            return Err(InterruptError::InterruptUnhandled)
+            return Err(InterruptError::InterruptUnhandled);
         }
     }
     Err(InterruptError::InvalidInterruptSource)
@@ -44,5 +48,7 @@ pub fn enable_interrupts() {
     sie.set_stimer(true);
     sie.set_ssoft(true);
     sie.set_sext(true);
-    unsafe { sie::write(sie); }
+    unsafe {
+        sie::write(sie);
+    }
 }

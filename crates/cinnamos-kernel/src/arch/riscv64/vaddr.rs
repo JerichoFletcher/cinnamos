@@ -1,6 +1,13 @@
-use core::{fmt::{Debug, LowerHex}, ops::{Add, Sub}, ptr::NonNull};
+use core::{
+    fmt::{Debug, LowerHex},
+    ops::{Add, Sub},
+    ptr::NonNull,
+};
 
-use crate::{arch::{PAddr, sv48::PT_MAX_ENTRIES}, mem::PAGE_SIZE};
+use crate::{
+    arch::{PAddr, sv48::PT_MAX_ENTRIES},
+    mem::PAGE_SIZE,
+};
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
