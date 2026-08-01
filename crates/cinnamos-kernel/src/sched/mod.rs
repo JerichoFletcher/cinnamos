@@ -56,11 +56,11 @@ impl Scheduler {
                 unsafe {
                     __switch(next_ptr as _, curr_ptr as _);
                 }
-            },
+            }
             None => {
                 drop(rq);
                 panic!("Schedule run queue is empty")
-            },
+            }
         }
     }
 
@@ -72,20 +72,20 @@ impl Scheduler {
             Some(mut next) => {
                 let next_ptr = next.as_ptr();
                 next.state = TaskState::Running;
-                
+
                 rq.push_back(next);
                 drop(rq);
-                
+
                 hloc.set_curr_task(next_ptr);
                 unsafe {
                     __switch_noprev(next_ptr as _);
                 }
                 unreachable!("__switch_noprev should never return to Scheduler::start()");
-            },
+            }
             None => {
                 drop(rq);
                 panic!("Schedule run queue is empty")
-            },
+            }
         }
     }
 }

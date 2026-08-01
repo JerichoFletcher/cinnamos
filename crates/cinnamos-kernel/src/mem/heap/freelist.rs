@@ -52,7 +52,7 @@ impl FreeListHeap {
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);
         self.alloc_block(block_size)
     }
-    
+
     pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let layout = layout.pad_to_align();
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);
@@ -126,15 +126,18 @@ impl FreeListHeap {
                                 Ordering::AcqRel,
                                 Ordering::Acquire,
                             ) {
-                                Ok(_) => return used_block.cast(),
+                                Ok(_) => {
+                                    core::mem::forget(alloc);
+                                    return used_block.cast();
+                                }
                                 Err(x) => head = x,
                             }
                         }
                     }
-                    Err(_) => return core::ptr::null_mut(),
+                    Err(_) => core::ptr::null_mut(),
                 }
             }
-            None => return core::ptr::null_mut(),
+            None => core::ptr::null_mut(),
         }
     }
 

@@ -94,7 +94,12 @@ impl<'a> AddressSpace<'a> {
         self.root.start_addr()
     }
 
-    pub fn map(&self, virt: &impl VirtAlloc, phys: &Alloc, flags: PTEFlags) -> Result<(), AddressSpaceError> {
+    pub fn map(
+        &self,
+        virt: &impl VirtAlloc,
+        phys: &Alloc,
+        flags: PTEFlags,
+    ) -> Result<(), AddressSpaceError> {
         assert_eq!(
             virt.size(),
             phys.size(),

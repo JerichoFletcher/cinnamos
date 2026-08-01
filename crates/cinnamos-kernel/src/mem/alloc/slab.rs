@@ -1,5 +1,8 @@
 use core::{
-    fmt::Debug, marker::PhantomData, ops::{Deref, DerefMut}, ptr::NonNull,
+    fmt::Debug,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 use alloc::{boxed::Box, collections::linked_list::LinkedList, vec::Vec};
@@ -54,6 +57,10 @@ impl<T> DerefMut for SlabBox<T> {
 
 impl<T> Drop for SlabBox<T> {
     fn drop(&mut self) {
+        // Safety: The pointer is valid after allocated
+        unsafe {
+            self.as_ptr().drop_in_place();
+        }
         // Safety: Slabs are never dropped after creation
         unsafe {
             self.slab.as_ref().dealloc(self);
@@ -118,7 +125,10 @@ impl<T> Slab<T> {
             let index = bitmap_index * u64::BITS as usize + bit_index as usize;
             return self.index_to_va(index).as_nonnull().map(|ptr| {
                 data.free -= 1;
-                SlabBox { ptr, slab: NonNull::from_ref(self) }
+                SlabBox {
+                    ptr,
+                    slab: NonNull::from_ref(self),
+                }
             });
         }
         None
@@ -127,9 +137,6 @@ impl<T> Slab<T> {
     /// # Safety
     /// `handle` must be a box allocated from this slab.
     pub unsafe fn dealloc(&self, handle: &mut SlabBox<T>) {
-        // Safety: The pointer held by the box comes from this slab
-        unsafe { handle.ptr.drop_in_place(); }
-
         let index = self.va_to_index(VAddr::new(handle.ptr.addr().get()));
         let bitmap_index = index / u64::BITS as usize;
         let bit_index = index % u64::BITS as usize;
@@ -169,19 +176,29 @@ impl<T: SlabInit> SlabAllocator<T> {
 
     pub fn alloc(&self) -> Option<SlabBox<T>> {
         for slab in self.slabs.read().iter() {
-            if let Some(mut handle) = slab.alloc() {
-                *handle = SlabInit::init()?;
-                return Some(handle);
+            if let Some(handle) = slab.alloc() {
+                return SlabInit::init().map(|v| {
+                    // Safety: handle is an allocated block for T
+                    unsafe {
+                        handle.as_ptr().write(v);
+                    }
+                    handle
+                });
             }
         }
 
-        let slab = Slab::new(self.slab_frame_count)?;
-        let handle = slab.alloc();
-
         // Slabs has to stay valid for the rest of the kernel's life
-        self.slabs.write().push_front(Box::leak(Box::new(slab)));
-        let mut handle = handle?;
-        *handle = SlabInit::init()?;
-        Some(handle)
+        let slab = Box::leak(Box::new(Slab::new(self.slab_frame_count)?));
+        let handle = slab.alloc();
+        self.slabs.write().push_front(slab);
+
+        let handle = handle?;
+        SlabInit::init().map(|v| {
+            // Safety: handle is an allocated block for T
+            unsafe {
+                handle.as_ptr().write(v);
+            }
+            handle
+        })
     }
 }
