@@ -3,7 +3,7 @@ use core::mem::MaybeUninit;
 use bitflags::bitflags;
 use riscv::{register::satp};
 
-use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{PhysFrameAlloc, addrsp::AddressSpace, physalloc::{self, Alloc}}};
+use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{PhysFrameAlloc, addrsp::AddressSpace, physalloc::{self, FrameAlloc}}};
 
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
@@ -149,7 +149,7 @@ impl PageTable {
 
 pub enum PageTableAlloc {
     None,
-    New(Alloc),
+    New(FrameAlloc),
     Existing(*mut PageTable),
 }
 
@@ -164,7 +164,7 @@ impl PageTableAllocMap {
         }
     }
 
-    pub fn take_new_allocs(self) -> impl Iterator<Item = Alloc> {
+    pub fn take_new_allocs(self) -> impl Iterator<Item = FrameAlloc> {
         core::iter::from_coroutine(#[coroutine] || {
             for v in self.allocs.into_iter().rev() {
                 if let PageTableAlloc::New(alloc) = v {
@@ -222,7 +222,7 @@ pub fn map_page(
     size: PageSize,
     flags: PTEFlags,
     p2v: &impl Fn(PAddr) -> VAddr
-) -> impl Iterator<Item = Result<Alloc, MapError>> {
+) -> impl Iterator<Item = Result<FrameAlloc, MapError>> {
     core::iter::from_coroutine(#[coroutine] move || {
         let vpn = va.vpn();
         let mut table = root_pt;

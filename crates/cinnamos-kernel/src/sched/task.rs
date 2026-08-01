@@ -3,7 +3,7 @@ use crate::{
     mem::{
         self, PhysFrameAlloc,
         alloc::slab::{SlabAllocator, SlabBox, SlabInit},
-        physalloc::Alloc,
+        physalloc::FrameAlloc,
     },
 };
 
@@ -23,21 +23,21 @@ pub struct Task {
     pub kernel_stack_ptr: VAddr,
     pub time_quantum: usize,
 
-    kernel_stack_alloc: Alloc,
-    task_stack_alloc: Alloc,
+    kernel_stack_alloc: FrameAlloc,
+    task_stack_alloc: FrameAlloc,
 }
 
 impl SlabInit for Task {
     fn init() -> Option<Self> {
-        let kernel_stack_alloc = mem::physalloc::alloc(2)?;
+        let kernel_stack_phys = mem::physalloc::alloc(2)?;
         let task_stack_alloc = mem::physalloc::alloc(16)?;
 
         let val = Self {
             id: 0,
             state: TaskState::Ready,
-            kernel_stack_ptr: mem::vms::phys_to_virt(kernel_stack_alloc.start_addr()),
+            kernel_stack_ptr: mem::vms::phys_to_virt(kernel_stack_phys.start_addr()),
             time_quantum: 0,
-            kernel_stack_alloc,
+            kernel_stack_alloc: kernel_stack_phys,
             task_stack_alloc,
         };
         Some(val)

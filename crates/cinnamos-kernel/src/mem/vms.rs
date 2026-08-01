@@ -9,6 +9,8 @@ use crate::{
     mem::{
         PAGE_SIZE, PhysFrameAlloc, SizedMemoryRegion,
         addrsp::{AddressSpace, AddressSpaceError},
+        physalloc::FrameAlloc,
+        virt::VirtAlloc,
     },
     sym::*,
     *,
@@ -385,6 +387,15 @@ pub fn uninit_identity_map() -> Result<(), VmsError> {
     root_addrsp
         .0
         .unmap_raw(VAddr::identity(kernel_start_p()), kernel_size())
+        .map_err(VmsError::AddressSpace)
+}
+
+pub fn map(virt: &impl VirtAlloc, phys: &FrameAlloc, flags: PTEFlags) -> Result<(), VmsError> {
+    let g = ROOT_ADDRSP.read();
+    let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
+    root_addrsp
+        .0
+        .map(virt, phys, flags)
         .map_err(VmsError::AddressSpace)
 }
 

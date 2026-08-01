@@ -9,8 +9,8 @@ use alloc::{boxed::Box, collections::linked_list::LinkedList, vec::Vec};
 use spin::{Mutex, RwLock};
 
 use crate::{
-    arch::VAddr,
-    mem::{self, PhysFrameAlloc, physalloc::Alloc},
+    arch::{PTEFlags, VAddr},
+    mem::{self, PhysFrameAlloc, physalloc::FrameAlloc, virt::VirtAlloc, vmalloc::PageAlloc},
 };
 
 pub trait SlabInit: Sized {
@@ -86,28 +86,37 @@ pub struct Slab<T> {
     total: usize,
     data: Mutex<SlabData>,
     base: VAddr,
-    _alloc: Alloc,
+    _phys: FrameAlloc,
+    _virt: PageAlloc,
     _marker: PhantomData<T>,
 }
 
 impl<T> Slab<T> {
-    pub fn new(frame_count: usize) -> Option<Self> {
-        let alloc = mem::physalloc::alloc(frame_count)?;
-        let total = alloc.size() / size_of::<T>();
+    /// # Panic
+    /// Will panic if `virt` and `phys` doesn't have the same size.
+    pub fn new(virt: PageAlloc, phys: FrameAlloc) -> Self {
+        assert_eq!(
+            phys.frame_count(),
+            virt.page_count(),
+            "Mismatched physical and virtual allocation size"
+        );
+        let _ = mem::vms::map(&virt, &phys, PTEFlags::GLOBAL | PTEFlags::RW);
 
+        let total = virt.size() / size_of::<T>();
         let bitmap = alloc::vec![0; total.max(64) / 64];
-        let base = mem::vms::phys_to_virt(alloc.start_addr());
+        let base = virt.start_addr();
 
-        Some(Self {
+        Self {
             total,
             data: Mutex::new(SlabData {
                 free: total,
                 bitmap,
             }),
             base,
-            _alloc: alloc,
+            _phys: phys,
+            _virt: virt,
             _marker: PhantomData,
-        })
+        }
     }
 
     pub fn alloc(&self) -> Option<SlabBox<T>> {
@@ -162,14 +171,14 @@ impl<T> Slab<T> {
 }
 
 pub struct SlabAllocator<T: SlabInit + 'static> {
-    slab_frame_count: usize,
+    slab_page_count: usize,
     slabs: RwLock<LinkedList<&'static mut Slab<T>>>,
 }
 
 impl<T: SlabInit> SlabAllocator<T> {
-    pub const fn new(slab_frame_count: usize) -> Self {
+    pub const fn new(slab_page_count: usize) -> Self {
         Self {
-            slab_frame_count,
+            slab_page_count,
             slabs: RwLock::new(LinkedList::new()),
         }
     }
@@ -187,8 +196,11 @@ impl<T: SlabInit> SlabAllocator<T> {
             }
         }
 
+        let virt = mem::vmalloc::alloc(self.slab_page_count)?;
+        let phys = mem::physalloc::alloc(self.slab_page_count)?;
+
         // Slabs has to stay valid for the rest of the kernel's life
-        let slab = Box::leak(Box::new(Slab::new(self.slab_frame_count)?));
+        let slab = Box::leak(Box::new(Slab::new(virt, phys)));
         let handle = slab.alloc();
         self.slabs.write().push_front(slab);
 

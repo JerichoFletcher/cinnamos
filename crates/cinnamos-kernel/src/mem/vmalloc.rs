@@ -10,6 +10,8 @@ use crate::{
 
 static VMALLOC: Once<BuddyVirtAllocator> = Once::new();
 
+pub type PageAlloc = BuddyPageAlloc;
+
 fn get_vmalloc<'a>() -> &'a BuddyVirtAllocator {
     VMALLOC.call_once(|| {
         BuddyVirtAllocator::new(VAddr::new(VMALLOC_MAP_BASE), VAddr::new(VMALLOC_MAP_END))

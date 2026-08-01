@@ -29,6 +29,10 @@ impl super::VirtAlloc for BuddyPageAlloc {
             self.base + (1 << self.order) * PAGE_SIZE
         }
     }
+
+    fn page_count(&self) -> usize {
+        self.page_count.get()
+    }
 }
 
 #[derive(Debug)]

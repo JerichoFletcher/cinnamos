@@ -1,6 +1,6 @@
 pub mod buddy;
 
-use crate::arch::VAddr;
+use crate::{arch::VAddr, mem::PAGE_SIZE};
 
 pub trait VirtAlloc {
     fn start_addr(&self) -> VAddr;
@@ -8,6 +8,10 @@ pub trait VirtAlloc {
 
     fn size(&self) -> usize {
         self.end_addr() - self.start_addr()
+    }
+
+    fn page_count(&self) -> usize {
+        self.size() / PAGE_SIZE
     }
 }
 

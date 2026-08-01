@@ -7,7 +7,7 @@ use crate::{
     arch::{
         self, MapError, PAGE_TABLE_DEPTH, PAddr, PTEFlags, PageSize, PageTable, UnmapError, VAddr,
     },
-    mem::{PhysFrameAlloc, physalloc::Alloc, virt::VirtAlloc},
+    mem::{PhysFrameAlloc, physalloc::FrameAlloc, virt::VirtAlloc},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,16 +21,16 @@ pub struct AddressSpace<'a> {
     id: usize,
     root_ptr: *mut PageTable,
     p2v: &'a dyn Fn(PAddr) -> VAddr,
-    root: Alloc,
-    tables: Mutex<Vec<Alloc>>,
+    root: FrameAlloc,
+    tables: Mutex<Vec<FrameAlloc>>,
 }
 
 impl<'a> AddressSpace<'a> {
     pub fn new(
         id: usize,
         root_ptr: *mut PageTable,
-        root: Alloc,
-        tables: Vec<Alloc>,
+        root: FrameAlloc,
+        tables: Vec<FrameAlloc>,
         p2v: &'a dyn Fn(PAddr) -> VAddr,
     ) -> Result<Self, AddressSpaceError> {
         let addrsp = Self {
@@ -97,7 +97,7 @@ impl<'a> AddressSpace<'a> {
     pub fn map(
         &self,
         virt: &impl VirtAlloc,
-        phys: &Alloc,
+        phys: &FrameAlloc,
         flags: PTEFlags,
     ) -> Result<(), AddressSpaceError> {
         assert_eq!(

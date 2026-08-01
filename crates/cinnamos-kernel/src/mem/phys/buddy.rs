@@ -27,6 +27,10 @@ impl super::PhysFrameAlloc for BuddyFrameAlloc {
     fn end_addr(&self) -> PAddr {
         self.base + self.frame_count.get() * PAGE_SIZE
     }
+
+    fn frame_count(&self) -> usize {
+        self.frame_count.get()
+    }
 }
 
 #[derive(Debug)]

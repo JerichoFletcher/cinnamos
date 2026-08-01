@@ -22,29 +22,36 @@ pub enum PAllocError {
 }
 
 #[derive(Debug)]
-pub enum Alloc {
+pub enum FrameAlloc {
     BumpAlloc((PAddr, usize)),
     BuddyAlloc(BuddyFrameAlloc),
 }
 
-impl Drop for Alloc {
+impl Drop for FrameAlloc {
     fn drop(&mut self) {
         dealloc(self);
     }
 }
 
-impl PhysFrameAlloc for Alloc {
+impl PhysFrameAlloc for FrameAlloc {
     fn start_addr(&self) -> PAddr {
         match self {
-            Alloc::BumpAlloc((pa, _)) => *pa,
-            Alloc::BuddyAlloc(alloc) => alloc.start_addr(),
+            FrameAlloc::BumpAlloc((pa, _)) => *pa,
+            FrameAlloc::BuddyAlloc(alloc) => alloc.start_addr(),
         }
     }
 
     fn end_addr(&self) -> PAddr {
         match self {
-            Alloc::BumpAlloc((pa, frame_count)) => *pa + PAGE_SIZE * frame_count,
-            Alloc::BuddyAlloc(alloc) => alloc.end_addr(),
+            FrameAlloc::BumpAlloc((pa, frame_count)) => *pa + PAGE_SIZE * frame_count,
+            FrameAlloc::BuddyAlloc(alloc) => alloc.end_addr(),
+        }
+    }
+
+    fn frame_count(&self) -> usize {
+        match self {
+            FrameAlloc::BumpAlloc((_, frame_count)) => *frame_count,
+            FrameAlloc::BuddyAlloc(alloc) => alloc.frame_count(),
         }
     }
 }
@@ -55,22 +62,21 @@ enum SendAllocator {
 }
 
 impl SendAllocator {
-    fn alloc(&self, frame_count: usize) -> Option<Alloc> {
+    fn alloc(&self, frame_count: usize) -> Option<FrameAlloc> {
         match self {
-            Self::Bump => {
-                mem::bump::alloc_frame(frame_count).map(|pa| Alloc::BumpAlloc((pa, frame_count)))
-            }
-            Self::Buddy(alloc) => alloc.alloc(frame_count).map(Alloc::BuddyAlloc),
+            Self::Bump => mem::bump::alloc_frame(frame_count)
+                .map(|pa| FrameAlloc::BumpAlloc((pa, frame_count))),
+            Self::Buddy(alloc) => alloc.alloc(frame_count).map(FrameAlloc::BuddyAlloc),
         }
     }
 
     /// # Safety
     /// `alloc` must be an allocation from the currently active allocator.
-    unsafe fn dealloc(&self, handle: &mut Alloc) {
+    unsafe fn dealloc(&self, handle: &mut FrameAlloc) {
         match self {
             Self::Bump => (),
             Self::Buddy(alloc) => {
-                if let Alloc::BuddyAlloc(handle) = handle {
+                if let FrameAlloc::BuddyAlloc(handle) = handle {
                     alloc.dealloc(handle);
                 }
             }
@@ -112,12 +118,12 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
     *ALLOCATOR.write() = SendAllocator::Buddy(alloc);
 }
 
-pub fn alloc(frame_count: usize) -> Option<Alloc> {
+pub fn alloc(frame_count: usize) -> Option<FrameAlloc> {
     let a = ALLOCATOR.read();
     a.alloc(frame_count)
 }
 
-fn dealloc(handle: &mut Alloc) {
+fn dealloc(handle: &mut FrameAlloc) {
     let a = ALLOCATOR.read();
     // Safety: Bump-backed frames are never deallocated
     unsafe {
