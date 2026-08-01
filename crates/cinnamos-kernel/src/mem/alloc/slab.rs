@@ -1,10 +1,8 @@
 use core::{
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    ptr::NonNull,
+    fmt::Debug, marker::PhantomData, ops::{Deref, DerefMut}, ptr::NonNull,
 };
 
-use alloc::{collections::linked_list::LinkedList, vec::Vec};
+use alloc::{boxed::Box, collections::linked_list::LinkedList, vec::Vec};
 use spin::{Mutex, RwLock};
 
 use crate::{
@@ -18,7 +16,7 @@ pub trait SlabInit: Sized {
 
 pub struct SlabBox<T> {
     ptr: NonNull<T>,
-    slab: *const Slab<T>,
+    slab: NonNull<Slab<T>>,
 }
 
 impl<T> SlabBox<T> {
@@ -58,8 +56,17 @@ impl<T> Drop for SlabBox<T> {
     fn drop(&mut self) {
         // Safety: Slabs are never dropped after creation
         unsafe {
-            (*self.slab).dealloc(self);
+            self.slab.as_ref().dealloc(self);
         }
+    }
+}
+
+impl<T: Debug> Debug for SlabBox<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SlabBox")
+            .field("ptr", &self.as_ptr())
+            .field("value", self.as_ref())
+            .finish()
     }
 }
 
@@ -111,7 +118,7 @@ impl<T> Slab<T> {
             let index = bitmap_index * u64::BITS as usize + bit_index as usize;
             return self.index_to_va(index).as_nonnull().map(|ptr| {
                 data.free -= 1;
-                SlabBox { ptr, slab: self }
+                SlabBox { ptr, slab: NonNull::from_ref(self) }
             });
         }
         None
@@ -121,7 +128,7 @@ impl<T> Slab<T> {
     /// `handle` must be a box allocated from this slab.
     pub unsafe fn dealloc(&self, handle: &mut SlabBox<T>) {
         // Safety: The pointer held by the box comes from this slab
-        drop(unsafe { handle.ptr.read() });
+        unsafe { handle.ptr.drop_in_place(); }
 
         let index = self.va_to_index(VAddr::new(handle.ptr.addr().get()));
         let bitmap_index = index / u64::BITS as usize;
@@ -147,9 +154,9 @@ impl<T> Slab<T> {
     }
 }
 
-pub struct SlabAllocator<T: SlabInit> {
+pub struct SlabAllocator<T: SlabInit + 'static> {
     slab_frame_count: usize,
-    slabs: RwLock<LinkedList<Slab<T>>>,
+    slabs: RwLock<LinkedList<&'static mut Slab<T>>>,
 }
 
 impl<T: SlabInit> SlabAllocator<T> {
@@ -171,7 +178,8 @@ impl<T: SlabInit> SlabAllocator<T> {
         let slab = Slab::new(self.slab_frame_count)?;
         let handle = slab.alloc();
 
-        self.slabs.write().push_front(slab);
+        // Slabs has to stay valid for the rest of the kernel's life
+        self.slabs.write().push_front(Box::leak(Box::new(slab)));
         let mut handle = handle?;
         *handle = SlabInit::init()?;
         Some(handle)

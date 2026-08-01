@@ -1,9 +1,9 @@
 use core::mem::MaybeUninit;
 
 use bitflags::bitflags;
-use riscv::{register::satp::{self, Satp}};
+use riscv::{register::satp};
 
-use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{PhysFrameAlloc, physalloc::{self, Alloc}}};
+use crate::{arch::{paddr::PAddr, vaddr::VAddr}, mem::{PhysFrameAlloc, addrsp::AddressSpace, physalloc::{self, Alloc}}};
 
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
@@ -267,45 +267,6 @@ pub fn map_page(
     })
 }
 
-// pub fn map_page(root_pt: *mut PageTable, va: VAddr, pa: PAddr, size: PageSize, flags: PTEFlags, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageTableAllocMap, MapError> {
-//     let vpn = va.vpn();
-//     let mut table = root_pt;
-//     let mut table_directory: [Option<PageTableAlloc>; 3] = [const { None }; 3];
-    
-//     // table_directory[3] = Some(PageTableAlloc::Existing(table));
-//     for level in (0..=3).rev() {
-//         let pte = unsafe { &mut (*table).entries[vpn[level]] };
-
-//         if level == size.level() {
-//             if pte.is_valid() {
-//                 return Err(MapError::AlreadyMapped)
-//             }
-//             pte.set_leaf(pa, size, flags);
-//             return Ok(PageTableAllocMap { allocs: table_directory.map(|v| v.unwrap_or(PageTableAlloc::None)) })
-//         } else {
-//             if pte.is_valid() && !pte.is_leaf() {
-//                 let next_pa = pte.phys_addr();
-//                 table = p2v(next_pa).as_mut();
-//                 table_directory[level - 1] = Some(PageTableAlloc::Existing(table));
-//             } else if !pte.is_valid() {
-//                 let alloc = physalloc::alloc(1).ok_or(MapError::OutOfMemory)?;
-//                 let next_pa = alloc.start_addr();
-                
-//                 // Safety: p2v(next_pa) has the same alignment as next_pa, which points to an allocated physical page
-//                 let table_uninit = unsafe { p2v(next_pa).as_mut::<MaybeUninit<PageTable>>().as_mut_unchecked() };
-//                 unsafe { PageTable::init(table_uninit); }
-//                 table = table_uninit.as_mut_ptr();
-
-//                 pte.set_table(alloc.start_addr());
-//                 table_directory[level - 1] = Some(PageTableAlloc::New(alloc));
-//             } else {
-//                 return Err(MapError::AlreadyMapped)
-//             }
-//         }
-//     }
-//     unreachable!()
-// }
-
 pub fn unmap_page(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAddr) -> Result<PageSize, UnmapError> {
     let vpn = va.vpn();
     let mut table = root_pt;
@@ -326,23 +287,28 @@ pub fn unmap_page(root_pt: *mut PageTable, va: VAddr, p2v: impl Fn(PAddr) -> VAd
     unreachable!()
 }
 
-pub fn activate_vmap(root_pt_pa: PAddr) -> usize {
-    let mut satp = Satp::from_bits(0);
-    satp.set_mode(riscv::register::satp::Mode::Bare);
+pub fn get_max_asid() -> usize {
+    let mut satp = satp::read();
+    let old_asid = satp.asid();
     satp.set_asid(usize::MAX);
     unsafe { satp::write(satp); }
+
     satp = satp::read();
-    
     let max_asid = satp.asid();
-    satp.set_ppn(root_pt_pa.ppn());
-    satp.set_asid(0);
-    satp.set_mode(satp::Mode::Sv48);
+    satp.set_asid(old_asid);
     unsafe { satp::write(satp); }
-    flush_vmap();
 
     max_asid
 }
 
-pub fn flush_vmap() {
-    riscv::asm::sfence_vma_all();
+pub fn switch_address_space(addrsp: &AddressSpace) {
+    let mut satp = satp::read();
+    satp.set_ppn(addrsp.root_pa().ppn());
+    satp.set_asid(addrsp.id());
+    satp.set_mode(satp::Mode::Sv48);
+    unsafe { satp::write(satp); }
+}
+
+pub fn flush_address_space(asid: usize) {
+    riscv::asm::sfence_vma(asid, 0);
 }

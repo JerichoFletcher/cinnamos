@@ -8,6 +8,8 @@ KERNEL_BIN = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/cinnamos.bin"
 
 BIOS = "/usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.bin"
 BOOTLOADER = "/usr/lib/u-boot/qemu-riscv64_smode/uboot.elf"
+CPU_COUNT = "1"
+MEM_SIZE = "1G"
 
 [config]
 default_to_workspace = false
@@ -67,8 +69,8 @@ command = "xterm"
 args = [
     "-e", "qemu-system-riscv64",
     "-machine", "virt",
-    "-m", "1G",
-    # "-smp", "4",
+    "-m", "${MEM_SIZE}",
+    "-smp", "${CPU_COUNT}",
     "-S",
     "-gdb", "tcp::1234",
     "-serial", "stdio",
@@ -86,8 +88,8 @@ command = "xterm"
 args = [
     "-e", "qemu-system-riscv64",
     "-machine", "virt",
-    "-m", "1G",
-    # "-smp", "4",
+    "-m", "${MEM_SIZE}",
+    "-smp", "${CPU_COUNT}",
     "-S",
     "-gdb", "tcp::1234",
     "-serial", "stdio",

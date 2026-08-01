@@ -17,50 +17,28 @@ pub enum AddressSpaceError {
     Unmap(UnmapError),
 }
 
-struct AddressSpaceBuffers<T: VirtAlloc> {
-    tables: Vec<Alloc>,
-    virtallocs: Vec<T>,
-}
-
-impl<T: VirtAlloc> AddressSpaceBuffers<T> {
-    fn realloc(&mut self, mut tables: Vec<Alloc>, mut virtallocs: Vec<T>) {
-        tables.clear();
-        virtallocs.clear();
-
-        while let Some(t) = self.tables.pop() {
-            tables.push(t);
-        }
-        while let Some(v) = self.virtallocs.pop() {
-            virtallocs.push(v);
-        }
-
-        self.tables = tables;
-        self.virtallocs = virtallocs;
-    }
-}
-
-pub struct AddressSpace<'a, T: VirtAlloc> {
+pub struct AddressSpace<'a> {
+    id: usize,
     root_ptr: *mut PageTable,
     p2v: &'a dyn Fn(PAddr) -> VAddr,
     root: Alloc,
-    buffers: Mutex<AddressSpaceBuffers<T>>,
+    tables: Mutex<Vec<Alloc>>,
 }
 
-impl<'a, T: VirtAlloc> AddressSpace<'a, T> {
+impl<'a> AddressSpace<'a> {
     pub fn new(
+        id: usize,
         root_ptr: *mut PageTable,
         root: Alloc,
         tables: Vec<Alloc>,
         p2v: &'a dyn Fn(PAddr) -> VAddr,
     ) -> Result<Self, AddressSpaceError> {
         let addrsp = Self {
+            id,
             root_ptr,
             p2v,
             root,
-            buffers: Mutex::new(AddressSpaceBuffers {
-                tables,
-                virtallocs: alloc::vec![],
-            }),
+            tables: Mutex::new(tables),
         };
         addrsp.map_raw(
             p2v(addrsp.root_pa()),
@@ -71,6 +49,10 @@ impl<'a, T: VirtAlloc> AddressSpace<'a, T> {
         Ok(addrsp)
     }
 
+    pub const fn id(&self) -> usize {
+        self.id
+    }
+
     pub fn remap(&mut self, p2v: &'a dyn Fn(PAddr) -> VAddr) -> Result<(), AddressSpaceError> {
         self.map_raw_skip_mapped(
             p2v(self.root_pa()),
@@ -78,7 +60,7 @@ impl<'a, T: VirtAlloc> AddressSpace<'a, T> {
             self.root.size(),
             PTEFlags::GLOBAL | PTEFlags::RW,
         )?;
-        for t in self.buffers.lock().tables.iter() {
+        for t in self.tables.lock().iter() {
             self.map_raw_skip_mapped(
                 p2v(t.start_addr()),
                 t.start_addr(),
@@ -92,14 +74,16 @@ impl<'a, T: VirtAlloc> AddressSpace<'a, T> {
     }
 
     pub fn realloc(&self) {
-        let g = self.buffers.lock();
-        let tables_cap = g.tables.len();
-        let virtallocs_cap = g.virtallocs.len();
-        drop(g);
+        let tables = self.tables.lock();
+        let tables_cap = tables.len();
+        drop(tables);
 
-        let tables = Vec::with_capacity(tables_cap);
-        let virtallocs = Vec::with_capacity(virtallocs_cap);
-        self.buffers.lock().realloc(tables, virtallocs);
+        let mut new_tables = Vec::with_capacity(tables_cap);
+        let mut old_tables = self.tables.lock();
+        while let Some(t) = old_tables.pop() {
+            new_tables.push(t);
+        }
+        *old_tables = new_tables;
     }
 
     pub const fn root_ptr(&self) -> *mut PageTable {
@@ -110,18 +94,17 @@ impl<'a, T: VirtAlloc> AddressSpace<'a, T> {
         self.root.start_addr()
     }
 
-    pub fn map(&self, virt: T, phys: &Alloc, flags: PTEFlags) -> Result<(), AddressSpaceError> {
+    pub fn map(&self, virt: &impl VirtAlloc, phys: &Alloc, flags: PTEFlags) -> Result<(), AddressSpaceError> {
         assert_eq!(
             virt.size(),
             phys.size(),
             "Attempted to map unequal physical and virtual regions"
         );
         self.map_raw(virt.start_addr(), phys.start_addr(), phys.size(), flags)?;
-        self.buffers.lock().virtallocs.push(virt);
         Ok(())
     }
 
-    pub fn unmap(&self, virt: &T) -> Result<(), AddressSpaceError> {
+    pub fn unmap(&self, virt: &impl VirtAlloc) -> Result<(), AddressSpaceError> {
         self.unmap_raw(virt.start_addr(), virt.size())
     }
 
@@ -159,7 +142,7 @@ impl<'a, T: VirtAlloc> AddressSpace<'a, T> {
                     a.size(),
                     PTEFlags::GLOBAL | PTEFlags::RW,
                 )?;
-                self.buffers.lock().tables.push(a);
+                self.tables.lock().push(a);
             }
 
             va = va + next_size.size();
@@ -201,7 +184,7 @@ impl<'a, T: VirtAlloc> AddressSpace<'a, T> {
                             a.size(),
                             PTEFlags::GLOBAL | PTEFlags::RW,
                         )?;
-                        self.buffers.lock().tables.push(a);
+                        self.tables.lock().push(a);
                     }
                 }
                 Err(e) => match e {
@@ -229,16 +212,7 @@ impl<'a, T: VirtAlloc> AddressSpace<'a, T> {
     }
 }
 
-impl<T: VirtAlloc> Drop for AddressSpace<'_, T> {
-    fn drop(&mut self) {
-        let mut data = self.buffers.lock();
-        while let Some(v) = data.virtallocs.pop() {
-            let _ = self.unmap(&v);
-        }
-    }
-}
-
-impl<T: VirtAlloc> Debug for AddressSpace<'_, T> {
+impl Debug for AddressSpace<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AddressSpace")
             .field("root_ptr", &self.root_ptr)

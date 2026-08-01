@@ -9,7 +9,6 @@ use crate::{
     mem::{
         PAGE_SIZE, PhysFrameAlloc, SizedMemoryRegion,
         addrsp::{AddressSpace, AddressSpaceError},
-        virt::buddy::BuddyPageAlloc,
     },
     sym::*,
     *,
@@ -25,7 +24,7 @@ pub enum VmsError {
 }
 
 #[derive(Debug)]
-struct SendAddressSpace(AddressSpace<'static, BuddyPageAlloc>);
+struct SendAddressSpace(AddressSpace<'static>);
 
 unsafe impl Send for SendAddressSpace {}
 unsafe impl Sync for SendAddressSpace {}
@@ -60,12 +59,12 @@ pub fn virt_to_phys(va: VAddr) -> PAddr {
 
 /// Should only be called once in early phase
 pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
-    let mut g = ROOT_ADDRSP.write();
-    if g.as_mut().is_none() {
+    if ROOT_ADDRSP.read().is_none() {
         let root_alloc = mem::physalloc::alloc(1).ok_or(VmsError::FrameAllocFailed)?;
         let root_ptr = VAddr::identity(root_alloc.start_addr()).as_mut::<MaybeUninit<_>>();
         let root_ptr = unsafe { PageTable::init(root_ptr.as_mut_unchecked()) };
         let root_addrsp = AddressSpace::new(
+            0,
             root_ptr,
             root_alloc,
             Vec::with_capacity(32),
@@ -348,9 +347,15 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             println!("debug : identity-vtmap translation success");
         }
 
-        let max_asid = arch::activate_vmap(root_addrsp.root_pa());
-        *g = Some(SendAddressSpace(root_addrsp));
-        Ok(VirtualMemoryInfo { max_asid })
+        let mut g = ROOT_ADDRSP.write();
+        if g.is_none() {
+            let max_asid = arch::get_max_asid();
+            arch::switch_address_space(&root_addrsp);
+            *g = Some(SendAddressSpace(root_addrsp));
+            Ok(VirtualMemoryInfo { max_asid })
+        } else {
+            Err(VmsError::RootTableAlreadyInitialized)
+        }
     } else {
         Err(VmsError::RootTableAlreadyInitialized)
     }

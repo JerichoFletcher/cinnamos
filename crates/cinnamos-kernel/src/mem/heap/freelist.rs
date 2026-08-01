@@ -52,7 +52,7 @@ impl FreeListHeap {
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);
         self.alloc_block(block_size)
     }
-
+    
     pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let layout = layout.pad_to_align();
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);

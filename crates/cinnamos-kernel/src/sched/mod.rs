@@ -12,8 +12,8 @@ use crate::{
 pub mod task;
 
 unsafe extern "C" {
-    fn __switch(next_ksp: *const (), curr_ksp: *mut ());
-    fn __switch_noprev(next_ksp: *const ());
+    fn __switch(next_task: *const (), curr_task: *mut ());
+    fn __switch_noprev(next_task: *const ());
 }
 
 pub struct Scheduler {
@@ -24,11 +24,11 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn enqueue(&self, mut task: SlabBox<Task>) {
         let next_free_id = self.next_free_id.fetch_add(1, Ordering::Relaxed);
-        let mut rq = self.run_queue.lock();
-
         task.id = next_free_id;
         task.state = TaskState::Ready;
         task.time_quantum = 128;
+
+        let mut rq = self.run_queue.lock();
         rq.push_back(task);
     }
 
@@ -56,11 +56,11 @@ impl Scheduler {
                 unsafe {
                     __switch(next_ptr as _, curr_ptr as _);
                 }
-            }
+            },
             None => {
                 drop(rq);
                 panic!("Schedule run queue is empty")
-            }
+            },
         }
     }
 
@@ -70,22 +70,22 @@ impl Scheduler {
 
         match rq.pop_front() {
             Some(mut next) => {
-                next.state = TaskState::Running;
                 let next_ptr = next.as_ptr();
-
+                next.state = TaskState::Running;
+                
                 rq.push_back(next);
                 drop(rq);
-
+                
                 hloc.set_curr_task(next_ptr);
                 unsafe {
                     __switch_noprev(next_ptr as _);
                 }
                 unreachable!("__switch_noprev should never return to Scheduler::start()");
-            }
+            },
             None => {
                 drop(rq);
                 panic!("Schedule run queue is empty")
-            }
+            },
         }
     }
 }
