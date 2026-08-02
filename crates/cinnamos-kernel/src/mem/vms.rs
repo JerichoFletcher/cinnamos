@@ -75,7 +75,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
         .map_err(VmsError::AddressSpace)?;
 
         println!(
-            "id-map text\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "id-map text",
             text_start_p(),
             text_end_p(),
             VAddr::identity(text_start_p()),
@@ -91,7 +92,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         println!(
-            "id-map rodata\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "id-map rodata",
             rodata_start_p(),
             rodata_end_p(),
             VAddr::identity(rodata_start_p()),
@@ -107,7 +109,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         println!(
-            "id-map data\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "id-map data",
             data_start_p(),
             data_end_p(),
             VAddr::identity(data_start_p()),
@@ -123,7 +126,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         println!(
-            "id-map kmem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "id-map kmem",
             kmem_start_p(),
             kmem_end_p(),
             VAddr::identity(kmem_start_p()),
@@ -139,7 +143,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         println!(
-            "hi-map text\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "hi-map text",
             text_start_p(),
             text_end_p(),
             phys_to_kernel(text_start_p()),
@@ -155,7 +160,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         println!(
-            "hi-map rodata\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "hi-map rodata",
             rodata_start_p(),
             rodata_end_p(),
             phys_to_kernel(rodata_start_p()),
@@ -171,7 +177,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         println!(
-            "hi-map data\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "hi-map data",
             data_start_p(),
             data_end_p(),
             phys_to_kernel(data_start_p()),
@@ -187,7 +194,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         println!(
-            "hi-map kmem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "hi-map kmem",
             kmem_start_p(),
             kmem_end_p(),
             phys_to_kernel(kmem_start_p()),
@@ -227,7 +235,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             let pa_end = r.end();
 
             println!(
-                "di-map mem\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                "di-map mem",
                 pa,
                 pa_end,
                 phys_to_virt(pa),
@@ -244,7 +253,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
         }
 
         println!(
-            "di-map dtb\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "{:<48}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+            "di-map dtb",
             dtb_pa,
             dtb_pa + fdt.total_size(),
             phys_to_virt(dtb_pa),
@@ -268,7 +278,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                             let pa_end = pa + size;
 
                             println!(
-                                "di-map /soc/{}\t: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
+                                "di-map /soc/{:<36}: 0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x}",
                                 n.name,
                                 pa,
                                 pa_end,
@@ -293,7 +303,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
         {
             use crate::sym::{kernel_end_p, kernel_start_p};
 
-            println!("debug : testing mappings");
+            println!("testing mappings");
 
             let mut pa_orig = kernel_start_p();
             while pa_orig < kernel_end_p() {
@@ -310,7 +320,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
 
                 pa_orig = pa_orig + PAGE_SIZE;
             }
-            println!("debug : phys-to-kernel translation success");
+            println!("phys-to-kernel translation success");
 
             for r in usable_regs {
                 pa_orig = r.base;
@@ -329,7 +339,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                     pa_orig = pa_orig + PAGE_SIZE;
                 }
             }
-            println!("debug : phys-to-direct translation success");
+            println!("phys-to-direct translation success");
 
             pa_orig = kernel_start_p();
             while pa_orig < kernel_end_p() {
@@ -346,7 +356,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
 
                 pa_orig = pa_orig + PAGE_SIZE;
             }
-            println!("debug : identity-vtmap translation success");
+            println!("identity-vtmap translation success");
         }
 
         let mut g = ROOT_ADDRSP.write();
@@ -379,7 +389,7 @@ pub fn uninit_identity_map() -> Result<(), VmsError> {
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
     root_addrsp.0.realloc();
 
-    println!(
+    log::info!(
         "unmapping id-map kernel\t: 0x{:016x} .. 0x{:016x}",
         kernel_start_p(),
         kernel_end_p()

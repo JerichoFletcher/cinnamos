@@ -111,7 +111,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
     );
     usable_regs.sort_unstable_by_key(|a| Reverse(a.size));
     for r in &usable_regs {
-        println!("palloc : usable at 0x{:016x} .. 0x{:016x}", r.base, r.end());
+        log::info!("usable at 0x{:016x} .. 0x{:016x}", r.base, r.end());
     }
 
     let alloc = BuddyFrameAllocator::new(usable_regs.as_slice());

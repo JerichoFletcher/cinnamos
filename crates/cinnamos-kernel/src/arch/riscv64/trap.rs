@@ -149,8 +149,8 @@ fn handle_external_interrupt(hloc: &mut HartLocal) {
     if let Some(claim) = arch::device::plic::claim_irq(hloc.hid()) {
         let irq = claim.irq_id();
         if let Err(e) = interrupt::dispatch_irq(irq) {
-            println!(
-                "warn : (HID {}) failed to handle claimed interrupt {}: {:?}",
+            log::warn!(
+                "HID {} failed to handle claimed interrupt {}: {:?}",
                 hloc.hid(),
                 irq,
                 e

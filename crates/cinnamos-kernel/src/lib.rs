@@ -10,9 +10,11 @@ mod panic;
 
 pub mod arch;
 pub mod device;
-pub mod devicetree;
 pub mod hloc;
 pub mod mem;
 pub mod rel;
 pub mod sched;
 pub mod sym;
+
+pub mod klog;
+pub mod devicetree;

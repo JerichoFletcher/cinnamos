@@ -21,4 +21,6 @@ sbi = "0.3"
 fdt = "0.1"
 spin = "0.12"
 uart = { version = "3.0", default-features = false, features = ["address_impl"] }
+
+log = "0.4"
 pastey = "0.2"

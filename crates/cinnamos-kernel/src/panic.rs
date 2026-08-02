@@ -1,16 +1,10 @@
 use core::panic::PanicInfo;
 
-use crate::{print, println};
-
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    print!("Panic: ");
-
     match info.location() {
-        Some(loc) => print!("{}:{}", loc.file(), loc.line()),
-        None => print!("?"),
+        Some(loc) => log::error!("Panic: at {}:{}: {}", loc.file(), loc.line(), info.message()),
+        None => log::error!("Panic: {}", info.message()),
     }
-
-    println!(": {}", info.message());
     loop {}
 }
