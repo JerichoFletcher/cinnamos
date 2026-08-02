@@ -128,7 +128,7 @@ impl BuddyRegion {
     }
 
     pub const fn max_align_order_of(pa: PAddr) -> usize {
-        pa.ppn().trailing_zeros() as usize
+        pa.ppn_all().trailing_zeros() as usize
     }
 
     pub const fn order_of_size(size: usize) -> usize {

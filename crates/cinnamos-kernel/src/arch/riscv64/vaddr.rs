@@ -69,7 +69,11 @@ impl VAddr {
     }
 
     pub const fn vpn_all(&self) -> usize {
-        self.0 / PAGE_SIZE
+        (self.0 / PAGE_SIZE) & ((1 << 36) - 1)
+    }
+
+    pub const fn page_aligned(&self) -> VAddr {
+        Self(self.0 & !(PAGE_SIZE - 1))
     }
 }
 

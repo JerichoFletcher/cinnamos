@@ -20,7 +20,7 @@ unsafe extern "C" fn kernel_relocate(
 ) -> ! {
     unsafe {
         rel::relocate(dyn_ptr);
-        entry(hid, dtb_ptr, dyn_ptr)
+        entry(hid, dtb_ptr, dyn_ptr);
     }
 }
 

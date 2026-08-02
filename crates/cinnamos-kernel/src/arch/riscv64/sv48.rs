@@ -96,7 +96,7 @@ impl PTE {
     pub fn new(page_addr: PAddr, flags: PTEFlags) -> Self {
         debug_assert!(page_addr.addr().is_multiple_of(PAGE_SIZE), "Address misaligned");
         let flags = flags.bits() as usize & 0xff;
-        let paddr = page_addr.ppn() >> 2;
+        let paddr = page_addr.ppn_all() << 10;
         Self(paddr | flags)
     }
 
@@ -335,7 +335,7 @@ pub fn get_max_asid() -> usize {
 
 pub fn switch_address_space(addrsp: &AddressSpace) {
     let mut satp = satp::read();
-    satp.set_ppn(addrsp.root_pa().ppn());
+    satp.set_ppn(addrsp.root_pa().ppn_all());
     satp.set_asid(addrsp.id());
     satp.set_mode(satp::Mode::Sv48);
     unsafe {

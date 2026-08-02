@@ -212,3 +212,9 @@ impl<const PAGE_COUNT: usize, T: SlabInit> SlabAllocator<PAGE_COUNT, T> {
         })
     }
 }
+
+impl<const PAGE_COUNT: usize, T: SlabInit> Default for SlabAllocator<PAGE_COUNT, T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

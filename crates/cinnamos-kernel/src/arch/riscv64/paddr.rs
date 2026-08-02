@@ -24,12 +24,16 @@ impl PAddr {
         self.0
     }
 
-    pub const fn ppn(&self) -> usize {
-        self.0 & ((1 << 56) - 1) & !(PAGE_SIZE - 1)
+    pub const fn ppn_all(&self) -> usize {
+        (self.0 / PAGE_SIZE) & ((1 << 44) - 1)
+    }
+
+    pub const fn page_aligned(&self) -> PAddr {
+        Self(self.0 & !(PAGE_SIZE - 1))
     }
 
     pub const fn next_multiple_of(&self, rhs: usize) -> Self {
-        Self::new(self.addr().next_multiple_of(rhs))
+        Self::new(self.0.next_multiple_of(rhs))
     }
 }
 
