@@ -16,5 +16,5 @@ pub mod rel;
 pub mod sched;
 pub mod sym;
 
-pub mod klog;
 pub mod devicetree;
+pub mod klog;

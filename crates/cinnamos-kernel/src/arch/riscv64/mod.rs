@@ -41,7 +41,7 @@ pub fn init_interrupts(hid: usize, fdt: &Fdt) {
         let mut plic = device::plic::get_plic_mut();
         for (node, ints) in devicetree::all_with_interrupts(fdt, &plic_node) {
             for int in ints {
-                log::info!("enabling interrupt {}: {}", int, node.name);
+                log::debug!("enabling interrupt {}: {}", int, node.name);
                 plic.set_priority(int as u16, 1);
                 plic.set_enabled(int as u16, hid, true);
             }

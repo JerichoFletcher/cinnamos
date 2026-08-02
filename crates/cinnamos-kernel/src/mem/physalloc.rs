@@ -119,8 +119,16 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
 }
 
 pub fn alloc(frame_count: usize) -> Option<FrameAlloc> {
-    let a = ALLOCATOR.read();
-    a.alloc(frame_count)
+    let a = ALLOCATOR.read().alloc(frame_count);
+    match &a {
+        Some(a) => log::trace!(
+            "allocate ppage size={} base=0x{:016x}",
+            frame_count * PAGE_SIZE,
+            &a.start_addr()
+        ),
+        None => log::trace!("allocate ppage size={} failed", frame_count * PAGE_SIZE),
+    }
+    a
 }
 
 fn dealloc(handle: &mut FrameAlloc) {

@@ -88,15 +88,13 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
         );
     }
     klog::init();
-
-    log::info!("higher-half entry (HID {})", hid);
+    log::info!("higher-half entry hid={}", hid);
 
     mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));
     mem::vms::remap_tables().expect("Failed to remap to higher-half");
     mem::heap::init_heap();
     mem::vms::uninit_identity_map().expect("Failed to uninitialize identity map");
 
-    #[cfg(debug_assertions)]
     if let Some((bump_start, bump_next, bump_end)) = mem::bump::get_bump_area() {
         log::info!(
             "bump area=0x{:016x} .. 0x{:016x}, head=0x{:016x}, used={}/{}",
@@ -110,7 +108,7 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
     sched::enqueue(sched::task::new_kernel_task(idle as _).expect("Failed to create idle task"));
     arch::init_interrupts(hid, &fdt);
 
-    log::info!("starting scheduler (HID {})", hid);
+    log::info!("starting scheduler hid={}", hid);
     sched::start();
 }
 

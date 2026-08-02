@@ -208,8 +208,11 @@ impl BuddyFrameAllocator {
                 l_alloc.add_range(l_start, r_base);
                 self.regions.push_back(l_alloc);
                 log::info!(
-                    "add region ORD={} BASE={:?} RANGE={:?} .. {:?}",
-                    l_order, l_base, l_start, r_base
+                    "add region: ord={} base=0x{:016x} range=0x{:016x} .. 0x{:016x}",
+                    l_order,
+                    l_base,
+                    l_start,
+                    r_base
                 );
             }
 
@@ -234,7 +237,7 @@ impl BuddyFrameAllocator {
             r_alloc.add_range(r_start, reg.end());
             self.regions.push_back(r_alloc);
             log::info!(
-                "add region ORD={} BASE={:?} RANGE={:?} .. {:?}",
+                "add region: ord={} base=0x{:016x} range=0x{:016x} .. 0x{:016x}",
                 r_order,
                 r_base,
                 r_start,
@@ -267,7 +270,7 @@ impl BuddyFrameAllocator {
             alloc.add_range(start, reg.end());
             self.regions.push_back(alloc);
             log::info!(
-                "add region ORD={} BASE={:?} RANGE={:?} .. {:?}",
+                "add region: ord={} base=0x{:016x} range=0x{:016x} .. 0x{:016x}",
                 size_order,
                 reg.base,
                 start,

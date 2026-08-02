@@ -375,6 +375,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
 
 /// Should only be called once from the kernel address space.
 pub fn remap_tables() -> Result<(), VmsError> {
+    log::debug!("remapping page tables");
     let mut g = ROOT_ADDRSP.write();
     let root_addrsp = g.as_mut().ok_or(VmsError::RootTableUninitialized)?;
     root_addrsp
@@ -390,7 +391,7 @@ pub fn uninit_identity_map() -> Result<(), VmsError> {
     root_addrsp.0.realloc();
 
     log::info!(
-        "unmapping id-map kernel\t: 0x{:016x} .. 0x{:016x}",
+        "unmapping id-map kernel: 0x{:016x} .. 0x{:016x}",
         kernel_start_p(),
         kernel_end_p()
     );
@@ -401,6 +402,13 @@ pub fn uninit_identity_map() -> Result<(), VmsError> {
 }
 
 pub fn map(virt: &impl VirtAlloc, phys: &FrameAlloc, flags: PTEFlags) -> Result<(), VmsError> {
+    log::trace!(
+        "map: 0x{:016x} -> 0x{:016x} size={}",
+        virt.start_addr(),
+        phys.start_addr(),
+        virt.size()
+    );
+
     let g = ROOT_ADDRSP.read();
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
     root_addrsp
@@ -410,6 +418,13 @@ pub fn map(virt: &impl VirtAlloc, phys: &FrameAlloc, flags: PTEFlags) -> Result<
 }
 
 pub fn map_raw(va: VAddr, pa: PAddr, size_bytes: usize, flags: PTEFlags) -> Result<(), VmsError> {
+    log::trace!(
+        "map: 0x{:016x} -> 0x{:016x} size={} raw",
+        va,
+        pa,
+        size_bytes
+    );
+
     let g = ROOT_ADDRSP.read();
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
     root_addrsp

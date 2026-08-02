@@ -18,7 +18,6 @@ pub enum SyscallError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, SyscallTable)]
 pub enum Syscall {
     // ProcessCreate = 1,
-
     #[args(exit_code: usize)]
     #[returns(!)]
     ProcessExit = 7,

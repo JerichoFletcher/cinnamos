@@ -116,7 +116,10 @@ fn expand(item: TokenStream) -> syn::Result<TokenStream> {
         let f_name = Ident::new(&v.ident.to_string().to_snake_case(), Span::call_site());
         let v_name = &v.ident;
         let params = params.into_iter().collect::<Vec<_>>();
-        let args = params.iter().map(|a| generate_cast_to_usize(&a.ident, &a.ty)).collect::<Vec<_>>();
+        let args = params
+            .iter()
+            .map(|a| generate_cast_to_usize(&a.ident, &a.ty))
+            .collect::<Vec<_>>();
 
         funcs.push(match ret_ty {
             Some(ret_ty) => match &ret_ty {

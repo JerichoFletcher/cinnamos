@@ -68,5 +68,6 @@ pub fn shift_bump(p2v: &'static impl Fn(PAddr) -> VAddr) {
 
 /// Should only be called once in higher-half
 pub fn init_heap() {
+    log::debug!("enabling freelist heap");
     *HEAP_MUX.write() = SendHeap::Heap;
 }

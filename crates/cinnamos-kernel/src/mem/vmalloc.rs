@@ -2,9 +2,12 @@ use spin::Once;
 
 use crate::{
     arch::{VAddr, VMALLOC_MAP_BASE, VMALLOC_MAP_END},
-    mem::virt::{
-        VirtAllocator,
-        buddy::{BuddyPageAlloc, BuddyVirtAllocator},
+    mem::{
+        PAGE_SIZE,
+        virt::{
+            VirtAlloc, VirtAllocator,
+            buddy::{BuddyPageAlloc, BuddyVirtAllocator},
+        },
     },
 };
 
@@ -19,5 +22,14 @@ fn get_vmalloc<'a>() -> &'a BuddyVirtAllocator {
 }
 
 pub fn alloc(page_count: usize) -> Option<BuddyPageAlloc> {
-    get_vmalloc().alloc(page_count)
+    let a = get_vmalloc().alloc(page_count);
+    match &a {
+        Some(a) => log::trace!(
+            "allocate vpage size={} base=0x{:016x}",
+            page_count * PAGE_SIZE,
+            &a.start_addr()
+        ),
+        None => log::trace!("allocate vpage size={} failed", page_count * PAGE_SIZE),
+    }
+    a
 }
