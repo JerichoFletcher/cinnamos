@@ -48,8 +48,9 @@ cfg_select! {
             TrapFrame,
         };
         pub use riscv64::interrupt::{
-            register_irq_handler,
             InterruptError,
+            IrqState,
+            register_irq_handler,
         };
 
         #[cfg(debug_assertions)]

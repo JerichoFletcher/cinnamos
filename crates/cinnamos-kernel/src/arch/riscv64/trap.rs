@@ -109,7 +109,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
             frame.ctx.sepc, frame.stval
         ),
         Trap::Exception(Exception::UserEnvCall) => {
-            println!(
+            log::debug!(
                 "[at 0x{:016x}] U-mode syscall {}",
                 frame.ctx.sepc, frame.ctx.regs[17]
             );
@@ -133,7 +133,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
             handle_external_interrupt(hloc);
         }
         Trap::Interrupt(Interrupt::SupervisorSoft) => {
-            println!(
+            log::debug!(
                 "[at 0x{:016x}] Software interrupt 0x{:016x}",
                 frame.ctx.sepc, frame.stval
             );

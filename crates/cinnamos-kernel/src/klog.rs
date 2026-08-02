@@ -1,6 +1,8 @@
+use core::fmt::Write;
+
 use log::{LevelFilter, Log};
 
-use crate::println;
+use crate::console::ConsoleWriter;
 
 struct Location<'a> {
     file: &'a str,
@@ -9,11 +11,6 @@ struct Location<'a> {
 
 impl core::fmt::Display for Location<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let file = self
-            .file
-            .strip_prefix("crates/cinnamos-kernel/")
-            .unwrap_or(self.file);
-        let file_len = file.len();
         let line_len = {
             let mut i = 0usize;
             let mut line = self.line;
@@ -23,35 +20,38 @@ impl core::fmt::Display for Location<'_> {
             }
             i
         };
+        let file = self
+            .file
+            .strip_prefix("crates/cinnamos-kernel/")
+            .unwrap_or(self.file);
+        let file_len = file.len();
         let len = file_len + 1 + line_len;
 
-        if let Some(width) = f.width() {
-            if let Some(pad) = width.checked_sub(len) {
-                if let Some(align) = f.align() {
-                    let pad_left = match align {
-                        core::fmt::Alignment::Right => pad,
-                        core::fmt::Alignment::Center => pad / 2,
-                        _ => 0,
-                    };
-                    for _ in 0..pad_left {
-                        write!(f, " ")?;
-                    }
-                }
+        if let Some(width) = f.width()
+            && let Some(pad) = width.checked_sub(len)
+            && let Some(align) = f.align()
+        {
+            let pad_left = match align {
+                core::fmt::Alignment::Right => pad,
+                core::fmt::Alignment::Center => pad / 2,
+                _ => 0,
+            };
+            for _ in 0..pad_left {
+                write!(f, " ")?;
             }
         }
         write!(f, "{}:{}", file, self.line)?;
-        if let Some(width) = f.width() {
-            if let Some(pad) = width.checked_sub(len) {
-                if let Some(align) = f.align() {
-                    let pad_right = match align {
-                        core::fmt::Alignment::Left => pad,
-                        core::fmt::Alignment::Center => (pad + 1) / 2,
-                        _ => 0,
-                    };
-                    for _ in 0..pad_right {
-                        write!(f, " ")?;
-                    }
-                }
+        if let Some(width) = f.width()
+            && let Some(pad) = width.checked_sub(len)
+            && let Some(align) = f.align()
+        {
+            let pad_right = match align {
+                core::fmt::Alignment::Left => pad,
+                core::fmt::Alignment::Center => pad.div_ceil(2),
+                _ => 0,
+            };
+            for _ in 0..pad_right {
+                write!(f, " ")?;
             }
         }
         Ok(())
@@ -71,8 +71,13 @@ impl Log for Logger {
                 file: record.file().unwrap_or("?"),
                 line: record.line().unwrap_or(0),
             };
-
-            println!("[{:>5}] {:<40}: {}", record.level(), loc, record.args(),);
+            let _ = writeln!(
+                ConsoleWriter,
+                "[{:>5}] {:<32}: {}",
+                record.level(),
+                loc,
+                record.args()
+            );
         }
     }
 
@@ -84,7 +89,7 @@ static LOGGER: Logger = Logger;
 pub fn init() {
     log::set_logger(&LOGGER).unwrap();
     log::set_max_level(cfg_select! {
-        debug_assertions => LevelFilter::Trace,
+        debug_assertions => LevelFilter::Debug,
         _ => LevelFilter::Info,
     });
 }

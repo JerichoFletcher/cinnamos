@@ -39,7 +39,8 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
             irq_id as u16,
         );
     }
-
+    klog::init();
+    
     mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("Failed to initialize VMS");
     unsafe {
         jump_higher_half(higher_half_entry as *const (), hid, dtb_ptr, dyn_ptr);
@@ -87,7 +88,6 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
             irq_id as u16,
         );
     }
-    klog::init();
     log::info!("higher-half entry hid={}", hid);
 
     mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));

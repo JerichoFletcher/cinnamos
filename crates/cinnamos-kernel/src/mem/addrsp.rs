@@ -120,6 +120,7 @@ impl<'a> AddressSpace<'a> {
         size_bytes: usize,
         flags: PTEFlags,
     ) -> Result<(), AddressSpaceError> {
+        log::trace!("map 0x{:016x} -> 0x{:016x} size={}", &va, &pa, size_bytes);
         let mut va = va;
         let mut pa = pa;
         let pa_end = pa + size_bytes;
@@ -163,6 +164,7 @@ impl<'a> AddressSpace<'a> {
         size_bytes: usize,
         flags: PTEFlags,
     ) -> Result<(), AddressSpaceError> {
+        log::trace!("map 0x{:016x} -> 0x{:016x} size={}", &va, &pa, size_bytes);
         let mut va = va;
         let mut pa = pa;
         let pa_end = pa + size_bytes;
@@ -205,6 +207,7 @@ impl<'a> AddressSpace<'a> {
     }
 
     pub fn unmap_raw(&self, va: VAddr, size_bytes: usize) -> Result<(), AddressSpaceError> {
+        log::trace!("unmap 0x{:016x} size={}", &va, size_bytes);
         let mut va = va;
         let va_end = va + size_bytes;
 

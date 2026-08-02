@@ -3,7 +3,7 @@ use core::{
     sync::atomic::{AtomicPtr, Ordering},
 };
 
-use riscv::register::sie;
+use riscv::register::{sie, sstatus};
 
 use crate::arch::device::plic::INTERRUPT_COUNT;
 
@@ -50,5 +50,26 @@ pub fn enable_interrupts() {
     sie.set_sext(true);
     unsafe {
         sie::write(sie);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IrqState {
+    enabled: bool,
+}
+
+impl IrqState {
+    pub fn disable_save() -> Self {
+        let sstatus = sstatus::read();
+        unsafe { sstatus::clear_sie(); }
+        Self { enabled: sstatus.sie() }
+    }
+
+    pub fn restore(&self) {
+        if self.enabled {
+            unsafe { sstatus::set_sie(); }
+        } else {
+            unsafe { sstatus::clear_sie(); }
+        }
     }
 }

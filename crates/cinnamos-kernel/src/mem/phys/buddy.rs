@@ -208,11 +208,11 @@ impl BuddyFrameAllocator {
                 l_alloc.add_range(l_start, r_base);
                 self.regions.push_back(l_alloc);
                 log::info!(
-                    "add region: ord={} base=0x{:016x} range=0x{:016x} .. 0x{:016x}",
-                    l_order,
+                    "add region base=0x{:016x} range=0x{:016x} .. 0x{:016x} ord={}",
                     l_base,
                     l_start,
-                    r_base
+                    r_base,
+                    l_order,
                 );
             }
 
@@ -237,11 +237,11 @@ impl BuddyFrameAllocator {
             r_alloc.add_range(r_start, reg.end());
             self.regions.push_back(r_alloc);
             log::info!(
-                "add region: ord={} base=0x{:016x} range=0x{:016x} .. 0x{:016x}",
-                r_order,
+                "add region base=0x{:016x} range=0x{:016x} .. 0x{:016x} ord={}",
                 r_base,
                 r_start,
-                reg.end()
+                reg.end(),
+                r_order,
             );
         } else {
             // Carve out memory for L and R metadata buffer (excluded from managed region)
@@ -270,11 +270,11 @@ impl BuddyFrameAllocator {
             alloc.add_range(start, reg.end());
             self.regions.push_back(alloc);
             log::info!(
-                "add region: ord={} base=0x{:016x} range=0x{:016x} .. 0x{:016x}",
-                size_order,
+                "add region base=0x{:016x} range=0x{:016x} .. 0x{:016x} ord={}",
                 reg.base,
                 start,
-                reg.end()
+                reg.end(),
+                size_order,
             );
         }
     }
