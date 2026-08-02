@@ -1,0 +1,12 @@
+[package]
+name = "cinnamos-abi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+test = false
+bench = false
+
+[dependencies]
+macros = { path = "macros" }
+num_enum = { version = "0.7", default-features = false }

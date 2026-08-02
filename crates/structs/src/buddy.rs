@@ -4,7 +4,14 @@ use alloc::collections::BTreeMap;
 
 pub const MAX_ORDER: usize = 36;
 
-pub type BlockIndex = usize;
+cfg_select! {
+    target_pointer_width = "64" => {
+        pub type BlockIndex = u64;
+    }
+    target_pointer_width = "32" => {
+        pub type BlockIndex = u32;
+    }
+}
 
 pub const fn order_of(size: BlockIndex) -> usize {
     if size != 0 {
@@ -38,25 +45,25 @@ pub struct FlatArray {
 impl BackingBuffer for FlatArray {
     fn get_next(&self, index: &BlockIndex) -> BlockIndex {
         // Safety: self.next is valid and exclusive to the backing buffer
-        unsafe { (*self.next)[*index] }
+        unsafe { (*self.next)[*index as usize] }
     }
 
     fn get_bitmap(&self, index: &BlockIndex) -> u64 {
         // Safety: self.bitmap is valid and exclusive to the backing buffer
-        unsafe { (*self.bitmap)[*index] }
+        unsafe { (*self.bitmap)[*index as usize] }
     }
 
     fn set_next(&mut self, index: &BlockIndex, value: BlockIndex) {
         // Safety: self.next is valid and exclusive to the backing buffer
         unsafe {
-            (*self.next)[*index] = value;
+            (*self.next)[*index as usize] = value;
         }
     }
 
     fn set_bitmap(&mut self, index: &BlockIndex, value: u64) {
         // Safety: self.bitmap is valid and exclusive to the backing buffer
         unsafe {
-            (*self.bitmap)[*index] = value;
+            (*self.bitmap)[*index as usize] = value;
         }
     }
 }
@@ -274,7 +281,7 @@ impl<B: BackingBuffer> BuddyAllocator<B> {
         debug_assert_eq!(block % (1 << order), 0);
         debug_assert!(block <= self.max_block_count());
 
-        let mut prev: Option<usize> = None;
+        let mut prev = None;
         let mut curr = self.free_lists[order];
 
         while curr != BlockIndex::MAX {
@@ -294,19 +301,19 @@ impl<B: BackingBuffer> BuddyAllocator<B> {
         panic!("Block {} not found at order {}", block, order);
     }
 
-    const fn order_offset(&self, order: usize) -> usize {
+    const fn order_offset(&self, order: usize) -> BlockIndex {
         (2 << self.order) - (2 << (self.order - order))
     }
 
-    const fn next_idx(&self, order: usize, block: BlockIndex) -> usize {
-        self.order_offset(order) + (block as usize >> (order + 1))
+    const fn next_idx(&self, order: usize, block: BlockIndex) -> BlockIndex {
+        self.order_offset(order) + (block >> (order + 1))
     }
 
     fn bitmap_bit_get(&self, order: usize, block: BlockIndex) -> bool {
         debug_assert_eq!(block % (1 << order), 0);
         debug_assert!(block <= self.max_block_count());
 
-        let flat = self.order_offset(order) / 2 + (block as usize >> (order + 1));
+        let flat = self.order_offset(order) / 2 + (block >> (order + 1));
         let idx = flat / 64;
         let bit = flat % 64;
 
@@ -318,7 +325,7 @@ impl<B: BackingBuffer> BuddyAllocator<B> {
         debug_assert_eq!(block % (1 << order), 0);
         debug_assert!(block <= self.max_block_count());
 
-        let flat = self.order_offset(order) / 2 + (block as usize >> (order + 1));
+        let flat = self.order_offset(order) / 2 + (block >> (order + 1));
         let idx = flat / 64;
         let bit = flat % 64;
 

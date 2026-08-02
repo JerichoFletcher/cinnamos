@@ -13,11 +13,12 @@ test = false
 bench = false
 
 [dependencies]
+cinnamos-abi = { path = "../cinnamos-abi" }
 structs = { path = "../structs" }
-riscv = { version = "0.16.0", features = ["s-mode"] }
-bitflags = "2.13.0"
-sbi = "0.3.0"
-fdt = "0.1.5"
-spin = "0.12.0"
-uart = { version = "3.0.2", default-features = false, features = ["address_impl"] }
-pastey = "0.2.3"
+riscv = { version = "0.16", features = ["s-mode"] }
+bitflags = "2.13"
+sbi = "0.3"
+fdt = "0.1"
+spin = "0.12"
+uart = { version = "3.0", default-features = false, features = ["address_impl"] }
+pastey = "0.2"
