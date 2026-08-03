@@ -12,8 +12,19 @@ checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 name = "cinnamos-abi"
 version = "0.1.0"
 dependencies = [
- "macros",
+ "cinnamos-abi-macros",
  "num_enum",
+]
+
+[[package]]
+name = "cinnamos-abi-macros"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -22,6 +33,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "cinnamos-abi",
+ "cinnamos-kernel-macros",
  "fdt",
  "log",
  "pastey",
@@ -30,6 +42,17 @@ dependencies = [
  "spin",
  "structs",
  "uart",
+]
+
+[[package]]
+name = "cinnamos-kernel-macros"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -70,17 +93,6 @@ name = "log"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
-
-[[package]]
-name = "macros"
-version = "0.1.0"
-dependencies = [
- "heck",
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn 3.0.3",
-]
 
 [[package]]
 name = "num_enum"

@@ -1,8 +1,8 @@
 use core::fmt::{self, Write};
 
-use crate::{device::uart::SerialWrite, sync::mutex_irqsave::MutexIrqSave};
+use crate::{device::uart::SerialWrite, sync::mutex_irqsave::{MutexIrqSave, MutexIrqSaveGuard}};
 
-pub trait ConsoleWrite: fmt::Write + Send {
+pub trait ConsoleWrite: fmt::Write + Sync {
     fn flush(&mut self);
 }
 
@@ -27,6 +27,11 @@ impl Console {
     pub fn flush(&mut self) {
         self.serial.flush();
     }
+
+    #[inline]
+    pub fn lock<'a>() -> MutexIrqSaveGuard<'a, Console> {
+        CONSOLE.lock()
+    }
 }
 
 impl Default for Console {
@@ -35,12 +40,10 @@ impl Default for Console {
     }
 }
 
-static CONSOLE: MutexIrqSave<Console> = MutexIrqSave::new(Console::new());
-
-pub struct ConsoleWriter;
-
-impl fmt::Write for ConsoleWriter {
+impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        CONSOLE.lock().write(s)
+        self.write(s)
     }
 }
+
+static CONSOLE: MutexIrqSave<Console> = MutexIrqSave::new(Console::new());

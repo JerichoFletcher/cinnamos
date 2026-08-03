@@ -379,7 +379,7 @@ pub fn uninit_identity_map() -> Result<(), VmsError> {
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
     root_addrsp.0.realloc();
 
-    log::info!(
+    log::debug!(
         "unmapping id-map kernel: 0x{:016x} .. 0x{:016x}",
         kernel_start_p(),
         kernel_end_p()

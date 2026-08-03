@@ -8,5 +8,5 @@ test = false
 bench = false
 
 [dependencies]
-macros = { path = "macros" }
+cinnamos-abi-macros = { path = "macros" }
 num_enum = { version = "0.7", default-features = false }

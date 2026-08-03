@@ -1,7 +1,7 @@
 .equ HLOC_SCRATCH_OFFSET,   8
 .equ HLOC_TASKPTR_OFFSET,   16
 .equ HLOC_TSP_OFFSET,       24
-.equ TASK_KSP_OFFSET,       16
+.equ TASK_KSP_OFFSET,       24
 .equ TRAP_FRAME_SIZE,       32*8 + 4*8
 
 .section .text

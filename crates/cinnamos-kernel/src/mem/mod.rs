@@ -8,7 +8,6 @@ pub mod virt;
 
 pub mod addrsp;
 pub mod alloc;
-pub mod bump;
 pub mod heap;
 pub mod physalloc;
 pub mod vmalloc;

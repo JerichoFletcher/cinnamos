@@ -1,6 +1,6 @@
 #![no_std]
 
-use macros::SyscallTable;
+use cinnamos_abi_macros::SyscallTable;
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
 #[expect(unused)]
@@ -9,19 +9,25 @@ mod abi;
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, FromPrimitive)]
 pub enum SyscallError {
-    // TODO: Define error codes
+    UnknownSyscall = 0x7fff,
+
     #[num_enum(default)]
     UnknownError = 0xffff,
 }
 
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive, SyscallTable)]
+#[err(SyscallError::UnknownSyscall)]
 pub enum Syscall {
-    // ProcessCreate = 1,
+    // PROCESS
+    #[returns(usize)]
+    ProcessCreate = 1,
+
     #[args(exit_code: usize)]
     #[returns(!)]
     ProcessExit = 7,
 
+    // THREAD
     #[args(entry: *const ())]
     #[returns(usize)]
     ThreadCreate = 8,

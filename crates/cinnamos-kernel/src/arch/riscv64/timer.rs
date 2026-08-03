@@ -1,6 +1,6 @@
 use riscv::register::time;
 
-const TIMER_INTERVAL: u64 = 1024;
+const TIMER_INTERVAL: u64 = 512;
 
 pub fn schedule_timer() {
     let time = time::read64();

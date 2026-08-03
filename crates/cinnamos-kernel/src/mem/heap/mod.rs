@@ -4,7 +4,7 @@ use spin::RwLock;
 
 mod freelist;
 
-use super::bump;
+use super::alloc::bump;
 use crate::{
     arch::{HEAP_MAP_BASE, PAddr, VAddr},
     mem::heap::freelist::FreeListHeap,

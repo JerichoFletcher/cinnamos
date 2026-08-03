@@ -3,8 +3,7 @@ use proc_macro_error::{Diagnostic, Level, abort, proc_macro_error};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::{
-    Fields, Ident, ItemEnum, Token, Type, parse::Parse, parse_macro_input, parse2,
-    punctuated::Punctuated, spanned::Spanned,
+    Fields, Ident, ItemEnum, Token, Type, parse::Parse, parse_macro_input, parse2, punctuated::Punctuated, spanned::Spanned,
 };
 
 extern crate proc_macro;
@@ -33,6 +32,30 @@ impl ToTokens for Arg {
     }
 }
 
+struct EnumValue {
+    ty_ident: Ident,
+    path_sep: Token![::],
+    val_ident: Ident,
+}
+
+impl Parse for EnumValue {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        Ok(Self {
+            ty_ident: input.parse()?,
+            path_sep: input.parse()?,
+            val_ident: input.parse()?,
+        })
+    }
+}
+
+impl ToTokens for EnumValue {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.ty_ident.to_tokens(tokens);
+        self.path_sep.to_tokens(tokens);
+        self.val_ident.to_tokens(tokens);
+    }
+}
+
 fn generate_cast_to_usize(ident: &Ident, ty: &Type) -> TokenStream {
     match ty {
         Type::Path(p) if p.path.is_ident("usize") => ident.to_token_stream(),
@@ -41,9 +64,9 @@ fn generate_cast_to_usize(ident: &Ident, ty: &Type) -> TokenStream {
     }
 }
 
-#[proc_macro_derive(SyscallTable, attributes(args, returns))]
+#[proc_macro_derive(SyscallTable, attributes(err, args, returns))]
 #[proc_macro_error]
-pub fn derive_syscall_table(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn syscall_table_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item = parse_macro_input!(item);
     expand(item)
         .unwrap_or_else(syn::Error::into_compile_error)
@@ -52,8 +75,23 @@ pub fn derive_syscall_table(item: proc_macro::TokenStream) -> proc_macro::TokenS
 
 fn expand(item: TokenStream) -> syn::Result<TokenStream> {
     let mut funcs = vec![];
+    let mut metas = vec![];
     let top_enum = parse2::<ItemEnum>(item)?;
 
+    let mut err_val = top_enum.attrs.iter().filter(|attr| attr.path().is_ident("err"));
+    let err_val = match (err_val.next(), err_val.next()) {
+        (None, _) => abort!(top_enum, "#[err(...)] attribute required on enum declaration"),
+        (Some(attr), None) => attr.parse_args::<EnumValue>()?,
+        (Some(first), Some(second)) => Diagnostic::spanned(
+            second.span(),
+            Level::Error,
+            "duplicate #[err(...)] attributes".to_string(),
+        )
+        .span_note(first.span(), "first attribute found here".to_string())
+        .abort(),
+    };
+
+    let name = &top_enum.ident;
     for v in top_enum.variants {
         let Fields::Unit = v.fields else {
             abort!(
@@ -113,54 +151,76 @@ fn expand(item: TokenStream) -> syn::Result<TokenStream> {
             Span::call_site(),
         );
 
-        let f_name = Ident::new(&v.ident.to_string().to_snake_case(), Span::call_site());
-        let v_name = &v.ident;
+        let func_name = Ident::new(&v.ident.to_string().to_snake_case(), Span::call_site());
+        let variant_name = &v.ident;
         let params = params.into_iter().collect::<Vec<_>>();
         let args = params
             .iter()
             .map(|a| generate_cast_to_usize(&a.ident, &a.ty))
             .collect::<Vec<_>>();
-
-        funcs.push(match ret_ty {
+        funcs.push(match &ret_ty {
             Some(ret_ty) => match &ret_ty {
-                Type::Never(_) => quote! {
-                    #[inline]
-                    pub unsafe fn #f_name(#(#params),*) -> ! {
-                        let _ = crate::abi::#call_name(Self::#v_name, #(#args),*);
-                        unreachable!()
+                Type::Never(_) => {
+                    let noret_errmsg = format!("no-return syscall {} returned to caller", func_name);
+                    quote! {
+                        #[inline]
+                        pub unsafe fn #func_name(#(#params),*) -> ! {
+                            let _ = crate::abi::#call_name(Self::#variant_name, #(#args),*);
+                            unreachable!(#noret_errmsg)
+                        }
                     }
                 },
                 Type::Path(p) if p.path.is_ident("usize") => quote! {
                     #[inline]
-                    pub unsafe fn #f_name(#(#params),*) -> Result<#ret_ty, SyscallError> {
-                        crate::abi::#call_name(Self::#v_name, #(#args),*)
+                    pub unsafe fn #func_name(#(#params),*) -> Result<#ret_ty, SyscallError> {
+                        crate::abi::#call_name(Self::#variant_name, #(#args),*)
                     }
                 },
                 _ => {
                     let ret_name = Ident::new("val", Span::call_site());
-                    let ret_cast = generate_cast_to_usize(&ret_name, &ret_ty);
+                    let ret_cast = generate_cast_to_usize(&ret_name, ret_ty);
                     quote! {
                         #[inline]
-                        pub unsafe fn #f_name(#(#params),*) -> Result<#ret_ty, SyscallError> {
-                            crate::abi::#call_name(Self::#v_name, #(#args),*).map(|#ret_name| #ret_cast)
+                        pub unsafe fn #func_name(#(#params),*) -> Result<#ret_ty, SyscallError> {
+                            crate::abi::#call_name(Self::#variant_name, #(#args),*).map(|#ret_name| #ret_cast)
                         }
                     }
                 },
             },
             None => quote! {
                 #[inline]
-                pub unsafe fn #f_name(#(#params),*) -> Result<(), SyscallError> {
-                    crate::abi::#call_name(Self::#v_name, #(#args),*)?;
+                pub unsafe fn #func_name(#(#params),*) -> Result<(), SyscallError> {
+                    crate::abi::#call_name(Self::#variant_name, #(#args),*)?;
                     Ok(())
                 }
             },
         });
+
+        metas.push(match &ret_ty {
+            Some(ret_ty) => quote! {
+                #variant_name(#(#params),*) -> #ret_ty;
+            },
+            None => quote! {
+                #variant_name(#(#params),*) -> ();
+            },
+        });
     }
 
-    let name = &top_enum.ident;
     Ok(quote! {
+        #[cfg(not(target_os = "none"))]
         impl #name {
             #(#funcs)*
+        }
+
+        #[doc(hidden)]
+        #[macro_export]
+        macro_rules! __syscall_meta {
+            ($m:ident) => {
+                $m! {
+                    #name, #err_val;
+                    #(#metas)*
+                }
+            };
         }
     })
 }

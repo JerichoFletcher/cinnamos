@@ -1,3 +1,4 @@
+use cinnamos_abi::{Syscall, SyscallError};
 use riscv::{
     interrupt::{Exception, Interrupt, Trap},
     register::{
@@ -33,7 +34,8 @@ impl TrapFrame {
         sstatus.set_spp(sstatus::SPP::Supervisor);
 
         let mut regs = [0; 32];
-        regs[2] = stack_ptr.addr();
+        regs[Context::REG_SP] = stack_ptr.addr();
+        regs[Context::REG_TP] = hloc::hart_local() as *mut _ as usize;
         Self {
             ctx: Context {
                 regs,
@@ -109,10 +111,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
             frame.ctx.sepc, frame.stval
         ),
         Trap::Exception(Exception::UserEnvCall) => {
-            log::debug!(
-                "[at 0x{:016x}] U-mode syscall {}",
-                frame.ctx.sepc, frame.ctx.regs[17]
-            );
+            process_syscall(frame);
             frame.ctx.sepc = frame.ctx.sepc + 4;
         }
         Trap::Exception(Exception::Breakpoint) => {
@@ -133,7 +132,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
             handle_external_interrupt(hloc);
         }
         Trap::Interrupt(Interrupt::SupervisorSoft) => {
-            log::debug!(
+            log::trace!(
                 "[at 0x{:016x}] Software interrupt 0x{:016x}",
                 frame.ctx.sepc, frame.stval
             );
@@ -142,6 +141,31 @@ extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
             "[at 0x{:016x}] Unhandled trap {:?} 0x{:016x}",
             frame.ctx.sepc, tcause, frame.stval
         ),
+    }
+}
+
+fn process_syscall(frame: &mut TrapFrame) {
+    match Syscall::try_from(frame.ctx.regs[Context::REG_A7]) {
+        Ok(sys) => {
+            if let Some(args) = frame.ctx.regs[Context::REG_A0..Context::REG_A5].first_chunk::<6>() {
+                // Safety: args passed from the context are generated from their original types
+                match unsafe { sys::dispatch_syscall(sys, args) } {
+                    Ok(ret) => {
+                        log::trace!("syscall OK sys={:?} ret={}", sys, ret);
+                        frame.ctx.regs[Context::REG_A0] = 0;
+                        frame.ctx.regs[Context::REG_A1] = ret;
+                    }
+                    Err(e) => {
+                        log::trace!("syscall ERR sys={:?} err={:?}", sys, e);
+                        frame.ctx.regs[Context::REG_A0] = e.into();
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("syscall ERR sys={} unknown", e.number);
+            frame.ctx.regs[Context::REG_A0] = SyscallError::UnknownSyscall.into();
+        }
     }
 }
 

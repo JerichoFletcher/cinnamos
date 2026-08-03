@@ -88,14 +88,14 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
             irq_id as u16,
         );
     }
-    log::info!("higher-half entry hid={}", hid);
+    log::info!("higher-half entry");
 
     mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));
     mem::vms::remap_tables().expect("Failed to remap to higher-half");
     mem::heap::init_heap();
     mem::vms::uninit_identity_map().expect("Failed to uninitialize identity map");
 
-    if let Some((bump_start, bump_next, bump_end)) = mem::bump::get_bump_area() {
+    if let Some((bump_start, bump_next, bump_end)) = mem::alloc::bump::get_bump_area() {
         log::info!(
             "bump area=0x{:016x} .. 0x{:016x}, head=0x{:016x}, used={}/{}",
             bump_start,
@@ -108,13 +108,16 @@ unsafe fn higher_half_entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel:
     sched::enqueue(sched::task::new_kernel_task(idle as _).expect("Failed to create idle task"));
     arch::init_interrupts(hid, &fdt);
 
-    log::info!("starting scheduler hid={}", hid);
+    log::info!("starting scheduler");
     sched::start();
 }
 
 fn idle() -> ! {
     log::debug!("hello from idle()");
     loop {
+        if let Err(e) = sys::thread::thread_yield() {
+            log::warn!("thread_yield returned with error {:?}", e);
+        }
         arch::wait_for_interrupt();
     }
 }

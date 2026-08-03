@@ -23,6 +23,7 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn enqueue(&self, mut task: SlabBox<Task>) {
+        log::trace!("enqueueing task ptr={:p}", task.as_ptr());
         let next_free_id = self.next_free_id.fetch_add(1, Ordering::Relaxed);
         task.id = next_free_id;
         task.state = TaskState::Ready;
@@ -34,19 +35,20 @@ impl Scheduler {
 
     pub fn schedule(&self) {
         let hloc = hloc::hart_local();
+        
         let mut rq = self.run_queue.lock();
-
         let curr = hloc
             .curr_task()
             .expect("Scheduler::schedule() expects a current task");
         if curr.state == TaskState::Running {
             curr.state = TaskState::Ready;
         }
-
+    
         match rq.pop_front() {
             Some(mut next) => {
                 next.state = TaskState::Running;
                 let next_ptr = next.as_ptr();
+                log::trace!("scheduling next task curr={:p} next={:p}", curr, next.as_ptr());
 
                 rq.push_back(next);
                 drop(rq);
@@ -72,6 +74,7 @@ impl Scheduler {
             Some(mut next) => {
                 let next_ptr = next.as_ptr();
                 next.state = TaskState::Running;
+                log::trace!("scheduling first task next={:p}", next.as_ptr());
 
                 rq.push_back(next);
                 drop(rq);

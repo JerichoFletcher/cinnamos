@@ -64,7 +64,7 @@ enum SendAllocator {
 impl SendAllocator {
     fn alloc(&self, frame_count: usize) -> Option<FrameAlloc> {
         match self {
-            Self::Bump => mem::bump::alloc_frame(frame_count)
+            Self::Bump => mem::alloc::bump::alloc_frame(frame_count)
                 .map(|pa| FrameAlloc::BumpAlloc((pa, frame_count))),
             Self::Buddy(alloc) => alloc.alloc(frame_count).map(FrameAlloc::BuddyAlloc),
         }
