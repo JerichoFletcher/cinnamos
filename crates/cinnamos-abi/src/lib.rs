@@ -3,8 +3,13 @@
 use cinnamos_abi_macros::SyscallTable;
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
+mod macros;
+pub mod proc;
+
 #[expect(unused)]
 mod abi;
+#[expect(unused)]
+use crate::proc::*;
 
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, FromPrimitive)]
@@ -20,7 +25,7 @@ pub enum SyscallError {
 #[err(SyscallError::UnknownSyscall)]
 pub enum Syscall {
     // PROCESS
-    #[returns(usize)]
+    #[returns(ProcessId)]
     ProcessCreate = 1,
 
     #[args(exit_code: usize)]
@@ -29,7 +34,7 @@ pub enum Syscall {
 
     // THREAD
     #[args(entry: *const ())]
-    #[returns(usize)]
+    #[returns(ThreadId)]
     ThreadCreate = 8,
 
     ThreadYield = 9,

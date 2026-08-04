@@ -46,7 +46,9 @@ impl<'a, T: ?Sized, R> Drop for MutexIrqSaveGuard<'a, T, R> {
         unsafe {
             ManuallyDrop::drop(&mut self.inner);
         }
-        self.irq.take().map(IrqState::restore);
+        if let Some(irq) = self.irq.take() {
+            irq.restore();
+        }
     }
 }
 

@@ -19,7 +19,7 @@ impl StackBuilder {
     /// # Safety
     /// Given the current stack pointer as `ptr`:
     /// - `ptr` must point to writable memory.
-    /// - There must be enough space below `ptr` to fit an instance of `T`.
+    /// - There must be enough space below `ptr` to fit an aligned instance of `T`.
     pub unsafe fn push<T>(&mut self, val: T) -> &mut Self {
         self.ptr = (self.ptr - size_of::<T>()).align_down(align_of::<T>());
         // Safety: ptr is aligned to T

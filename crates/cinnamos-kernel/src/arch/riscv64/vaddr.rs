@@ -73,6 +73,7 @@ impl VAddr {
         (self.0 / PAGE_SIZE) & ((1 << 36) - 1)
     }
 
+    /// Only correct if `align` is a [power of two](usize::is_power_of_two).
     pub const fn align_down(&self, align: usize) -> VAddr {
         debug_assert!(align.is_power_of_two());
         Self(self.0 & !(align - 1))

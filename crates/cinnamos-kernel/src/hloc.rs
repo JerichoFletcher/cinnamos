@@ -2,16 +2,19 @@ use core::mem::MaybeUninit;
 
 use crate::{
     arch::{self, VAddr},
+    mem::alloc::slab::SlabBox,
     task::Task,
 };
 
 #[repr(C)]
 #[derive(Debug)]
 pub struct HartLocal {
-    pub hid: usize,
-    pub scratch: usize,
-    pub curr_task: *mut Task,
-    pub trap_stack_top: VAddr,
+    pub(crate) hid: usize,
+    pub(crate) scratch: usize,
+    pub(crate) curr_task_ptr: *mut Task,
+    pub(crate) trap_stack_top: VAddr,
+
+    curr_task: Option<SlabBox<Task>>,
 }
 
 impl HartLocal {
@@ -19,8 +22,9 @@ impl HartLocal {
         Self {
             hid,
             scratch: 0,
-            curr_task: core::ptr::null_mut(),
+            curr_task_ptr: core::ptr::null_mut(),
             trap_stack_top: tsp,
+            curr_task: None,
         }
     }
 
@@ -29,13 +33,18 @@ impl HartLocal {
         self.hid
     }
 
-    pub const fn curr_task(&mut self) -> Option<&mut Task> {
-        // Safety: self is mutably borrowed
-        unsafe { self.curr_task.as_mut() }
+    pub const fn curr_task(&mut self) -> Option<&mut SlabBox<Task>> {
+        self.curr_task.as_mut()
     }
 
-    pub const fn set_curr_task(&mut self, task: *mut Task) {
-        self.curr_task = task;
+    pub fn take_curr_task(&mut self) -> Option<SlabBox<Task>> {
+        self.curr_task_ptr = core::ptr::null_mut();
+        self.curr_task.take()
+    }
+
+    pub fn set_curr_task(&mut self, task: SlabBox<Task>) {
+        self.curr_task_ptr = task.as_ptr();
+        self.curr_task = Some(task);
     }
 }
 

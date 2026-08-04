@@ -76,7 +76,7 @@ impl Log for Logger {
             let mut writer = Console::lock();
             let _ = writeln!(
                 writer,
-                "[{:0>2}][{:>5}] {:<32}: {}",
+                "[{:>2}][{:>5}] {:<32}: {}",
                 hid,
                 record.level(),
                 loc,

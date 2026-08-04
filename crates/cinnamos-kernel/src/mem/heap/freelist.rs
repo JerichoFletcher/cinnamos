@@ -101,9 +101,9 @@ impl FreeListHeap {
                         while prev_va >= base_va {
                             // Safety: prev_va is within base_va and end_va, which is mapped
                             unsafe {
-                                *prev_va.as_mut::<FreeBlock>() = FreeBlock {
+                                prev_va.write(FreeBlock {
                                     next: next_va.as_mut(),
-                                }
+                                });
                             }
                             next_va = prev_va;
                             prev_va = prev_va - size;

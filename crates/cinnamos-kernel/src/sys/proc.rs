@@ -1,6 +1,6 @@
-use cinnamos_abi::SyscallError;
+use cinnamos_abi::{SyscallError, proc::ProcessId};
 
-pub fn process_create() -> Result<usize, SyscallError> {
+pub fn process_create() -> Result<ProcessId, SyscallError> {
     todo!()
 }
 

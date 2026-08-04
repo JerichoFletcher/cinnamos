@@ -9,9 +9,10 @@ use crate::{
     task::{Task, TaskState},
 };
 
+#[expect(improper_ctypes)]
 unsafe extern "C" {
-    fn __switch(next_task: *const (), curr_task: *mut ());
-    fn __switch_noprev(next_task: *const ());
+    fn __switch(next_task: *const Task, curr_task: *mut Task);
+    fn __switch_noprev(next_task: *const Task);
 }
 
 pub struct Scheduler {
@@ -21,76 +22,67 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn enqueue(&self, mut task: SlabBox<Task>) {
-        log::trace!("enqueueing task ptr={:p}", task.as_ptr());
         let next_free_id = self.next_free_id.fetch_add(1, Ordering::Relaxed);
-        task.id = next_free_id;
+        log::trace!(
+            "enqueueing task ptr={:p} id={}",
+            task.as_ptr(),
+            next_free_id
+        );
+        task.id = next_free_id.into();
         task.state = TaskState::Ready;
         task.time_quantum = 128;
-
-        let mut rq = self.run_queue.lock();
-        rq.push_back(task);
+        self.run_queue.lock().push_back(task);
     }
 
     pub fn schedule(&self) {
         let hloc = hloc::hart_local();
-
-        let mut rq = self.run_queue.lock();
-        let curr = hloc
-            .curr_task()
+        let mut curr = hloc
+            .take_curr_task()
             .expect("Scheduler::schedule() expects a current task");
         if curr.state == TaskState::Running {
             curr.state = TaskState::Ready;
         }
+        let curr_ptr = curr.as_ptr();
+        let curr_id = curr.id;
 
-        match rq.pop_front() {
+        let next = {
+            let mut rq = self.run_queue.lock();
+            rq.push_back(curr);
+            rq.pop_front()
+        };
+        match next {
             Some(mut next) => {
                 next.state = TaskState::Running;
                 let next_ptr = next.as_ptr();
-                log::trace!(
-                    "scheduling next task curr={:p} next={:p}",
-                    curr,
-                    next.as_ptr()
-                );
+                log::trace!("scheduling next task curr={} next={}", curr_id, next.id);
 
-                rq.push_back(next);
-                drop(rq);
-
-                let curr_ptr = curr as *mut Task;
-                hloc.set_curr_task(next_ptr);
+                hloc.set_curr_task(next);
                 unsafe {
-                    __switch(next_ptr as _, curr_ptr as _);
+                    __switch(next_ptr, curr_ptr);
                 }
             }
             None => {
-                drop(rq);
-                panic!("Schedule run queue is empty")
+                panic!("schedule run queue is empty")
             }
         }
     }
 
     pub fn start(&self) -> ! {
         let hloc = hloc::hart_local();
-        let mut rq = self.run_queue.lock();
-
-        match rq.pop_front() {
+        let next = self.run_queue.lock().pop_front();
+        match next {
             Some(mut next) => {
-                let next_ptr = next.as_ptr();
                 next.state = TaskState::Running;
-                log::trace!("scheduling first task next={:p}", next.as_ptr());
+                let next_ptr = next.as_ptr();
+                log::trace!("scheduling first task next={}", next.id);
 
-                rq.push_back(next);
-                drop(rq);
-
-                hloc.set_curr_task(next_ptr);
+                hloc.set_curr_task(next);
                 unsafe {
-                    __switch_noprev(next_ptr as _);
+                    __switch_noprev(next_ptr);
                 }
                 unreachable!("__switch_noprev should never return to Scheduler::start()");
             }
-            None => {
-                drop(rq);
-                panic!("Schedule run queue is empty")
-            }
+            None => panic!("schedule run queue is empty"),
         }
     }
 }

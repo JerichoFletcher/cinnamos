@@ -40,7 +40,7 @@ impl<'a> AddressSpace<'a> {
             root,
             tables: Mutex::new(tables),
         };
-        addrsp.map_raw(
+        addrsp.map_raw_skip_mapped(
             p2v(addrsp.root_pa()),
             addrsp.root_pa(),
             addrsp.root.size(),
@@ -121,12 +121,13 @@ impl<'a> AddressSpace<'a> {
         flags: PTEFlags,
     ) -> Result<(), AddressSpaceError> {
         log::trace!(
-            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} size={} map",
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} size={} map id={}",
             &va,
             va + size_bytes,
             &pa,
             pa + size_bytes,
             size_bytes,
+            self.id,
         );
         let mut va = va;
         let mut pa = pa;
@@ -172,12 +173,13 @@ impl<'a> AddressSpace<'a> {
         flags: PTEFlags,
     ) -> Result<(), AddressSpaceError> {
         log::trace!(
-            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} size={} map",
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} size={} map id={}",
             &va,
             va + size_bytes,
             &pa,
             pa + size_bytes,
             size_bytes,
+            self.id,
         );
         let mut va = va;
         let mut pa = pa;
@@ -222,10 +224,11 @@ impl<'a> AddressSpace<'a> {
 
     pub fn unmap_raw(&self, va: VAddr, size_bytes: usize) -> Result<(), AddressSpaceError> {
         log::trace!(
-            "0x{:016x} .. 0x{:016x} size={} unmap",
+            "0x{:016x} .. 0x{:016x} size={} unmap id={}",
             &va,
             va + size_bytes,
             size_bytes,
+            self.id,
         );
         let mut va = va;
         let va_end = va + size_bytes;

@@ -1,8 +1,8 @@
-use cinnamos_abi::SyscallError;
+use cinnamos_abi::{SyscallError, proc::ThreadId};
 
 use crate::{arch::IrqState, sched};
 
-pub fn thread_create(_entry: *const ()) -> Result<usize, SyscallError> {
+pub fn thread_create(_entry: *const ()) -> Result<ThreadId, SyscallError> {
     todo!()
 }
 

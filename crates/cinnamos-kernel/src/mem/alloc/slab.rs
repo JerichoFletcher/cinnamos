@@ -13,10 +13,6 @@ use crate::{
     mem::{self, PhysFrameAlloc, physalloc::FrameAlloc, virt::VirtAlloc, vmalloc::PageAlloc},
 };
 
-pub trait SlabInit: Sized {
-    fn init() -> Option<Self>;
-}
-
 pub struct SlabBox<T> {
     ptr: NonNull<T>,
     slab: NonNull<Slab<T>>,
@@ -170,27 +166,25 @@ impl<T> Slab<T> {
     }
 }
 
-pub struct SlabAllocator<const PAGE_COUNT: usize, T: SlabInit + 'static> {
+pub struct SlabAllocator<const PAGE_COUNT: usize, T: 'static> {
     slabs: RwLock<LinkedList<&'static mut Slab<T>>>,
 }
 
-impl<const PAGE_COUNT: usize, T: SlabInit> SlabAllocator<PAGE_COUNT, T> {
+impl<const PAGE_COUNT: usize, T> SlabAllocator<PAGE_COUNT, T> {
     pub const fn new() -> Self {
         Self {
             slabs: RwLock::new(LinkedList::new()),
         }
     }
 
-    pub fn alloc(&self) -> Option<SlabBox<T>> {
+    pub fn alloc(&self, val: T) -> Option<SlabBox<T>> {
         for slab in self.slabs.read().iter() {
             if let Some(handle) = slab.alloc() {
-                return SlabInit::init().map(|v| {
-                    // Safety: handle is an allocated block for T
-                    unsafe {
-                        handle.as_ptr().write(v);
-                    }
-                    handle
-                });
+                // Safety: handle is an allocated block for T
+                unsafe {
+                    handle.as_ptr().write(val);
+                }
+                return Some(handle);
             }
         }
 
@@ -203,17 +197,15 @@ impl<const PAGE_COUNT: usize, T: SlabInit> SlabAllocator<PAGE_COUNT, T> {
         self.slabs.write().push_front(slab);
 
         let handle = handle?;
-        SlabInit::init().map(|v| {
-            // Safety: handle is an allocated block for T
-            unsafe {
-                handle.as_ptr().write(v);
-            }
-            handle
-        })
+        // Safety: handle is an allocated block for T
+        unsafe {
+            handle.as_ptr().write(val);
+        }
+        Some(handle)
     }
 }
 
-impl<const PAGE_COUNT: usize, T: SlabInit> Default for SlabAllocator<PAGE_COUNT, T> {
+impl<const PAGE_COUNT: usize, T> Default for SlabAllocator<PAGE_COUNT, T> {
     fn default() -> Self {
         Self::new()
     }

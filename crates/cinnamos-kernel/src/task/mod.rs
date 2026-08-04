@@ -1,14 +1,18 @@
+use cinnamos_abi::proc::ThreadId;
+
 use crate::{
     arch::{self, PTEFlags, VAddr},
     mem::{
         self,
-        alloc::slab::{SlabAllocator, SlabBox, SlabInit},
+        alloc::slab::{SlabAllocator, SlabBox},
         physalloc::FrameAlloc,
         virt::VirtAlloc,
         vmalloc::PageAlloc,
     },
     util::stack::StackBuilder,
 };
+
+pub mod proc;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
@@ -21,11 +25,11 @@ pub enum TaskState {
 #[repr(C)]
 #[derive(Debug)]
 pub struct Task {
-    pub id: usize,
-    pub state: TaskState,
-    pub context_sp: VAddr,
-    pub kernel_stack_ptr: VAddr,
-    pub time_quantum: usize,
+    pub(crate) id: ThreadId,
+    pub(crate) state: TaskState,
+    pub(crate) context_sp: VAddr,
+    pub(crate) kernel_stack_ptr: VAddr,
+    pub(crate) time_quantum: usize,
 
     kernel_stack_phys: FrameAlloc,
     task_stack_phys: FrameAlloc,
@@ -34,8 +38,8 @@ pub struct Task {
     task_stack_virt: PageAlloc,
 }
 
-impl SlabInit for Task {
-    fn init() -> Option<Self> {
+impl Task {
+    fn new_kernel() -> Option<Self> {
         let kernel_stack_phys = mem::physalloc::alloc(3)?;
         let task_stack_phys = mem::physalloc::alloc(31)?;
 
@@ -55,7 +59,7 @@ impl SlabInit for Task {
         .ok()?;
 
         let val = Self {
-            id: 0,
+            id: 0.into(),
             state: TaskState::Ready,
             kernel_stack_ptr: kernel_stack_virt.end_addr(),
             context_sp: kernel_stack_virt.end_addr(),
@@ -69,14 +73,10 @@ impl SlabInit for Task {
     }
 }
 
-struct SendAllocator(SlabAllocator<4, Task>);
-
-unsafe impl Sync for SendAllocator {}
-
-static TASK_ALLOC: SendAllocator = SendAllocator(SlabAllocator::new());
+static TASK_ALLOC: SlabAllocator<4, Task> = SlabAllocator::new();
 
 pub fn new_kernel_task(entry: *const ()) -> Option<SlabBox<Task>> {
-    let mut task = TASK_ALLOC.0.alloc()?;
+    let mut task = TASK_ALLOC.alloc(Task::new_kernel()?)?;
 
     let task_sp = task.task_stack_virt.end_addr();
     // Safety: The allocated kernel stack fits the fabricated stack
