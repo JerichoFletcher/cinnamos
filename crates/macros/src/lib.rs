@@ -3,7 +3,8 @@ use proc_macro_error::proc_macro_error;
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::{
-    Ident, Token, Type, parse::Parse, parse_macro_input, parse2, punctuated::Punctuated, token::Paren,
+    Ident, Token, Type, parse::Parse, parse_macro_input, parse2, punctuated::Punctuated,
+    token::Paren,
 };
 
 extern crate proc_macro;
@@ -134,7 +135,8 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
         let sys_val = &m.var_ident;
         let handler_name = Ident::new(&sys_val.to_string().to_snake_case(), Span::call_site());
         let ret_ty = &m.ret_ty;
-        let args = m.params
+        let args = m
+            .params
             .iter()
             .enumerate()
             .map(|(i, a)| generate_slice_cast_from_usize(&arg_slice, i, &a.ty))
@@ -155,13 +157,16 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
                 quote! {
                     #sys_ty::#sys_val => #handler_name(#(#args),*).map(|#ret_name| #ret_cast)
                 }
-            },
+            }
         });
     }
 
     let doc = [
         "# Safety".to_string(),
-        format!("Each argument passed in `{}` has to be convertible to their corresponding argument types for the syscall.", arg_slice),
+        format!(
+            "Each argument passed in `{}` has to be convertible to their corresponding argument types for the syscall.",
+            arg_slice
+        ),
     ];
     Ok(quote! {
         #[inline]

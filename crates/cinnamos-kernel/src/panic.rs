@@ -1,5 +1,7 @@
 use core::{fmt::Write, panic::PanicInfo};
 
+use crate::arch;
+
 struct SbiWrite;
 
 impl Write for SbiWrite {
@@ -14,14 +16,21 @@ impl Write for SbiWrite {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     let msg = match info.location() {
-        Some(loc) => format_args!("Panic at {}:{}: {}", loc.file(), loc.line(), info.message()),
-        None => format_args!("Panic: {}", info.message()),
+        Some(loc) => format_args!(
+            "kernel panic at {}:{}: {}",
+            loc.file(),
+            loc.line(),
+            info.message()
+        ),
+        None => format_args!("kernel panic: {}", info.message()),
     };
 
-    if log::max_level() != log::LevelFilter::Off {
+    if log::log_enabled!(log::Level::Error) {
         log::error!("{msg}");
     } else {
         let _ = writeln!(SbiWrite, "{msg}");
     }
-    loop {}
+    loop {
+        arch::wait_for_interrupt();
+    }
 }

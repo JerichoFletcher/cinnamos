@@ -3,7 +3,8 @@ use proc_macro_error::{Diagnostic, Level, abort, proc_macro_error};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::{
-    Fields, Ident, ItemEnum, Token, Type, parse::Parse, parse_macro_input, parse2, punctuated::Punctuated, spanned::Spanned,
+    Fields, Ident, ItemEnum, Token, Type, parse::Parse, parse_macro_input, parse2,
+    punctuated::Punctuated, spanned::Spanned,
 };
 
 extern crate proc_macro;
@@ -78,9 +79,15 @@ fn expand(item: TokenStream) -> syn::Result<TokenStream> {
     let mut metas = vec![];
     let top_enum = parse2::<ItemEnum>(item)?;
 
-    let mut err_val = top_enum.attrs.iter().filter(|attr| attr.path().is_ident("err"));
+    let mut err_val = top_enum
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("err"));
     let err_val = match (err_val.next(), err_val.next()) {
-        (None, _) => abort!(top_enum, "#[err(...)] attribute required on enum declaration"),
+        (None, _) => abort!(
+            top_enum,
+            "#[err(...)] attribute required on enum declaration"
+        ),
         (Some(attr), None) => attr.parse_args::<EnumValue>()?,
         (Some(first), Some(second)) => Diagnostic::spanned(
             second.span(),

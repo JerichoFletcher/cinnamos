@@ -1,17 +1,12 @@
 use cinnamos_abi::{Syscall, SyscallError};
 use riscv::{
-    interrupt::{Exception, Interrupt, Trap},
-    register::{
-        scause::Scause,
-        sscratch, sstatus,
-        stvec::{self, Stvec, TrapMode},
+    interrupt::{Exception, Interrupt, Trap}, register::{
+        scause::Scause, sscratch, sstatus::{self, Sstatus}, stvec::{self, Stvec, TrapMode},
     },
 };
 
 use crate::{
-    arch::{self, SWITCH_FRAME_SIZE, VAddr, context::Context, interrupt},
-    hloc::HartLocal,
-    *,
+    arch::{self, Context, VAddr, interrupt}, hloc::HartLocal, *,
 };
 
 unsafe extern "C" {
@@ -22,43 +17,70 @@ unsafe extern "C" {
 #[repr(C)]
 #[derive(Debug)]
 pub struct TrapFrame {
-    ctx: Context,
+    regs: [usize; 32],
+    sstatus: Sstatus,
+    sepc: VAddr,
     scause: Scause,
     stval: usize,
 }
 
 impl TrapFrame {
+    pub const REG_RA: usize = 1;
+    pub const REG_SP: usize = 2;
+    pub const REG_GP: usize = 3;
+    pub const REG_TP: usize = 4;
+    pub const REG_T0: usize = 5;
+    pub const REG_T1: usize = 6;
+    pub const REG_T2: usize = 7;
+    pub const REG_S0: usize = 8;
+    pub const REG_S1: usize = 9;
+    pub const REG_A0: usize = 10;
+    pub const REG_A1: usize = 11;
+    pub const REG_A2: usize = 12;
+    pub const REG_A3: usize = 13;
+    pub const REG_A4: usize = 14;
+    pub const REG_A5: usize = 15;
+    pub const REG_A6: usize = 16;
+    pub const REG_A7: usize = 17;
+    pub const REG_S2: usize = 18;
+    pub const REG_S3: usize = 19;
+    pub const REG_S4: usize = 20;
+    pub const REG_S5: usize = 21;
+    pub const REG_S6: usize = 22;
+    pub const REG_S7: usize = 23;
+    pub const REG_S8: usize = 24;
+    pub const REG_S9: usize = 25;
+    pub const REG_S10: usize = 26;
+    pub const REG_S11: usize = 27;
+    pub const REG_T3: usize = 28;
+    pub const REG_T4: usize = 29;
+    pub const REG_T5: usize = 30;
+    pub const REG_T6: usize = 31;
+
     fn create_kernel_frame(entry: *const (), stack_ptr: VAddr) -> Self {
         let mut sstatus = sstatus::read();
         sstatus.set_spie(true);
         sstatus.set_spp(sstatus::SPP::Supervisor);
 
         let mut regs = [0; 32];
-        regs[Context::REG_SP] = stack_ptr.addr();
-        regs[Context::REG_TP] = hloc::hart_local() as *mut _ as usize;
+        regs[Self::REG_SP] = stack_ptr.addr();
+        regs[Self::REG_TP] = hloc::hart_local() as *mut _ as usize;
         Self {
-            ctx: Context {
-                regs,
-                sstatus,
-                sepc: VAddr::from_ptr(entry),
-            },
+            regs,
+            sstatus,
+            sepc: VAddr::from_ptr(entry),
             scause: Scause::from_bits(0),
             stval: 0,
         }
     }
 }
 
-pub fn create_task_init_stack(at: VAddr, entry: *const (), task_sp: VAddr) -> VAddr {
-    let mut at = at - size_of::<TrapFrame>();
-    unsafe {
-        at.as_mut::<TrapFrame>()
-            .write(TrapFrame::create_kernel_frame(entry, task_sp));
-    }
-    at = at - SWITCH_FRAME_SIZE;
-    unsafe {
-        at.as_mut::<*const ()>().write(__trap_exit as *const ());
-    }
-    at
+pub fn create_init_trap_frame(entry: *const (), task_sp: VAddr) -> TrapFrame {
+    TrapFrame::create_kernel_frame(entry, task_sp)
+}
+
+pub fn create_init_context() -> Context {
+    Context::new(VAddr::from_ptr(__trap_exit as *const ()))
 }
 
 #[unsafe(no_mangle)]
@@ -72,50 +94,50 @@ extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
     match tcause {
         Trap::Exception(Exception::InstructionMisaligned) => panic!(
             "[at 0x{:016x}] Instruction misaligned 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::InstructionFault) => panic!(
             "[at 0x{:016x}] Instruction fault 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::IllegalInstruction) => panic!(
             "[at 0x{:016x}] Illegal instruction 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::LoadMisaligned) => panic!(
             "[at 0x{:016x}] Load misaligned 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::LoadFault) => panic!(
             "[at 0x{:016x}] Load fault 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::StoreMisaligned) => panic!(
             "[at 0x{:016x}] Store misaligned 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::StoreFault) => panic!(
             "[at 0x{:016x}] Store fault 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::InstructionPageFault) => panic!(
             "[at 0x{:016x}] Instruction page fault 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::LoadPageFault) => panic!(
             "[at 0x{:016x}] Load page fault 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::StorePageFault) => panic!(
             "[at 0x{:016x}] Store page fault 0x{:016x}",
-            frame.ctx.sepc, frame.stval
+            frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::UserEnvCall) => {
             process_syscall(frame);
-            frame.ctx.sepc = frame.ctx.sepc + 4;
+            frame.sepc = frame.sepc + 4;
         }
         Trap::Exception(Exception::Breakpoint) => {
-            frame.ctx.sepc = frame.ctx.sepc + 4;
+            frame.sepc = frame.sepc + 4;
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             arch::timer::schedule_timer();
@@ -134,37 +156,37 @@ extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
         Trap::Interrupt(Interrupt::SupervisorSoft) => {
             log::trace!(
                 "[at 0x{:016x}] Software interrupt 0x{:016x}",
-                frame.ctx.sepc, frame.stval
+                frame.sepc, frame.stval
             );
         }
         _ => panic!(
             "[at 0x{:016x}] Unhandled trap {:?} 0x{:016x}",
-            frame.ctx.sepc, tcause, frame.stval
+            frame.sepc, tcause, frame.stval
         ),
     }
 }
 
 fn process_syscall(frame: &mut TrapFrame) {
-    match Syscall::try_from(frame.ctx.regs[Context::REG_A7]) {
+    match Syscall::try_from(frame.regs[TrapFrame::REG_A7]) {
         Ok(sys) => {
-            if let Some(args) = frame.ctx.regs[Context::REG_A0..Context::REG_A5].first_chunk::<6>() {
+            if let Some(args) = frame.regs[TrapFrame::REG_A0..TrapFrame::REG_A5].first_chunk::<6>() {
                 // Safety: args passed from the context are generated from their original types
                 match unsafe { sys::dispatch_syscall(sys, args) } {
                     Ok(ret) => {
                         log::trace!("syscall OK sys={:?} ret={}", sys, ret);
-                        frame.ctx.regs[Context::REG_A0] = 0;
-                        frame.ctx.regs[Context::REG_A1] = ret;
+                        frame.regs[TrapFrame::REG_A0] = 0;
+                        frame.regs[TrapFrame::REG_A1] = ret;
                     }
                     Err(e) => {
                         log::trace!("syscall ERR sys={:?} err={:?}", sys, e);
-                        frame.ctx.regs[Context::REG_A0] = e.into();
+                        frame.regs[TrapFrame::REG_A0] = e.into();
                     }
                 }
             }
         }
         Err(e) => {
             log::warn!("syscall ERR sys={} unknown", e.number);
-            frame.ctx.regs[Context::REG_A0] = SyscallError::UnknownSyscall.into();
+            frame.regs[TrapFrame::REG_A0] = SyscallError::UnknownSyscall.into();
         }
     }
 }

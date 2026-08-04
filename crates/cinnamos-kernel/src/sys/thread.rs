@@ -7,7 +7,7 @@ pub fn thread_create(_entry: *const ()) -> Result<usize, SyscallError> {
 }
 
 pub fn thread_yield() -> Result<(), SyscallError> {
-    let irq = IrqState::disable_save();
+    let irq = IrqState::save_disable();
     sched::schedule();
     irq.restore();
     Ok(())

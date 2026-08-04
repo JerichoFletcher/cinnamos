@@ -39,6 +39,7 @@ impl VAddr {
         Self(vpn3 | vpn2 | vpn1 | vpn0 | page_offset)
     }
 
+    #[inline]
     pub fn from_ptr<T>(ptr: *const T) -> Self {
         Self(ptr as usize)
     }
@@ -72,8 +73,27 @@ impl VAddr {
         (self.0 / PAGE_SIZE) & ((1 << 36) - 1)
     }
 
+    pub const fn align_down(&self, align: usize) -> VAddr {
+        debug_assert!(align.is_power_of_two());
+        Self(self.0 & !(align - 1))
+    }
+
     pub const fn page_aligned(&self) -> VAddr {
-        Self(self.0 & !(PAGE_SIZE - 1))
+        self.align_down(PAGE_SIZE)
+    }
+
+    /// # Safety
+    /// The address must be readable and aligned to `T`.
+    #[inline]
+    pub unsafe fn read<T>(&self) -> T {
+        unsafe { self.as_ptr::<T>().read() }
+    }
+
+    /// # Safety
+    /// The address must be writable and aligned to `T`.
+    #[inline]
+    pub unsafe fn write<T>(&self, val: T) {
+        unsafe { self.as_mut::<T>().write(val); }
     }
 }
 

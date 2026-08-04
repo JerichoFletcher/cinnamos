@@ -75,11 +75,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
         .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
-            "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} id-map text",
-            text_start_p(),
-            text_end_p(),
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} id-map text",
             VAddr::identity(text_start_p()),
             VAddr::identity(text_end_p()),
+            text_start_p(),
+            text_end_p(),
         );
         root_addrsp
             .map_raw(
@@ -91,11 +91,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
-            "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} id-map rodata",
-            rodata_start_p(),
-            rodata_end_p(),
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} id-map rodata",
             VAddr::identity(rodata_start_p()),
             VAddr::identity(rodata_end_p()),
+            rodata_start_p(),
+            rodata_end_p(),
         );
         root_addrsp
             .map_raw(
@@ -107,11 +107,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
-            "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} id-map data",
-            data_start_p(),
-            data_end_p(),
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} id-map data",
             VAddr::identity(data_start_p()),
             VAddr::identity(data_end_p()),
+            data_start_p(),
+            data_end_p(),
         );
         root_addrsp
             .map_raw(
@@ -123,11 +123,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
-            "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} id-map kmem",
-            kmem_start_p(),
-            kmem_end_p(),
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} id-map kmem",
             VAddr::identity(kmem_start_p()),
             VAddr::identity(kmem_end_p()),
+            kmem_start_p(),
+            kmem_end_p(),
         );
         root_addrsp
             .map_raw_skip_mapped(
@@ -139,11 +139,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
-            "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} hi-map text",
-            text_start_p(),
-            text_end_p(),
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} hi-map text",
             phys_to_kernel(text_start_p()),
             phys_to_kernel(text_end_p()),
+            text_start_p(),
+            text_end_p(),
         );
         root_addrsp
             .map_raw(
@@ -155,11 +155,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
-            "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} hi-map rodata",
-            rodata_start_p(),
-            rodata_end_p(),
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} hi-map rodata",
             phys_to_kernel(rodata_start_p()),
             phys_to_kernel(rodata_end_p()),
+            rodata_start_p(),
+            rodata_end_p(),
         );
         root_addrsp
             .map_raw(
@@ -171,11 +171,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
-            "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} hi-map data",
-            data_start_p(),
-            data_end_p(),
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} hi-map data",
             phys_to_kernel(data_start_p()),
             phys_to_kernel(data_end_p()),
+            data_start_p(),
+            data_end_p(),
         );
         root_addrsp
             .map_raw(
@@ -187,11 +187,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
-            "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} hi-map kmem",
-            kmem_start_p(),
-            kmem_end_p(),
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} hi-map kmem",
             phys_to_kernel(kmem_start_p()),
             phys_to_kernel(kmem_end_p()),
+            kmem_start_p(),
+            kmem_end_p(),
         );
         root_addrsp
             .map_raw(
@@ -227,11 +227,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             let pa_end = r.end();
 
             log::debug!(
-                "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} di-map mem",
-                pa,
-                pa_end,
+                "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} di-map mem",
                 phys_to_virt(pa),
                 phys_to_virt(pa_end),
+                pa,
+                pa_end,
             );
             root_addrsp
                 .map_raw(
@@ -244,11 +244,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
         }
 
         log::debug!(
-            "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} di-map dtb",
-            dtb_pa,
-            dtb_pa + fdt.total_size(),
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} di-map dtb",
             phys_to_virt(dtb_pa),
             phys_to_virt(dtb_pa + fdt.total_size()),
+            dtb_pa,
+            dtb_pa + fdt.total_size(),
         );
         root_addrsp
             .map_raw(
@@ -268,11 +268,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                             let pa_end = pa + size;
 
                             log::debug!(
-                                "0x{:016x} .. 0x{:016x} <- 0x{:016x} .. 0x{:016x} di-map /soc/{}",
-                                pa,
-                                pa_end,
+                                "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} di-map /soc/{}",
                                 phys_to_virt(pa),
                                 phys_to_virt(pa_end),
+                                pa,
+                                pa_end,
                                 n.name,
                             );
                             root_addrsp

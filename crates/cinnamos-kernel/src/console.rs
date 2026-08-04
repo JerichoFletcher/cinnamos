@@ -1,6 +1,9 @@
 use core::fmt::{self, Write};
 
-use crate::{device::uart::SerialWrite, sync::mutex_irqsave::{MutexIrqSave, MutexIrqSaveGuard}};
+use crate::{
+    device::uart::SerialWrite,
+    sync::mutex_irqsave::{MutexIrqSave, MutexIrqSaveGuard},
+};
 
 pub trait ConsoleWrite: fmt::Write + Sync {
     fn flush(&mut self);

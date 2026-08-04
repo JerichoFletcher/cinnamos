@@ -1,45 +1,27 @@
-use riscv::register::sstatus::Sstatus;
-
 use crate::arch::VAddr;
 
 #[repr(C)]
 #[derive(Debug)]
 pub struct Context {
-    pub regs: [usize; 32],
-    pub sstatus: Sstatus,
-    pub sepc: VAddr,
+    pub ra: VAddr,
+    pub saved: [usize; 12],
 }
 
 impl Context {
-    pub const REG_RA: usize = 1;
-    pub const REG_SP: usize = 2;
-    pub const REG_GP: usize = 3;
-    pub const REG_TP: usize = 4;
-    pub const REG_T0: usize = 5;
-    pub const REG_T1: usize = 6;
-    pub const REG_T2: usize = 7;
-    pub const REG_S0: usize = 8;
-    pub const REG_S1: usize = 9;
-    pub const REG_A0: usize = 10;
-    pub const REG_A1: usize = 11;
-    pub const REG_A2: usize = 12;
-    pub const REG_A3: usize = 13;
-    pub const REG_A4: usize = 14;
-    pub const REG_A5: usize = 15;
-    pub const REG_A6: usize = 16;
-    pub const REG_A7: usize = 17;
-    pub const REG_S2: usize = 18;
-    pub const REG_S3: usize = 19;
-    pub const REG_S4: usize = 20;
-    pub const REG_S5: usize = 21;
-    pub const REG_S6: usize = 22;
-    pub const REG_S7: usize = 23;
-    pub const REG_S8: usize = 24;
-    pub const REG_S9: usize = 25;
-    pub const REG_S10: usize = 26;
-    pub const REG_S11: usize = 27;
-    pub const REG_T3: usize = 28;
-    pub const REG_T4: usize = 29;
-    pub const REG_T5: usize = 30;
-    pub const REG_T6: usize = 31;
+    pub const REG_S0: usize = 0;
+    pub const REG_S1: usize = 1;
+    pub const REG_S2: usize = 2;
+    pub const REG_S3: usize = 3;
+    pub const REG_S4: usize = 4;
+    pub const REG_S5: usize = 5;
+    pub const REG_S6: usize = 6;
+    pub const REG_S7: usize = 7;
+    pub const REG_S8: usize = 8;
+    pub const REG_S9: usize = 9;
+    pub const REG_S10: usize = 10;
+    pub const REG_S11: usize = 11;
+
+    pub const fn new(ret: VAddr) -> Self {
+        Self { ra: ret, saved: [0; 12] }
+    }
 }

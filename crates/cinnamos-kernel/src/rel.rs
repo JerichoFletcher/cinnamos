@@ -18,7 +18,7 @@ pub struct Elf64Rela {
     pub addend: i64,
 }
 
-pub const R_RISCV64_RELA: u64 = 3;
+pub const R_RISCV_RELATIVE: u64 = 3;
 
 #[inline(always)]
 fn relocate_entry(rela: &Elf64Rela) {
@@ -26,7 +26,7 @@ fn relocate_entry(rela: &Elf64Rela) {
     let rela_type = rela.info & 0xffffffff;
 
     match rela_type {
-        R_RISCV64_RELA => {
+        R_RISCV_RELATIVE => {
             let target = (rela.offset as usize).wrapping_add(kernel_to_phys_slide) as *mut usize;
             unsafe {
                 *target = (rela.addend as usize).wrapping_add(kernel_to_phys_slide);
@@ -40,7 +40,7 @@ fn relocate_entry(rela: &Elf64Rela) {
 unsafe fn slide_entry(rela: &Elf64Rela, slide: usize) {
     let rela_type = rela.info & 0xffffffff;
     match rela_type {
-        R_RISCV64_RELA => {
+        R_RISCV_RELATIVE => {
             let target = rela.offset as *mut usize;
             unsafe {
                 let paddr = *target;

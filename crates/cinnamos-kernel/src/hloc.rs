@@ -2,7 +2,7 @@ use core::mem::MaybeUninit;
 
 use crate::{
     arch::{self, VAddr},
-    sched::task::Task,
+    task::Task,
 };
 
 #[repr(C)]

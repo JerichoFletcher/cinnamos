@@ -6,10 +6,8 @@ use spin::Mutex;
 use crate::{
     hloc,
     mem::alloc::slab::SlabBox,
-    sched::task::{Task, TaskState},
+    task::{Task, TaskState},
 };
-
-pub mod task;
 
 unsafe extern "C" {
     fn __switch(next_task: *const (), curr_task: *mut ());
@@ -35,7 +33,7 @@ impl Scheduler {
 
     pub fn schedule(&self) {
         let hloc = hloc::hart_local();
-        
+
         let mut rq = self.run_queue.lock();
         let curr = hloc
             .curr_task()
@@ -43,12 +41,16 @@ impl Scheduler {
         if curr.state == TaskState::Running {
             curr.state = TaskState::Ready;
         }
-    
+
         match rq.pop_front() {
             Some(mut next) => {
                 next.state = TaskState::Running;
                 let next_ptr = next.as_ptr();
-                log::trace!("scheduling next task curr={:p} next={:p}", curr, next.as_ptr());
+                log::trace!(
+                    "scheduling next task curr={:p} next={:p}",
+                    curr,
+                    next.as_ptr()
+                );
 
                 rq.push_back(next);
                 drop(rq);

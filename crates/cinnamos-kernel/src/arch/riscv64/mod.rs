@@ -60,7 +60,6 @@ pub unsafe fn jump_higher_half(
     target: *const (),
     hid: usize,
     dtb_ptr: VAddr,
-    dyn_ptr: VAddr,
     new_sp: VAddr,
 ) -> ! {
     unsafe {
@@ -70,7 +69,6 @@ pub unsafe fn jump_higher_half(
             sp = in(reg) new_sp.addr(),
             in("a0") hid,
             in("a1") dtb_ptr.addr(),
-            in("a2") dyn_ptr.addr(),
             in("t0") target,
             options(noreturn),
         );

@@ -95,7 +95,7 @@ static LOGGER: Logger = Logger;
 pub fn init() {
     log::set_logger(&LOGGER).unwrap();
     log::set_max_level(cfg_select! {
-        debug_assertions => LevelFilter::Debug,
+        debug_assertions => LevelFilter::Trace,
         _ => LevelFilter::Info,
     });
 }

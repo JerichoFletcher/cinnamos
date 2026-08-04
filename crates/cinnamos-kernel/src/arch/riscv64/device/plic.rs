@@ -14,7 +14,6 @@ const OFFSET_INTERRUPT_CONTEXT: usize   = 0x200000;
 const STRIDE_INTERRUPT_CONTEXT: usize   = 0x001000;
 
 #[repr(C)]
-#[derive(Debug)]
 struct PlicContext {
     priority_threshold: u32,
     irq_claim_complete: u32,
@@ -87,7 +86,7 @@ impl Plic {
         debug_assert_eq!(
             hid,
             hloc::hart_local().hid,
-            "Attempting to claim IRQ for hart {} from hart {}",
+            "attempting to claim IRQ for hart {} from hart {}",
             hloc::hart_local().hid,
             hid
         );
@@ -102,7 +101,7 @@ impl Plic {
         debug_assert_eq!(
             hid,
             hloc::hart_local().hid,
-            "Attempting to complete IRQ for hart {} from hart {}",
+            "attempting to complete IRQ for hart {} from hart {}",
             hloc::hart_local().hid,
             hid
         );

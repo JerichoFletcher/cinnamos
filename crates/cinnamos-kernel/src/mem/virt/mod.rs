@@ -17,5 +17,6 @@ pub trait VirtAlloc {
 
 pub trait VirtAllocator<T: VirtAlloc> {
     fn alloc(&self, page_count: usize) -> Option<T>;
+    fn alloc_guarded(&self, page_count: usize, guard_page_count: usize) -> Option<T>;
     fn dealloc(&self, handle: &mut T);
 }

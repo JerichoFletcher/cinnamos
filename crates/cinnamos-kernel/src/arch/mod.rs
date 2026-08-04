@@ -10,8 +10,6 @@ cfg_select! {
         pub const VMALLOC_MAP_END: usize    = 0xffff_ff00_0000_0000;
         pub const HEAP_MAP_BASE: usize      = 0xffff_ff00_0000_0000;
 
-        pub const SWITCH_FRAME_SIZE: usize = 13 * size_of::<usize>();
-
         pub use riscv64::{
             wait_for_interrupt,
             init,
@@ -44,8 +42,9 @@ cfg_select! {
             UnmapError,
         };
         pub use riscv64::trap::{
-            create_task_init_stack,
             TrapFrame,
+            create_init_trap_frame,
+            create_init_context,
         };
         pub use riscv64::interrupt::{
             InterruptError,

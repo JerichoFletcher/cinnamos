@@ -23,11 +23,11 @@ impl<T, R> MutexIrqSave<T, R> {
 impl<T: ?Sized, R: spin::RelaxStrategy> MutexIrqSave<T, R> {
     #[inline(always)]
     pub fn lock(&self) -> MutexIrqSaveGuard<'_, T, R> {
-        let irq = IrqState::disable_save();
+        let irq = IrqState::save_disable();
         let inner = self.inner.lock();
         MutexIrqSaveGuard {
             inner: ManuallyDrop::new(inner),
-            irq,
+            irq: Some(irq),
         }
     }
 }
@@ -37,7 +37,7 @@ unsafe impl<T: ?Sized, R> Sync for MutexIrqSave<T, R> {}
 
 pub struct MutexIrqSaveGuard<'a, T: ?Sized + 'a, R = spin::Spin> {
     inner: ManuallyDrop<MutexGuard<'a, T, R>>,
-    irq: IrqState,
+    irq: Option<IrqState>,
 }
 
 impl<'a, T: ?Sized, R> Drop for MutexIrqSaveGuard<'a, T, R> {
@@ -46,7 +46,7 @@ impl<'a, T: ?Sized, R> Drop for MutexIrqSaveGuard<'a, T, R> {
         unsafe {
             ManuallyDrop::drop(&mut self.inner);
         }
-        self.irq.restore();
+        self.irq.take().map(IrqState::restore);
     }
 }
 
