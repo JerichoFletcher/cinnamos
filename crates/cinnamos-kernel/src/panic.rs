@@ -25,11 +25,10 @@ fn panic(info: &PanicInfo) -> ! {
         None => format_args!("kernel panic: {}", info.message()),
     };
 
-    if log::log_enabled!(log::Level::Error) {
-        log::error!("{msg}");
-    } else {
-        let _ = writeln!(SbiWrite, "{msg}");
-    }
+    let _ = writeln!(SbiWrite, "{msg}");
+    // if log::log_enabled!(log::Level::Error) {
+    //     log::error!("{msg}");
+    // }
     loop {
         arch::wait_for_interrupt();
     }

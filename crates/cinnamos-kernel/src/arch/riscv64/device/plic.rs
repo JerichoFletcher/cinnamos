@@ -85,9 +85,9 @@ impl Plic {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         debug_assert_eq!(
             hid,
-            hloc::hart_local().hid,
+            hloc::hart_local().hid(),
             "attempting to claim IRQ for hart {} from hart {}",
-            hloc::hart_local().hid,
+            hloc::hart_local().hid(),
             hid
         );
         unsafe {
@@ -100,9 +100,9 @@ impl Plic {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         debug_assert_eq!(
             hid,
-            hloc::hart_local().hid,
+            hloc::hart_local().hid(),
             "attempting to complete IRQ for hart {} from hart {}",
-            hloc::hart_local().hid,
+            hloc::hart_local().hid(),
             hid
         );
         unsafe {

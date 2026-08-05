@@ -58,15 +58,18 @@ unsafe impl GlobalAlloc for HeapImpl {
 #[global_allocator]
 static ALLOCATOR: HeapImpl = HeapImpl;
 
-/// Should only be called once upon entering higher-half
-pub fn shift_bump(p2v: &'static impl Fn(PAddr) -> VAddr) {
+/// Should only be called once upon entering higher-half.
+/// 
+/// # Safety
+/// `p2v` must map the bump space into a mapped virtual space.
+pub unsafe fn shift_bump(p2v: &'static impl Fn(PAddr) -> VAddr) {
     let mut g = HEAP_MUX.write();
     if let SendHeap::Bump(_) = *g {
         *g = SendHeap::Bump(p2v);
     }
 }
 
-/// Should only be called once in higher-half
+/// Should only be called once in higher-half.
 pub fn init_heap() {
     log::debug!("enabling freelist heap");
     *HEAP_MUX.write() = SendHeap::Heap;

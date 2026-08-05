@@ -8,7 +8,7 @@ KERNEL_BIN = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/cinnamos.bin"
 
 BIOS = "/usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.bin"
 BOOTLOADER = "/usr/lib/u-boot/qemu-riscv64_smode/uboot.elf"
-CPU_COUNT = "1"
+CPU_COUNT = "4"
 MEM_SIZE = "1G"
 
 [config]

@@ -99,7 +99,7 @@ impl<T> Slab<T> {
         let _ = mem::vms::map(&virt, &phys, PTEFlags::GLOBAL | PTEFlags::RW);
 
         let total = virt.size() / size_of::<T>();
-        let bitmap = alloc::vec![0; total.max(64) / 64];
+        let bitmap = alloc::vec![0; 1 + total / 64];
         let base = virt.start_addr();
 
         Self {

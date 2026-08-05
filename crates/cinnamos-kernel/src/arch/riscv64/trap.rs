@@ -6,7 +6,7 @@ use riscv::{
 };
 
 use crate::{
-    arch::{self, Context, VAddr, interrupt}, hloc::HartLocal, *,
+    arch::{self, Context, VAddr, interrupt}, hloc::HartLocalGuard, *,
 };
 
 unsafe extern "C" {
@@ -64,7 +64,7 @@ impl TrapFrame {
 
         let mut regs = [0; 32];
         regs[Self::REG_SP] = stack_ptr.addr();
-        regs[Self::REG_TP] = hloc::hart_local() as *mut _ as usize;
+        regs[Self::REG_TP] = hloc::hart_local().as_ptr() as usize;
         Self {
             regs,
             sstatus,
@@ -84,7 +84,8 @@ pub fn create_init_context() -> Context {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
+extern "C" fn trap_handler(frame: &mut TrapFrame) {
+    let mut hloc = hloc::hart_local();
     let tcause = frame
         .scause
         .cause()
@@ -151,7 +152,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame, hloc: &mut HartLocal) {
             }
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
-            handle_external_interrupt(hloc);
+            handle_external_interrupt(&mut hloc);
         }
         Trap::Interrupt(Interrupt::SupervisorSoft) => {
             log::trace!(
@@ -191,7 +192,7 @@ fn process_syscall(frame: &mut TrapFrame) {
     }
 }
 
-fn handle_external_interrupt(hloc: &mut HartLocal) {
+fn handle_external_interrupt(hloc: &mut HartLocalGuard) {
     if let Some(claim) = arch::device::plic::claim_irq(hloc.hid()) {
         let irq = claim.irq_id();
         if let Err(e) = interrupt::dispatch_irq(irq) {
@@ -210,7 +211,7 @@ pub fn init() {
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe {
         stvec::write(stvec);
-        sscratch::write(hloc::hart_local() as *const _ as usize);
+        sscratch::write(hloc::hart_local().as_ptr() as usize);
     }
 }
 
@@ -219,6 +220,6 @@ pub fn init_higher_half() {
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe {
         stvec::write(stvec);
-        sscratch::write(hloc::hart_local() as *const _ as usize);
+        sscratch::write(hloc::hart_local().as_ptr() as usize);
     }
 }

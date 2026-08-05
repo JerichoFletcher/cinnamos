@@ -46,17 +46,16 @@ SECTIONS {
     . = ALIGN(4K);
     PROVIDE(_kmem_start = .);
     PROVIDE(_stack_start = .);
-    . += 0x80000;
+    . += 512K;
     PROVIDE(_stack_end = .);
 
     PROVIDE(_trap_stack_start = .);
-    . += 0x80000;
+    . += 16K;
     PROVIDE(_trap_stack_end = .);
-
-    PROVIDE(_bump_heap_start = .);
-    . += 0x20000;
-    PROVIDE(_bump_heap_end = .);
     PROVIDE(_kmem_end = .);
 
+    PROVIDE(_bump_heap_start = .);
+    . += 1M;
+    PROVIDE(_bump_heap_end = .);
     PROVIDE(_kernel_end = .);
 }

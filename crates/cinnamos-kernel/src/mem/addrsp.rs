@@ -186,7 +186,7 @@ impl<'a> AddressSpace<'a> {
         let pa_end = pa + size_bytes;
 
         while pa < pa_end {
-            let next_size = PageSize::select_size(va, pa, pa_end - pa)
+            let mut next_size = PageSize::select_size(va, pa, pa_end - pa)
                 .ok_or(AddressSpaceError::AddressMisaligned(va, pa))?;
 
             match arch::map_page(self.root_ptr, va, pa, next_size, flags, &self.p2v).try_fold(
@@ -211,7 +211,17 @@ impl<'a> AddressSpace<'a> {
                     }
                 }
                 Err(e) => match e {
-                    MapError::AlreadyMapped(_, _) => (),
+                    MapError::AlreadyMapped(_, mapped_pa, mapped_level) => {
+                        log::trace!(
+                            "0x{:016x} -> 0x{:016x} size={} map id={} already mapped level={:?}",
+                            va,
+                            mapped_pa,
+                            next_size.size(),
+                            self.id,
+                            mapped_level,
+                        );
+                        next_size = mapped_level;
+                    }
                     _ => return Err(AddressSpaceError::Map(e)),
                 },
             };

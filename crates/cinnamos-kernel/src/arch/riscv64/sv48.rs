@@ -195,7 +195,7 @@ impl PageTableAllocMap {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MapError {
     OutOfMemory,
-    AlreadyMapped(VAddr, PAddr),
+    AlreadyMapped(VAddr, PAddr, PageSize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,15 +212,16 @@ pub fn translate_virt(
     let vpn = va.vpn();
     let mut table = root_pt;
 
-    for level in (0..=3).rev() {
-        let pte = unsafe { &mut (*table).entries[vpn[level]] };
+    for curr_size in PageSize::ALL.iter().rev() {
+        let pte = unsafe { &mut (*table).entries[vpn[curr_size.level()]] };
         let flags = pte.flags();
 
         if !pte.is_valid() || (!flags.contains(PTEFlags::READ) && flags.contains(PTEFlags::WRITE)) {
+            // log::trace!("translate 0x{:016x} unmapped/non-leaf (flags={:?})", va, flags);
             return None;
         } else if flags.intersects(PTEFlags::RX) {
             let pa = pte.phys_addr();
-            let off_mask = (1usize << (12 + level * 9)) - 1;
+            let off_mask = (1usize << (12 + curr_size.level() * 9)) - 1;
 
             if pa.addr() & off_mask != 0 {
                 return None;
@@ -250,14 +251,15 @@ pub fn map_page(
             let vpn = va.vpn();
             let mut table = root_pt;
 
-            for level in (0..=3).rev() {
-                let pte = unsafe { &mut (*table).entries[vpn[level]] };
+            for curr_size in PageSize::ALL.iter().rev() {
+                let pte = unsafe { &mut (*table).entries[vpn[curr_size.level()]] };
 
-                if level == size.level() {
+                if *curr_size == size {
                     if pte.is_valid() {
-                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr()));
+                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr(), *curr_size));
                         return;
                     }
+                    // log::trace!("sv48 map 0x{:016x} -> 0x{:016x} level={}", va, pa, level);
                     pte.set_leaf(pa, size, flags);
                     return;
                 } else {
@@ -271,8 +273,6 @@ pub fn map_page(
 
                                 let table_uninit = p2v(next_pa).as_mut::<MaybeUninit<_>>();
                                 table = unsafe { PageTable::init(table_uninit) };
-                                // crate::println!("SV48 alloc {:?}", &alloc);
-
                                 pte.set_table(alloc.start_addr());
                                 yield Ok(alloc);
                             }
@@ -282,7 +282,7 @@ pub fn map_page(
                             }
                         }
                     } else {
-                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr()));
+                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr(), *curr_size));
                         return;
                     }
                 }

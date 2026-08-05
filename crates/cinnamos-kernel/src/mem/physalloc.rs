@@ -94,12 +94,9 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
         fdt,
         [
             // Safety: Used symbols are defined in the linker script
-            unsafe {
-                SizedMemoryRegion::new_unchecked(
-                    kernel_start_p(),
-                    kernel_end_p() - kernel_start_p(),
-                )
-            },
+            unsafe { SizedMemoryRegion::new_unchecked(kernel_start_p(), kernel_size()) },
+            // Safety: Used symbols are defined in the linker script
+            unsafe { SizedMemoryRegion::new_unchecked(bump_heap_start_p(), bump_heap_size()) },
             // Safety: The size of the devicetree blob is nonzero
             unsafe {
                 SizedMemoryRegion::new_unchecked(
@@ -116,6 +113,14 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
 
     let alloc = BuddyFrameAllocator::new(usable_regs.as_slice());
     *ALLOCATOR.write() = SendAllocator::Buddy(alloc);
+}
+
+/// Only adds region on bump allocator
+pub fn add_region(reg: &SizedMemoryRegion) {
+    let mut alloc = ALLOCATOR.write();
+    if let SendAllocator::Buddy(alloc) = &mut *alloc {
+        alloc.add_region(reg);
+    }
 }
 
 pub fn alloc(frame_count: usize) -> Option<FrameAlloc> {

@@ -156,6 +156,8 @@ impl BuddyFrameAllocator {
     }
 
     pub fn add_region(&mut self, reg: &SizedMemoryRegion) {
+        // TODO: This algorithm still has a wrong behavior if R has differing size and alignment order
+        // An iterative filling algorithm should be considered
         let size_order = BuddyRegion::order_of_size(reg.size);
         let align_order = BuddyRegion::max_align_order_of(reg.base);
 
@@ -173,7 +175,7 @@ impl BuddyFrameAllocator {
                 l_order = ord;
             }
             let r_size = reg.end() - r_base;
-            let r_order = BuddyRegion::order_of_size(r_size);
+            let r_order = BuddyRegion::order_of_size(r_size.next_power_of_two());
 
             // Carve out memory for L and R metadata buffer (excluded from managed region)
             let mut buf_ptr = reg.base;
@@ -205,15 +207,16 @@ impl BuddyFrameAllocator {
                     )
                 };
 
-                l_alloc.add_range(l_start, r_base);
-                self.regions.push_back(l_alloc);
                 log::info!(
-                    "add region base=0x{:016x} range=0x{:016x} .. 0x{:016x} ord={}",
+                    "add region range=0x{:016x} .. 0x{:016x} region=0x{:016x} .. 0x{:016x} ord={} left",
                     l_base,
+                    l_base + (1 << l_order) * PAGE_SIZE,
                     l_start,
                     r_base,
                     l_order,
                 );
+                l_alloc.add_range(l_start, r_base);
+                self.regions.push_back(l_alloc);
             }
 
             // Now create the allocator for R
@@ -234,15 +237,16 @@ impl BuddyFrameAllocator {
             };
 
             let r_start = Ord::max(l_start, r_base);
-            r_alloc.add_range(r_start, reg.end());
-            self.regions.push_back(r_alloc);
             log::info!(
-                "add region base=0x{:016x} range=0x{:016x} .. 0x{:016x} ord={}",
+                "add region range=0x{:016x} .. 0x{:016x} region=0x{:016x} .. 0x{:016x} ord={} right",
                 r_base,
+                r_base + (1 << r_order) * PAGE_SIZE,
                 r_start,
                 reg.end(),
                 r_order,
             );
+            r_alloc.add_range(r_start, reg.end());
+            self.regions.push_back(r_alloc);
         } else {
             // Carve out memory for L and R metadata buffer (excluded from managed region)
             let mut buf_ptr = reg.base;
@@ -267,15 +271,16 @@ impl BuddyFrameAllocator {
                     ),
                 )
             };
-            alloc.add_range(start, reg.end());
-            self.regions.push_back(alloc);
             log::info!(
-                "add region base=0x{:016x} range=0x{:016x} .. 0x{:016x} ord={}",
+                "add region range=0x{:016x} .. 0x{:016x} region=0x{:016x} .. 0x{:016x} ord={} fit",
                 reg.base,
+                reg.base + (1 << size_order) * PAGE_SIZE,
                 start,
                 reg.end(),
                 size_order,
             );
+            alloc.add_range(start, reg.end());
+            self.regions.push_back(alloc);
         }
     }
 }

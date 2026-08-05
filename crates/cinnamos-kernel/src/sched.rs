@@ -35,7 +35,7 @@ impl Scheduler {
     }
 
     pub fn schedule(&self) {
-        let hloc = hloc::hart_local();
+        let mut hloc = hloc::hart_local();
         let mut curr = hloc
             .take_curr_task()
             .expect("Scheduler::schedule() expects a current task");
@@ -68,7 +68,7 @@ impl Scheduler {
     }
 
     pub fn start(&self) -> ! {
-        let hloc = hloc::hart_local();
+        let mut hloc = hloc::hart_local();
         let next = self.run_queue.lock().pop_front();
         match next {
             Some(mut next) => {

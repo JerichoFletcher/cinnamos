@@ -71,7 +71,7 @@ impl Log for Logger {
                 file: record.file().unwrap_or("?"),
                 line: record.line().unwrap_or(0),
             };
-            let hid = hloc::hart_local().hid;
+            let hid = hloc::hart_local().hid();
 
             let mut writer = Console::lock();
             let _ = writeln!(
@@ -91,11 +91,20 @@ impl Log for Logger {
 }
 
 static LOGGER: Logger = Logger;
+const MAX_LOG_LEVEL: LevelFilter = cfg_select! {
+    debug_assertions => LevelFilter::Trace,
+    _ => LevelFilter::Info,
+};
 
 pub fn init() {
     log::set_logger(&LOGGER).unwrap();
-    log::set_max_level(cfg_select! {
-        debug_assertions => LevelFilter::Trace,
-        _ => LevelFilter::Info,
-    });
+    log::set_max_level(MAX_LOG_LEVEL);
+}
+
+pub fn enable() {
+    log::set_max_level(MAX_LOG_LEVEL);
+}
+
+pub fn disable() {
+    log::set_max_level(LevelFilter::Off);
 }

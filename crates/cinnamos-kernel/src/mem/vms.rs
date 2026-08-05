@@ -130,10 +130,26 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             kmem_end_p(),
         );
         root_addrsp
-            .map_raw_skip_mapped(
+            .map_raw(
                 VAddr::identity(kmem_start_p()),
                 kmem_start_p(),
                 kmem_size(),
+                PTEFlags::RW,
+            )
+            .map_err(VmsError::AddressSpace)?;
+
+        log::debug!(
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} id-map bump",
+            VAddr::identity(bump_heap_start_p()),
+            VAddr::identity(bump_heap_end_p()),
+            bump_heap_start_p(),
+            bump_heap_end_p(),
+        );
+        root_addrsp
+            .map_raw_skip_mapped(
+                VAddr::identity(bump_heap_start_p()),
+                bump_heap_start_p(),
+                bump_heap_size(),
                 PTEFlags::RW,
             )
             .map_err(VmsError::AddressSpace)?;
@@ -202,7 +218,23 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             )
             .map_err(VmsError::AddressSpace)?;
 
-        let (usable_regs, _) = devicetree::get_region_slices(
+        log::debug!(
+            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} hi-map bump",
+            phys_to_kernel(bump_heap_start_p()),
+            phys_to_kernel(bump_heap_end_p()),
+            bump_heap_start_p(),
+            bump_heap_end_p(),
+        );
+        root_addrsp
+            .map_raw(
+                phys_to_kernel(bump_heap_start_p()),
+                bump_heap_start_p(),
+                bump_heap_size(),
+                PTEFlags::GLOBAL | PTEFlags::RW,
+            )
+            .map_err(VmsError::AddressSpace)?;
+
+        let (mut usable_regs, _) = devicetree::get_region_slices(
             fdt,
             [
                 // Safety: Used symbols are defined in the linker script
@@ -221,6 +253,13 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                 },
             ],
         );
+        let (bump_start, _, bump_end) = mem::alloc::bump::get_bump_area();
+        if let Some(bump_reg) = SizedMemoryRegion::from_range(
+            bump_start.align_to_page(),
+            bump_end.align_to_next_page(),
+        ) {
+            usable_regs.push(bump_reg);
+        }
 
         for r in &usable_regs {
             let pa = r.base;

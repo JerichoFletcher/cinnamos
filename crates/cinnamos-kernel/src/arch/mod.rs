@@ -18,7 +18,7 @@ cfg_select! {
             jump_higher_half,
         };
         pub use riscv64::hloc::{
-            load_boot_hart_local,
+            load_hart_local,
             hart_local,
         };
         pub use riscv64::paddr::PAddr;

@@ -69,6 +69,10 @@ impl SizedMemoryRegion {
         }
     }
 
+    pub fn from_range(start: PAddr, end: PAddr) -> Option<Self> {
+        Self::new(start, end.addr().checked_sub(start.addr()))
+    }
+
     /// # Safety
     /// `size` must be non-zero.
     pub unsafe fn new_unchecked(base: PAddr, size: usize) -> Self {

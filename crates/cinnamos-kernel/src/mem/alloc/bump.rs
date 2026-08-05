@@ -79,13 +79,14 @@ fn get_bump<'a>() -> &'a BumpAllocator {
     BUMP_ALLOC.call_once(|| unsafe { BumpAllocator::new(bump_heap_start_p(), bump_heap_end_p()) })
 }
 
-pub fn get_bump_area() -> Option<(PAddr, PAddr, PAddr)> {
+/// Returns `(start, next, end)` addresses of the bump area.
+pub fn get_bump_area() -> (PAddr, PAddr, PAddr) {
     let bump = get_bump();
-    Some((
+    (
         bump.start,
         PAddr::new(bump.next.load(Ordering::Relaxed)),
         bump.end,
-    ))
+    )
 }
 
 /// # Safety
