@@ -59,12 +59,12 @@ unsafe impl GlobalAlloc for HeapImpl {
 static ALLOCATOR: HeapImpl = HeapImpl;
 
 /// Should only be called once upon entering higher-half.
-/// 
+///
 /// # Safety
 /// `p2v` must map the bump space into a mapped virtual space.
 pub unsafe fn shift_bump(p2v: &'static impl Fn(PAddr) -> VAddr) {
     let mut g = HEAP_MUX.write();
-    if let SendHeap::Bump(_) = *g {
+    if matches!(*g, SendHeap::Bump(_)) {
         *g = SendHeap::Bump(p2v);
     }
 }

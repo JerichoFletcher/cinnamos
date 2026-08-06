@@ -36,7 +36,9 @@ unsafe extern "C" fn kernel_relocate(
 /// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol.
 unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
     // Safety: hid is the current hart ID, and trap_stack_end_v lies at the end of the kernel's internal stack
-    unsafe { hloc::init_boot_hart_local(hid, trap_stack_end_v()); }
+    unsafe {
+        hloc::init_boot_hart_local(hid, trap_stack_end_v());
+    }
     arch::init();
 
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("invalid devicetree blob") };
@@ -91,7 +93,9 @@ unsafe fn jump_higher_half(
 /// - `dtb_ptr` must point to the virtual location of a devicetree blob.
 unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     // Safety: Bump space is mapped into kernel space
-    unsafe { mem::heap::shift_bump(&mem::vms::phys_to_kernel); }
+    unsafe {
+        mem::heap::shift_bump(&mem::vms::phys_to_kernel);
+    }
 
     // Safety: dtb_ptr points to a devicetree blob
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("invalid devicetree blob") };
@@ -124,10 +128,14 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
         .collect::<Vec<_>>()
         .into_boxed_slice();
     // Safety: All frames allocated in trap_stacks are within kernel space
-    unsafe { hloc::init_hlocs(trap_stacks, mem::vms::phys_to_kernel); }
+    unsafe {
+        hloc::init_hlocs(trap_stacks, mem::vms::phys_to_kernel);
+    }
 
     // Safety: hid is the current hart's HID
-    unsafe { hloc::load_hart_local(hid); }
+    unsafe {
+        hloc::load_hart_local(hid);
+    }
     arch::init_higher_half();
 
     mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));

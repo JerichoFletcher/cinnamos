@@ -1,6 +1,5 @@
 use core::{
-    alloc::Layout,
-    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
+    alloc::Layout, sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
 
 use crate::{
@@ -24,6 +23,7 @@ enum BlockSizeLookup {
     Hi(usize),
 }
 
+#[derive(Debug, Clone, Copy)]
 struct FreeBlock {
     next: *mut FreeBlock,
 }

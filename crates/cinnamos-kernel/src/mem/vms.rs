@@ -254,10 +254,9 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             ],
         );
         let (bump_start, _, bump_end) = mem::alloc::bump::get_bump_area();
-        if let Some(bump_reg) = SizedMemoryRegion::from_range(
-            bump_start.align_to_page(),
-            bump_end.align_to_next_page(),
-        ) {
+        if let Some(bump_reg) =
+            SizedMemoryRegion::from_range(bump_start.align_to_page(), bump_end.align_to_next_page())
+        {
             usable_regs.push(bump_reg);
         }
 

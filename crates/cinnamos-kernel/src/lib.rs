@@ -16,6 +16,7 @@ pub mod sched;
 pub mod sym;
 pub mod task;
 
+pub mod io;
 pub mod console;
 pub mod devicetree;
 pub mod klog;

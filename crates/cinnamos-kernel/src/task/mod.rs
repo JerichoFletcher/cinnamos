@@ -9,7 +9,7 @@ use crate::{
         virt::VirtAlloc,
         vmalloc::PageAlloc,
     },
-    util::stack::StackBuilder,
+    util::mem::stack::StackBuilder,
 };
 
 pub mod proc;

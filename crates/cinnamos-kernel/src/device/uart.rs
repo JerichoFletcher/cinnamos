@@ -2,7 +2,7 @@ use core::{num::NonZero, ptr::NonNull};
 
 use uart::*;
 
-use crate::{arch, console::ConsoleWrite, sync::mutex_irqsave::MutexIrqSave};
+use crate::{arch, console::ConsoleWrite, io::{Write, serial::SerialInputWrite}, sync::mutex_irqsave::MutexIrqSave};
 
 struct SendUart(Uart<address::MmioAddress, Data>);
 
@@ -34,9 +34,7 @@ fn handle_uart_irq() {
             .contains(LineStatus::DATA_AVAILABLE)
         {
             let b = drv.0.read_byte();
-
-            // TODO: Push byte to input queue
-            drv.0.write_byte(b);
+            let _ = SerialInputWrite.write(&[b]);
         }
     }
 }

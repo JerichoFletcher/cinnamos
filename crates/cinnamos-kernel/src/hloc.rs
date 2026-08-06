@@ -88,12 +88,14 @@ impl HartLocalGuard {
     #[inline]
     pub fn set_curr_task(&mut self, task: SlabBox<Task>) {
         // Safety: ptr is valid
-        unsafe { (*self.ptr).set_curr_task(task); }
+        unsafe {
+            (*self.ptr).set_curr_task(task);
+        }
     }
 }
 
 /// Should only be called by the boot hart.
-/// 
+///
 /// # Safety
 /// `p2v` must be a translation function to a valid address space with respect to the frame allocations
 /// provided in `trap_stacks`.
@@ -117,7 +119,7 @@ pub unsafe fn init_hlocs(trap_stacks: Box<[FrameAlloc]>, p2v: impl Fn(PAddr) -> 
 }
 
 /// Should only be called by the boot hart.
-/// 
+///
 /// # Safety
 /// - `hid` must be equal to the executing hart ID.
 /// - `tsp` must point to the top of a valid stack memory.
@@ -130,7 +132,7 @@ pub unsafe fn init_boot_hart_local(hid: usize, tsp: VAddr) {
 
 /// # Safety
 /// `hid` must be equal to the executing hart ID.
-/// 
+///
 /// # Panic
 /// Will panic if the hart-local storage buffer has not been [initialized](init_hlocs),
 /// or if the hart ID is invalid.
