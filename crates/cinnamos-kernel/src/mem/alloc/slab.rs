@@ -14,9 +14,9 @@ use crate::{
 };
 
 pub struct SlabBox<T> {
-    /// Invariant: ptr always points to an initialized T inside its slab memory
+    /// Invariant: `ptr` always points to an initialized `T` inside its slab memory
     ptr: NonNull<T>,
-    /// Invariant: slab always points to a valid Slab<T> from which the SlabBox<T> was created
+    /// Invariant: `slab` always points to a valid [Slab<T>] from which the [SlabBox<T>] was created
     slab: NonNull<Slab<T>>,
 }
 

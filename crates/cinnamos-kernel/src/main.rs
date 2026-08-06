@@ -131,7 +131,6 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     unsafe {
         hloc::init_hlocs(trap_stacks, mem::vms::phys_to_kernel);
     }
-
     // Safety: hid is the current hart's HID
     unsafe {
         hloc::load_hart_local(hid);

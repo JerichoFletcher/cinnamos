@@ -4,60 +4,13 @@ use alloc::{boxed::Box, vec::Vec};
 use spin::Once;
 
 use crate::{
-    arch::{self, PAddr, VAddr},
+    arch::{self, HartLocal, PAddr, VAddr},
     mem::{PhysFrameAlloc, alloc::slab::SlabBox, physalloc::FrameAlloc},
     task::Task,
 };
 
-#[repr(C)]
-#[derive(Debug)]
-pub(crate) struct HartLocal {
-    pub(crate) hid: usize,
-    pub(crate) scratch: usize,
-    pub(crate) curr_task_ptr: *mut Task,
-    pub(crate) trap_stack_top: VAddr,
-
-    curr_task: Option<SlabBox<Task>>,
-}
-
-impl HartLocal {
-    #[inline]
-    fn new(hid: usize, tsp: VAddr) -> Self {
-        Self {
-            hid,
-            scratch: 0,
-            curr_task_ptr: core::ptr::null_mut(),
-            trap_stack_top: tsp,
-            curr_task: None,
-        }
-    }
-
-    #[inline]
-    const fn curr_task(&mut self) -> Option<&mut SlabBox<Task>> {
-        self.curr_task.as_mut()
-    }
-
-    #[inline]
-    fn take_curr_task(&mut self) -> Option<SlabBox<Task>> {
-        self.curr_task_ptr = core::ptr::null_mut();
-        self.curr_task.take()
-    }
-
-    #[inline]
-    fn set_curr_task(&mut self, task: SlabBox<Task>) {
-        self.curr_task_ptr = task.as_ptr();
-        self.curr_task = Some(task);
-    }
-}
-
-unsafe impl Send for HartLocal {}
-unsafe impl Sync for HartLocal {}
-
-static mut BOOT_HLOC: MaybeUninit<HartLocal> = MaybeUninit::zeroed();
-static HLOCS: Once<&[HartLocal]> = Once::new();
-
 pub struct HartLocalGuard {
-    /// Invariant: ptr points to the HartLocal pointed by the hart's local pointer
+    /// Equals to the pointer in the thread-pointer register for this hart.
     ptr: *mut HartLocal,
 }
 
@@ -70,7 +23,7 @@ impl HartLocalGuard {
     #[inline]
     pub const fn hid(&self) -> usize {
         // Safety: ptr is valid
-        unsafe { (*self.ptr).hid }
+        unsafe { (*self.ptr).hid() }
     }
 
     #[inline]
@@ -92,6 +45,22 @@ impl HartLocalGuard {
             (*self.ptr).set_curr_task(task);
         }
     }
+}
+
+static mut BOOT_HLOC: MaybeUninit<HartLocal> = MaybeUninit::zeroed();
+static HLOCS: Once<&[HartLocal]> = Once::new();
+
+/// Should only be called by the boot hart.
+///
+/// # Safety
+/// - `hid` must be equal to the executing hart ID.
+/// - `tsp` must point to the top of a valid stack memory.
+#[inline]
+pub unsafe fn init_boot_hart_local(hid: usize, tsp: VAddr) {
+    let ptr = &raw mut BOOT_HLOC;
+    // Safety: ptr points to a HartLocal, and is only accessed by the boot hart
+    let ptr = unsafe { ptr.as_mut_unchecked().write(HartLocal::new(hid, tsp)) };
+    arch::load_hart_local(ptr);
 }
 
 /// Should only be called by the boot hart.
@@ -118,18 +87,6 @@ pub unsafe fn init_hlocs(trap_stacks: Box<[FrameAlloc]>, p2v: impl Fn(PAddr) -> 
     });
 }
 
-/// Should only be called by the boot hart.
-///
-/// # Safety
-/// - `hid` must be equal to the executing hart ID.
-/// - `tsp` must point to the top of a valid stack memory.
-#[inline]
-pub unsafe fn init_boot_hart_local(hid: usize, tsp: VAddr) {
-    let ptr = &raw mut BOOT_HLOC;
-    let ptr = unsafe { ptr.as_mut_unchecked().write(HartLocal::new(hid, tsp)) };
-    arch::load_hart_local(ptr);
-}
-
 /// # Safety
 /// `hid` must be equal to the executing hart ID.
 ///
@@ -152,6 +109,9 @@ pub unsafe fn load_hart_local(hid: usize) {
 /// Should only be called after the [HartLocal](HartLocal) for the caller has been loaded.
 #[inline]
 pub fn hart_local() -> HartLocalGuard {
-    let ptr = unsafe { arch::hart_local() };
+    let ptr = arch::hart_local();
+    if ptr.is_null() || !ptr.is_aligned() {
+        panic!("invalid hart-local pointer {:p}", ptr);
+    }
     HartLocalGuard { ptr }
 }

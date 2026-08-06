@@ -1,8 +1,7 @@
 use core::{arch::global_asm, mem::offset_of};
 
 use crate::{
-    arch::{Context, TrapFrame},
-    hloc::HartLocal,
+    arch::{Context, HartLocal, TrapFrame},
     task::Task,
 };
 

@@ -109,10 +109,11 @@ impl fmt::Write for SerialOutputWrite {
         if let Some(drv) = g.as_mut() {
             let mut writer = UartTransmitWrite::new(&mut drv.0);
             let mut len = 0;
-            while len < s.len()
-                && let Ok(chunk) = writer.write(&s.as_bytes()[len..])
-            {
-                len += chunk;
+            while len < s.len() {
+                match writer.write(&s.as_bytes()[len..]) {
+                    Ok(chunk) => len += chunk,
+                    Err(()) => return Err(fmt::Error),
+                }
             }
         }
         Ok(())

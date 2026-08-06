@@ -18,6 +18,7 @@ cfg_select! {
             jump_higher_half,
         };
         pub use riscv64::hloc::{
+            HartLocal,
             load_hart_local,
             hart_local,
         };
