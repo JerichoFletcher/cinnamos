@@ -108,7 +108,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
     );
     usable_regs.sort_unstable_by_key(|a| Reverse(a.size));
     for r in &usable_regs {
-        log::info!("usable at 0x{:016x} .. 0x{:016x}", r.base, r.end());
+        log::info!("usable at {:#016x} .. {:#016x}", r.base, r.end());
     }
 
     let alloc = BuddyFrameAllocator::new(usable_regs.as_slice());
@@ -127,7 +127,7 @@ pub fn alloc(frame_count: usize) -> Option<FrameAlloc> {
     let a = ALLOCATOR.read().alloc(frame_count);
     match &a {
         Some(a) => log::trace!(
-            "allocate ppage size={} base=0x{:016x}",
+            "allocate ppage size={} base={:#016x}",
             frame_count * PAGE_SIZE,
             &a.start_addr()
         ),

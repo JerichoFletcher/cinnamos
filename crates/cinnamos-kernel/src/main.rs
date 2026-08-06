@@ -110,6 +110,14 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     log::info!("higher-half entry");
 
     let cpus = fdt.cpus().collect::<Vec<_>>();
+    for cpu in cpus.iter() {
+        log::debug!(
+            "CPU id={} f_time={}",
+            cpu.ids().first(),
+            cpu.timebase_frequency(),
+        );
+    }
+
     let trap_stacks = cpus
         .iter()
         .map(|_| mem::physalloc::alloc(4).expect("failed to allocate trap stack"))
@@ -129,7 +137,7 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
 
     let (bump_start, bump_next, bump_end) = mem::alloc::bump::get_bump_area();
     log::info!(
-        "bump area=0x{:016x} .. 0x{:016x}, head=0x{:016x}, used={}/{}",
+        "bump area={:#016x} .. {:#016x}, head={:#016x}, used={}/{}",
         bump_start,
         bump_end,
         bump_next,
@@ -151,7 +159,7 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
 }
 
 fn idle() -> ! {
-    log::debug!("hello from idle()");
+    log::trace!("hello from idle()");
     loop {
         if let Err(e) = sys::thread::thread_yield() {
             log::warn!("idle(): thread_yield returned with error {:?}", e);

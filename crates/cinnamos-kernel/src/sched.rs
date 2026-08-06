@@ -30,7 +30,7 @@ impl Scheduler {
         );
         task.id = next_free_id.into();
         task.state = TaskState::Ready;
-        task.time_quantum = 128;
+        task.time_quantum = 0;
         self.run_queue.lock().push_back(task);
     }
 
@@ -53,6 +53,11 @@ impl Scheduler {
         match next {
             Some(mut next) => {
                 next.state = TaskState::Running;
+                if next.time_quantum == 0 {
+                    // TODO: Priority-based quantum budget assignment
+                    next.time_quantum = 5;
+                }
+
                 let next_ptr = next.as_ptr();
                 log::trace!("scheduling next task curr={} next={}", curr_id, next.id);
 
@@ -73,6 +78,11 @@ impl Scheduler {
         match next {
             Some(mut next) => {
                 next.state = TaskState::Running;
+                if next.time_quantum == 0 {
+                    // TODO: Priority-based quantum budget assignment
+                    next.time_quantum = 5;
+                }
+
                 let next_ptr = next.as_ptr();
                 log::trace!("scheduling first task next={}", next.id);
 

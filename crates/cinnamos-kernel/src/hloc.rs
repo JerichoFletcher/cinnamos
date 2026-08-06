@@ -107,7 +107,7 @@ pub unsafe fn init_hlocs(trap_stacks: Box<[FrameAlloc]>, p2v: impl Fn(PAddr) -> 
                 .map(|(hid, tstack)| {
                     let tsp = p2v(tstack.start_addr());
                     core::mem::forget(tstack);
-                    log::trace!("init hloc hid={} tsp=0x{:016x}", hid, tsp);
+                    log::trace!("init hloc hid={} tsp={:#016x}", hid, tsp);
                     HartLocal::new(hid, tsp)
                 })
                 .collect::<Vec<_>>()

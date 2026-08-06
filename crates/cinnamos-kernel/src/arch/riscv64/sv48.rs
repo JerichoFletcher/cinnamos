@@ -217,7 +217,7 @@ pub fn translate_virt(
         let flags = pte.flags();
 
         if !pte.is_valid() || (!flags.contains(PTEFlags::READ) && flags.contains(PTEFlags::WRITE)) {
-            // log::trace!("translate 0x{:016x} unmapped/non-leaf (flags={:?})", va, flags);
+            // log::trace!("translate {:#016x} unmapped/non-leaf (flags={:?})", va, flags);
             return None;
         } else if flags.intersects(PTEFlags::RX) {
             let pa = pte.phys_addr();
@@ -259,7 +259,7 @@ pub fn map_page(
                         yield Err(MapError::AlreadyMapped(va, pte.phys_addr(), *curr_size));
                         return;
                     }
-                    // log::trace!("sv48 map 0x{:016x} -> 0x{:016x} level={}", va, pa, level);
+                    // log::trace!("sv48 map {:#016x} -> {:#016x} level={}", va, pa, level);
                     pte.set_leaf(pa, size, flags);
                     return;
                 } else {

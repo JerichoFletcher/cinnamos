@@ -48,9 +48,16 @@ pub fn init_interrupts(hid: usize, fdt: &Fdt) {
         }
         plic.set_threshold(hid, 0);
     }
-
-    timer::schedule_timer();
+    init_timer(hid, fdt);
     interrupt::enable_interrupts();
+}
+
+pub fn init_timer(hid: usize, fdt: &Fdt) {
+    let cpu = fdt
+        .cpus()
+        .find(|cpu| cpu.ids().all().any(|id| id == hid))
+        .expect("missing devicetree /cpus entry");
+    timer::init_timer(cpu.timebase_frequency() / 100);
 }
 
 /// # Safety

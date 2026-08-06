@@ -75,7 +75,7 @@ impl BuddyRegion {
 
         assert!(
             self.base <= start && start < self.base + (PAGE_SIZE << buddy.max_order()),
-            "Range start not within bounds: !(0x{:016x} <= 0x{:016x} < 0x{:016x}), ord={}",
+            "Range start not within bounds: !({:#016x} <= {:#016x} < {:#016x}), ord={}",
             self.base,
             start,
             self.base + (PAGE_SIZE << buddy.max_order()),
@@ -83,7 +83,7 @@ impl BuddyRegion {
         );
         assert!(
             self.base <= end && end <= self.base + (PAGE_SIZE << buddy.max_order()),
-            "Range end not within bounds: !(0x{:016x} <= 0x{:016x} < 0x{:016x}), ord={}",
+            "Range end not within bounds: !({:#016x} <= {:#016x} < {:#016x}), ord={}",
             self.base,
             end,
             self.base + (PAGE_SIZE << buddy.max_order()),
@@ -91,7 +91,7 @@ impl BuddyRegion {
         );
         assert!(
             start <= end,
-            "Invalid range: 0x{:016x} .. 0x{:016x}",
+            "Invalid range: {:#016x} .. {:#016x}",
             start,
             end
         );
@@ -208,7 +208,7 @@ impl BuddyFrameAllocator {
                 };
 
                 log::info!(
-                    "add region range=0x{:016x} .. 0x{:016x} region=0x{:016x} .. 0x{:016x} ord={} left",
+                    "add region range={:#016x} .. {:#016x} region={:#016x} .. {:#016x} ord={} left",
                     l_base,
                     l_base + (1 << l_order) * PAGE_SIZE,
                     l_start,
@@ -238,7 +238,7 @@ impl BuddyFrameAllocator {
 
             let r_start = Ord::max(l_start, r_base);
             log::info!(
-                "add region range=0x{:016x} .. 0x{:016x} region=0x{:016x} .. 0x{:016x} ord={} right",
+                "add region range={:#016x} .. {:#016x} region={:#016x} .. {:#016x} ord={} right",
                 r_base,
                 r_base + (1 << r_order) * PAGE_SIZE,
                 r_start,
@@ -272,7 +272,7 @@ impl BuddyFrameAllocator {
                 )
             };
             log::info!(
-                "add region range=0x{:016x} .. 0x{:016x} region=0x{:016x} .. 0x{:016x} ord={} fit",
+                "add region range={:#016x} .. {:#016x} region={:#016x} .. {:#016x} ord={} fit",
                 reg.base,
                 reg.base + (1 << size_order) * PAGE_SIZE,
                 start,

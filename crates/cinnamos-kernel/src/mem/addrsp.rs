@@ -121,7 +121,7 @@ impl<'a> AddressSpace<'a> {
         flags: PTEFlags,
     ) -> Result<(), AddressSpaceError> {
         log::trace!(
-            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} size={} map id={}",
+            "{:#016x} .. {:#016x} -> {:#016x} .. {:#016x} size={} map id={}",
             &va,
             va + size_bytes,
             &pa,
@@ -173,7 +173,7 @@ impl<'a> AddressSpace<'a> {
         flags: PTEFlags,
     ) -> Result<(), AddressSpaceError> {
         log::trace!(
-            "0x{:016x} .. 0x{:016x} -> 0x{:016x} .. 0x{:016x} size={} map id={}",
+            "{:#016x} .. {:#016x} -> {:#016x} .. {:#016x} size={} map id={}",
             &va,
             va + size_bytes,
             &pa,
@@ -213,7 +213,7 @@ impl<'a> AddressSpace<'a> {
                 Err(e) => match e {
                     MapError::AlreadyMapped(_, mapped_pa, mapped_level) => {
                         log::trace!(
-                            "0x{:016x} -> 0x{:016x} size={} map id={} already mapped level={:?}",
+                            "{:#016x} -> {:#016x} size={} map id={} already mapped level={:?}",
                             va,
                             mapped_pa,
                             next_size.size(),
@@ -234,7 +234,7 @@ impl<'a> AddressSpace<'a> {
 
     pub fn unmap_raw(&self, va: VAddr, size_bytes: usize) -> Result<(), AddressSpaceError> {
         log::trace!(
-            "0x{:016x} .. 0x{:016x} size={} unmap id={}",
+            "{:#016x} .. {:#016x} size={} unmap id={}",
             &va,
             va + size_bytes,
             size_bytes,

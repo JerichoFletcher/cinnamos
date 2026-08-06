@@ -140,6 +140,6 @@ impl LowerHex for VAddr {
 
 impl Debug for VAddr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "VAddr(0x{:016x})", self.0)
+        write!(f, "VAddr({:#016x})", self.0)
     }
 }

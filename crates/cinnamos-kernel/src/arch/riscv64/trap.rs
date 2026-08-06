@@ -94,43 +94,43 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
 
     match tcause {
         Trap::Exception(Exception::InstructionMisaligned) => panic!(
-            "[at 0x{:016x}] Instruction misaligned 0x{:016x}",
+            "[at {:#016x}] Instruction misaligned {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::InstructionFault) => panic!(
-            "[at 0x{:016x}] Instruction fault 0x{:016x}",
+            "[at {:#016x}] Instruction fault {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::IllegalInstruction) => panic!(
-            "[at 0x{:016x}] Illegal instruction 0x{:016x}",
+            "[at {:#016x}] Illegal instruction {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::LoadMisaligned) => panic!(
-            "[at 0x{:016x}] Load misaligned 0x{:016x}",
+            "[at {:#016x}] Load misaligned {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::LoadFault) => panic!(
-            "[at 0x{:016x}] Load fault 0x{:016x}",
+            "[at {:#016x}] Load fault {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::StoreMisaligned) => panic!(
-            "[at 0x{:016x}] Store misaligned 0x{:016x}",
+            "[at {:#016x}] Store misaligned {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::StoreFault) => panic!(
-            "[at 0x{:016x}] Store fault 0x{:016x}",
+            "[at {:#016x}] Store fault {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::InstructionPageFault) => panic!(
-            "[at 0x{:016x}] Instruction page fault 0x{:016x}",
+            "[at {:#016x}] Instruction page fault {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::LoadPageFault) => panic!(
-            "[at 0x{:016x}] Load page fault 0x{:016x}",
+            "[at {:#016x}] Load page fault {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::StorePageFault) => panic!(
-            "[at 0x{:016x}] Store page fault 0x{:016x}",
+            "[at {:#016x}] Store page fault {:#016x}",
             frame.sepc, frame.stval
         ),
         Trap::Exception(Exception::UserEnvCall) => {
@@ -144,7 +144,6 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
             arch::timer::schedule_timer();
             if let Some(curr) = hloc.curr_task() {
                 if curr.time_quantum == 0 {
-                    curr.time_quantum = 128;
                     sched::schedule();
                 } else {
                     curr.time_quantum -= 1;
@@ -156,12 +155,12 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
         }
         Trap::Interrupt(Interrupt::SupervisorSoft) => {
             log::trace!(
-                "[at 0x{:016x}] Software interrupt 0x{:016x}",
+                "[at {:#016x}] Software interrupt {:#016x}",
                 frame.sepc, frame.stval
             );
         }
         _ => panic!(
-            "[at 0x{:016x}] Unhandled trap {:?} 0x{:016x}",
+            "[at {:#016x}] Unhandled trap {:?} {:#016x}",
             frame.sepc, tcause, frame.stval
         ),
     }
