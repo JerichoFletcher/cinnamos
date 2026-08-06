@@ -1,20 +1,24 @@
+use core::mem::offset_of;
+
 use crate::{
-    arch::VAddr,
-    mem::alloc::slab::SlabBox,
-    task::Task,
+    arch::{Task, VAddr}, mem::alloc::slab::SlabBox,
 };
+
+const _: () = debug_assert!(offset_of!(HartLocal, scratch) == 8);
+const _: () = debug_assert!(offset_of!(HartLocal, curr_task_ptr) == 16);
+const _: () = debug_assert!(offset_of!(HartLocal, trap_stack_top) == 24);
 
 #[repr(C)]
 #[derive(Debug)]
 pub struct HartLocal {
     /// Equals to the ID of the current hart.
-    pub(crate) hid: usize,
+    hid: usize,
     /// Scratch memory used for temporaries.
-    pub(crate) scratch: usize,
+    scratch: usize,
     /// Equals to the [Task] pointed by `curr_task`, or null if it is [None].
-    pub(crate) curr_task_ptr: *mut Task,
+    curr_task_ptr: *mut Task,
     /// Equals to the address of the trap stack top for the current hart.
-    pub(crate) trap_stack_top: VAddr,
+    trap_stack_top: VAddr,
     /// The current task being executed by this hart.
     curr_task: Option<SlabBox<Task>>,
 }
@@ -53,9 +57,6 @@ impl HartLocal {
         self.curr_task = Some(task);
     }
 }
-
-unsafe impl Send for HartLocal {}
-unsafe impl Sync for HartLocal {}
 
 #[inline]
 pub fn load_hart_local(hloc: *const HartLocal) {

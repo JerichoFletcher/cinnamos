@@ -12,16 +12,10 @@ use crate::{
 };
 
 pub struct SerialInputBuffer {
-    queue: BoundedQueue<u8, 128>,
+    queue: BoundedQueue<u8, 256>,
 }
 
 impl SerialInputBuffer {
-    const fn new() -> Self {
-        Self {
-            queue: BoundedQueue::new(),
-        }
-    }
-
     fn read(&self) -> Option<u8> {
         self.queue.dequeue()
     }
@@ -32,7 +26,9 @@ impl SerialInputBuffer {
     }
 }
 
-static SERIAL_INPUT_BUF: SerialInputBuffer = SerialInputBuffer::new();
+static SERIAL_INPUT_BUF: SerialInputBuffer = SerialInputBuffer {
+    queue: BoundedQueue::new(),
+};
 
 pub struct SerialInputWrite;
 impl Write for SerialInputWrite {
@@ -106,17 +102,20 @@ pub struct SerialOutputWrite;
 impl fmt::Write for SerialOutputWrite {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let mut g = IO_UART.lock();
-        if let Some(drv) = g.as_mut() {
-            let mut writer = UartTransmitWrite::new(&mut drv.0);
-            let mut len = 0;
-            while len < s.len() {
-                match writer.write(&s.as_bytes()[len..]) {
-                    Ok(chunk) => len += chunk,
-                    Err(()) => return Err(fmt::Error),
+        match g.as_mut() {
+            Some(drv) => {
+                let mut writer = UartTransmitWrite::new(&mut drv.0);
+                let mut len = 0;
+                while len < s.len() {
+                    match writer.write(&s.as_bytes()[len..]) {
+                        Ok(chunk) => len += chunk,
+                        Err(()) => return Err(fmt::Error),
+                    }
                 }
+                Ok(())
             }
+            None => Err(fmt::Error),
         }
-        Ok(())
     }
 }
 

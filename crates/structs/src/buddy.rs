@@ -55,16 +55,12 @@ impl BackingBuffer for FlatArray {
 
     fn set_next(&mut self, index: &BlockIndex, value: BlockIndex) {
         // Safety: self.next is valid and exclusive to the backing buffer
-        unsafe {
-            (*self.next)[*index as usize] = value;
-        }
+        unsafe { (*self.next)[*index as usize] = value };
     }
 
     fn set_bitmap(&mut self, index: &BlockIndex, value: u64) {
         // Safety: self.bitmap is valid and exclusive to the backing buffer
-        unsafe {
-            (*self.bitmap)[*index as usize] = value;
-        }
+        unsafe { (*self.bitmap)[*index as usize] = value };
     }
 }
 
@@ -128,13 +124,9 @@ impl BuddyAllocator<FlatArray> {
         );
 
         // Safety: next is valid and is only accessed from this allocator
-        unsafe {
-            (*next).fill(BlockIndex::MAX);
-        }
+        unsafe { (*next).fill(BlockIndex::MAX) };
         // Safety: bitmap is valid and is only accessed from this allocator
-        unsafe {
-            (*bitmap).fill(0);
-        }
+        unsafe { (*bitmap).fill(0) };
 
         Self {
             order,

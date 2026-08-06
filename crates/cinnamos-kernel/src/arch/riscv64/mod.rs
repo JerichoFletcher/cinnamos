@@ -4,12 +4,16 @@ use fdt::Fdt;
 
 use crate::{devicetree, mem};
 
+mod asm;
+
+pub mod console;
 pub mod context;
 pub mod device;
 pub mod hloc;
 pub mod interrupt;
 pub mod paddr;
 pub mod sv48;
+pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod vaddr;

@@ -319,16 +319,12 @@ pub fn get_max_asid() -> usize {
     let mut satp = satp::read();
     let old_asid = satp.asid();
     satp.set_asid(usize::MAX);
-    unsafe {
-        satp::write(satp);
-    }
+    unsafe { satp::write(satp) };
 
     satp = satp::read();
     let max_asid = satp.asid();
     satp.set_asid(old_asid);
-    unsafe {
-        satp::write(satp);
-    }
+    unsafe { satp::write(satp) };
 
     max_asid
 }
@@ -338,9 +334,7 @@ pub fn switch_address_space(addrsp: &AddressSpace) {
     satp.set_ppn(addrsp.root_pa().ppn_all());
     satp.set_asid(addrsp.id());
     satp.set_mode(satp::Mode::Sv48);
-    unsafe {
-        satp::write(satp);
-    }
+    unsafe { satp::write(satp) };
 }
 
 pub fn flush_address_space(asid: usize) {

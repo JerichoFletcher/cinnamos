@@ -52,6 +52,8 @@ cfg_select! {
             IrqState,
             register_irq_handler,
         };
+        pub use riscv64::task::Task;
+        pub use riscv64::console::get_fallback_console;
 
         #[cfg(debug_assertions)]
         pub use riscv64::sv48::translate_virt;

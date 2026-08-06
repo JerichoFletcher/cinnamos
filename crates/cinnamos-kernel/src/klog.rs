@@ -71,7 +71,7 @@ impl Log for Logger {
                 file: record.file().unwrap_or("?"),
                 line: record.line().unwrap_or(0),
             };
-            let hid = hloc::hart_local().hid();
+            let hid = hloc::get().hid();
 
             let mut writer = Console::lock();
             let _ = writeln!(

@@ -139,7 +139,5 @@ pub fn alloc(frame_count: usize) -> Option<FrameAlloc> {
 fn dealloc(handle: &mut FrameAlloc) {
     let a = ALLOCATOR.read();
     // Safety: Bump-backed frames are never deallocated
-    unsafe {
-        a.dealloc(handle);
-    }
+    unsafe { a.dealloc(handle) };
 }

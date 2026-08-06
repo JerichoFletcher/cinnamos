@@ -1,6 +1,7 @@
 use core::fmt::{self, Write as CoreWrite};
 
 use crate::{
+    arch::get_fallback_console,
     io::serial::SerialOutputWrite,
     sync::mutex_irqsave::{MutexIrqSave, MutexIrqSaveGuard},
 };
@@ -23,7 +24,10 @@ impl Console {
 
     #[inline]
     pub fn write(&mut self, s: &str) -> fmt::Result {
-        self.serial.write_str(s)
+        if self.serial.write_str(s).is_err() {
+            get_fallback_console().write_str(s)?;
+        }
+        Ok(())
     }
 
     #[inline]

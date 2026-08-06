@@ -28,9 +28,7 @@ fn relocate_entry(rela: &Elf64Rela) {
     match rela_type {
         R_RISCV_RELATIVE => {
             let target = (rela.offset as usize).wrapping_add(kernel_to_phys_slide) as *mut usize;
-            unsafe {
-                *target = (rela.addend as usize).wrapping_add(kernel_to_phys_slide);
-            }
+            unsafe { *target = (rela.addend as usize).wrapping_add(kernel_to_phys_slide) };
         }
         _ => (),
     }

@@ -28,33 +28,35 @@ pub enum VmsError {
 #[derive(Debug)]
 struct SendAddressSpace(AddressSpace<'static>);
 
-unsafe impl Send for SendAddressSpace {}
-unsafe impl Sync for SendAddressSpace {}
-
 static ROOT_ADDRSP: RwLock<Option<SendAddressSpace>> = RwLock::new(None);
 
 pub struct VirtualMemoryInfo {
     pub max_asid: usize,
 }
 
+#[inline]
 pub fn phys_to_kernel_dynslide() -> usize {
     kernel_start_v().addr().wrapping_sub(KERNEL_LOAD_BASE)
 }
 
 pub const PHYS_TO_KERNEL_SLIDE: usize = KERNEL_MAP_BASE - KERNEL_LOAD_BASE;
 
+#[inline]
 pub fn phys_to_kernel(pa: PAddr) -> VAddr {
     VAddr::new(pa.addr().wrapping_add(PHYS_TO_KERNEL_SLIDE))
 }
 
+#[inline]
 pub fn kernel_to_phys(va: VAddr) -> PAddr {
     PAddr::new(va.addr().wrapping_sub(PHYS_TO_KERNEL_SLIDE))
 }
 
+#[inline]
 pub fn phys_to_virt(pa: PAddr) -> VAddr {
     VAddr::new(pa.addr().wrapping_add(DIRECT_MAP_BASE))
 }
 
+#[inline]
 pub fn virt_to_phys(va: VAddr) -> PAddr {
     PAddr::new(va.addr().wrapping_sub(DIRECT_MAP_BASE))
 }
@@ -64,14 +66,18 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
     if ROOT_ADDRSP.read().is_none() {
         let root_alloc = mem::physalloc::alloc(1).ok_or(VmsError::FrameAllocFailed)?;
         let root_ptr = VAddr::identity(root_alloc.start_addr()).as_mut::<MaybeUninit<_>>();
+        // Safety: root_ptr exactly fits and is aligned to a page table
         let root_ptr = unsafe { PageTable::init(root_ptr.as_mut_unchecked()) };
-        let root_addrsp = AddressSpace::new(
-            0,
-            root_ptr,
-            root_alloc,
-            Vec::with_capacity(32),
-            &VAddr::identity,
-        )
+        // Safety: root_ptr is derived from root_alloc and identity-mapped
+        let root_addrsp = unsafe {
+            AddressSpace::new(
+                0,
+                root_ptr,
+                root_alloc,
+                Vec::with_capacity(32),
+                &VAddr::identity,
+            )
+        }
         .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
@@ -405,10 +411,14 @@ pub fn remap_tables() -> Result<(), VmsError> {
     log::debug!("remapping page tables");
     let mut g = ROOT_ADDRSP.write();
     let root_addrsp = g.as_mut().ok_or(VmsError::RootTableUninitialized)?;
-    root_addrsp
-        .0
-        .remap(&phys_to_virt)
-        .map_err(VmsError::AddressSpace)
+
+    // Safety: phys_to_virt maps to direct space which is always valid
+    unsafe {
+        root_addrsp
+            .0
+            .remap(&phys_to_virt)
+            .map_err(VmsError::AddressSpace)
+    }
 }
 
 /// Should only be called once after [remapping the address space](remap_tables) and [initializing the heap](mem::heap::init_heap).

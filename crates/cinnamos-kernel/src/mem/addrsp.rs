@@ -18,15 +18,23 @@ pub enum AddressSpaceError {
 }
 
 pub struct AddressSpace<'a> {
+    /// The ID of this address space. Used to derive the ASID for virtual paging protocols.
     id: usize,
+    /// Points to the root page table. Must always point to the physical page at [`root`](AddressSpace::root).
     root_ptr: *mut PageTable,
+    /// The physical-to-virtual address translation function used to walk page tables within this address space.
     p2v: &'a dyn Fn(PAddr) -> VAddr,
+    /// The physical page allocation for the frame containing the root page table.
     root: FrameAlloc,
+    /// Allocations of all the intermediate tables associated with this address space.
     tables: Mutex<Vec<FrameAlloc>>,
 }
 
 impl<'a> AddressSpace<'a> {
-    pub fn new(
+    /// # Safety
+    /// - `root_ptr` must point to the virtual page mapped to `root` and stay mapped for the entire lifetime of the [AddressSpace].
+    /// - `p2v` must translate physical page table addresses to valid, mapped virtual addresses.
+    pub unsafe fn new(
         id: usize,
         root_ptr: *mut PageTable,
         root: FrameAlloc,
@@ -53,7 +61,12 @@ impl<'a> AddressSpace<'a> {
         self.id
     }
 
-    pub fn remap(&mut self, p2v: &'a dyn Fn(PAddr) -> VAddr) -> Result<(), AddressSpaceError> {
+    /// # Safety
+    /// The new `p2v` must translate physical page table addresses to valid, mapped virtual addresses.
+    pub unsafe fn remap(
+        &mut self,
+        p2v: &'a dyn Fn(PAddr) -> VAddr,
+    ) -> Result<(), AddressSpaceError> {
         self.map_raw_skip_mapped(
             p2v(self.root_pa()),
             self.root_pa(),
@@ -84,10 +97,6 @@ impl<'a> AddressSpace<'a> {
             new_tables.push(t);
         }
         *old_tables = new_tables;
-    }
-
-    pub const fn root_ptr(&self) -> *mut PageTable {
-        self.root_ptr
     }
 
     pub fn root_pa(&self) -> PAddr {
@@ -251,6 +260,13 @@ impl<'a> AddressSpace<'a> {
         Ok(())
     }
 }
+
+// Safety:
+// - root_ptr is always mapped to the frames corresponding to root
+// - root_ptr is never exposed outside of the struct, which prevents it from outliving the struct
+unsafe impl Send for AddressSpace<'_> {}
+// Safety: Mutations via &self are synchronized across harts
+unsafe impl Sync for AddressSpace<'_> {}
 
 impl Debug for AddressSpace<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

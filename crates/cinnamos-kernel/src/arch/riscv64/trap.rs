@@ -9,6 +9,8 @@ use crate::{
     arch::{self, Context, VAddr, interrupt}, hloc::HartLocalGuard, *,
 };
 
+const _: () = debug_assert!(size_of::<TrapFrame>() == (36 * size_of::<usize>()));
+
 unsafe extern "C" {
     fn __trap_entry() -> !;
     fn __trap_exit() -> !;
@@ -64,7 +66,7 @@ impl TrapFrame {
 
         let mut regs = [0; 32];
         regs[Self::REG_SP] = stack_ptr.addr();
-        regs[Self::REG_TP] = hloc::hart_local().as_ptr() as usize;
+        regs[Self::REG_TP] = hloc::get().as_ptr() as usize;
         Self {
             regs,
             sstatus,
@@ -85,7 +87,7 @@ pub fn create_init_context() -> Context {
 
 #[unsafe(no_mangle)]
 extern "C" fn trap_handler(frame: &mut TrapFrame) {
-    let mut hloc = hloc::hart_local();
+    let mut hloc = hloc::get();
     let tcause = frame
         .scause
         .cause()
@@ -143,10 +145,11 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             arch::timer::schedule_timer();
             if let Some(curr) = hloc.curr_task() {
-                if curr.time_quantum == 0 {
+                let t = curr.tcb().time_quantum;
+                if t == 0 {
                     sched::schedule();
                 } else {
-                    curr.time_quantum -= 1;
+                    curr.tcb_mut().time_quantum -= 1;
                 }
             }
         }
@@ -210,7 +213,7 @@ pub fn init() {
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe {
         stvec::write(stvec);
-        sscratch::write(hloc::hart_local().as_ptr() as usize);
+        sscratch::write(hloc::get().as_ptr() as usize);
     }
 }
 
@@ -219,6 +222,6 @@ pub fn init_higher_half() {
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe {
         stvec::write(stvec);
-        sscratch::write(hloc::hart_local().as_ptr() as usize);
+        sscratch::write(hloc::get().as_ptr() as usize);
     }
 }

@@ -48,7 +48,7 @@ pub fn enable_interrupts() {
     sie.set_stimer(true);
     sie.set_ssoft(true);
     sie.set_sext(true);
-    unsafe { sie::write(sie); }
+    unsafe { sie::write(sie) };
 }
 
 #[derive(Debug)]
@@ -59,15 +59,15 @@ pub struct IrqState {
 impl IrqState {
     pub fn save_disable() -> Self {
         let sstatus = sstatus::read();
-        unsafe { sstatus::clear_sie(); }
+        unsafe { sstatus::clear_sie() };
         Self { enabled: sstatus.sie() }
     }
 
     pub fn restore(self) {
         if self.enabled {
-            unsafe { sstatus::set_sie(); }
+            unsafe { sstatus::set_sie() };
         } else {
-            unsafe { sstatus::clear_sie(); }
+            unsafe { sstatus::clear_sie() };
         }
     }
 }

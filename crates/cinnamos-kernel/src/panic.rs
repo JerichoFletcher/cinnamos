@@ -1,17 +1,6 @@
-use core::{fmt::Write, panic::PanicInfo};
+use core::panic::PanicInfo;
 
 use crate::arch;
-
-struct SbiWrite;
-
-impl Write for SbiWrite {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for c in s.bytes() {
-            sbi::debug_console::write_byte(c).map_err(|_| core::fmt::Error)?;
-        }
-        Ok(())
-    }
-}
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -25,10 +14,7 @@ fn panic(info: &PanicInfo) -> ! {
         None => format_args!("kernel panic: {}", info.message()),
     };
 
-    let _ = writeln!(SbiWrite, "{msg}");
-    // if log::log_enabled!(log::Level::Error) {
-    //     log::error!("{msg}");
-    // }
+    log::error!("{msg}");
     loop {
         arch::wait_for_interrupt();
     }

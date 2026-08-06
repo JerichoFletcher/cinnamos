@@ -4,6 +4,11 @@ use pastey::paste;
 macro_rules! def_symbols {
     ($name:ident) => {
         paste! {
+            #[doc = concat!(
+                "Returns the virtual address of the `",
+                stringify!([<_ $name _start>]),
+                "` symbol at the current relocation.",
+            )]
             #[inline]
             pub fn [<$name _start_v>]() -> VAddr {
                 unsafe extern "C" {
@@ -12,14 +17,27 @@ macro_rules! def_symbols {
                 VAddr::from_ptr(&raw const [<_ $name _start>])
             }
 
+            #[doc = concat!(
+                "Returns the physical address of the `",
+                stringify!([<_ $name _start>]),
+                "` symbol.",
+            )]
             #[inline]
             pub fn [<$name _start_p>]() -> PAddr {
                 unsafe extern "C" {
                     static [<_ $name _start>]: u8;
                 }
-                PAddr::new((&raw const ([<_ $name _start>]) as usize).wrapping_sub($crate::mem::vms::phys_to_kernel_dynslide()))
+                PAddr::new(
+                    (&raw const ([<_ $name _start>]) as usize)
+                        .wrapping_sub($crate::mem::vms::phys_to_kernel_dynslide())
+                )
             }
 
+            #[doc = concat!(
+                "Returns the virtual address of the `",
+                stringify!([<_ $name _end>]),
+                "` symbol at the current relocation.",
+            )]
             #[inline]
             pub fn [<$name _end_v>]() -> VAddr {
                 unsafe extern "C" {
@@ -28,14 +46,29 @@ macro_rules! def_symbols {
                 VAddr::from_ptr(&raw const [<_ $name _end>])
             }
 
+            #[doc = concat!(
+                "Returns the physical address of the `",
+                stringify!([<_ $name _end>]),
+                "` symbol.",
+            )]
             #[inline]
             pub fn [<$name _end_p>]() -> PAddr {
                 unsafe extern "C" {
                     static [<_ $name _end>]: u8;
                 }
-                PAddr::new((&raw const ([<_ $name _end>]) as usize).wrapping_sub($crate::mem::vms::phys_to_kernel_dynslide()))
+                PAddr::new(
+                    (&raw const ([<_ $name _end>]) as usize)
+                        .wrapping_sub($crate::mem::vms::phys_to_kernel_dynslide())
+                )
             }
 
+            #[doc = concat!(
+                "Returns the size (in bytes) of the region between `",
+                stringify!([<_ $name _start>]),
+                "` and `",
+                stringify!([<_ $name _end>]),
+                "`.",
+            )]
             #[inline]
             pub fn [<$name _size>]() -> usize {
                 unsafe extern "C" {

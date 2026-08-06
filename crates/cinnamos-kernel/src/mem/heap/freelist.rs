@@ -104,8 +104,8 @@ impl FreeListHeap {
                             unsafe {
                                 prev_va.write(FreeBlock {
                                     next: next_va.as_mut(),
-                                });
-                            }
+                                })
+                            };
                             next_va = prev_va;
                             prev_va = prev_va - size;
                         }
@@ -117,9 +117,7 @@ impl FreeListHeap {
                         loop {
                             if !head.is_null() {
                                 // Safety: tail is the last block within the pages we allocated
-                                unsafe {
-                                    (*tail_block).next = head;
-                                }
+                                unsafe { (*tail_block).next = head };
                             }
                             match pool.compare_exchange_weak(
                                 head,
@@ -153,9 +151,7 @@ impl FreeListHeap {
         loop {
             let head = pool.load(Ordering::Relaxed);
             let new_head: *mut FreeBlock = ptr.cast();
-            unsafe {
-                (*new_head).next = head;
-            }
+            unsafe { (*new_head).next = head };
             match pool.compare_exchange_weak(head, new_head, Ordering::AcqRel, Ordering::Relaxed) {
                 Ok(_) => break,
                 Err(_) => continue,

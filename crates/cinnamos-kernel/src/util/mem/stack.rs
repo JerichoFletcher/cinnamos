@@ -23,9 +23,7 @@ impl StackBuilder {
     pub unsafe fn push<T>(&mut self, val: T) -> &mut Self {
         self.ptr = (self.ptr - size_of::<T>()).align_down(align_of::<T>());
         // Safety: ptr is aligned to T
-        unsafe {
-            self.ptr.write(val);
-        }
+        unsafe { self.ptr.write(val) };
         self
     }
 }

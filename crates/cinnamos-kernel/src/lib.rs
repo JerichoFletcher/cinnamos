@@ -4,7 +4,6 @@
 
 extern crate alloc;
 
-mod asm;
 mod panic;
 
 pub mod arch;

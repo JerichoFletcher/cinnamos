@@ -56,13 +56,9 @@ impl<T> DerefMut for SlabBox<T> {
 impl<T> Drop for SlabBox<T> {
     fn drop(&mut self) {
         // Safety: The pointer is valid after allocated
-        unsafe {
-            self.as_ptr().drop_in_place();
-        }
+        unsafe { self.as_ptr().drop_in_place() };
         // Safety: Slabs are never dropped after creation
-        unsafe {
-            self.slab.as_ref().dealloc(self);
-        }
+        unsafe { self.slab.as_ref().dealloc(self) };
     }
 }
 
@@ -183,9 +179,7 @@ impl<const PAGE_COUNT: usize, T> SlabAllocator<PAGE_COUNT, T> {
         for slab in self.slabs.read().iter() {
             if let Some(handle) = slab.alloc() {
                 // Safety: handle is an allocated block for T
-                unsafe {
-                    handle.as_ptr().write(val);
-                }
+                unsafe { handle.as_ptr().write(val) };
                 return Some(handle);
             }
         }
@@ -200,9 +194,7 @@ impl<const PAGE_COUNT: usize, T> SlabAllocator<PAGE_COUNT, T> {
 
         let handle = handle?;
         // Safety: handle is an allocated block for T
-        unsafe {
-            handle.as_ptr().write(val);
-        }
+        unsafe { handle.as_ptr().write(val) };
         Some(handle)
     }
 }

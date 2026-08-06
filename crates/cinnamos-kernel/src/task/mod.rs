@@ -1,7 +1,7 @@
 use cinnamos_abi::proc::ThreadId;
 
 use crate::{
-    arch::{self, PTEFlags, VAddr},
+    arch::{self, PTEFlags, Task},
     mem::{
         self,
         alloc::slab::{SlabAllocator, SlabBox},
@@ -9,27 +9,24 @@ use crate::{
         virt::VirtAlloc,
         vmalloc::PageAlloc,
     },
-    util::mem::stack::StackBuilder,
 };
 
 pub mod proc;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskState {
     Ready,
     Running,
     Stopped,
 }
 
-#[repr(C)]
+#[expect(unused)]
 #[derive(Debug)]
-pub struct Task {
-    pub(crate) id: ThreadId,
-    pub(crate) state: TaskState,
-    pub(crate) context_sp: VAddr,
-    pub(crate) kernel_stack_ptr: VAddr,
-    pub(crate) time_quantum: usize,
+pub struct TaskControlBlock {
+    pub id: ThreadId,
+    pub state: TaskState,
+    pub time_quantum: usize,
 
     kernel_stack_phys: FrameAlloc,
     task_stack_phys: FrameAlloc,
@@ -58,33 +55,39 @@ impl Task {
         )
         .ok()?;
 
-        let val = Self {
+        let sp = kernel_stack_virt.end_addr();
+        let tcb = TaskControlBlock {
             id: 0.into(),
             state: TaskState::Ready,
-            kernel_stack_ptr: kernel_stack_virt.end_addr(),
-            context_sp: kernel_stack_virt.end_addr(),
             time_quantum: 0,
             kernel_stack_phys,
             task_stack_phys,
             kernel_stack_virt,
             task_stack_virt,
         };
-        Some(val)
+        // Safety:
+        Some(unsafe { Task::new(sp, sp, tcb) })
     }
 }
 
 static TASK_ALLOC: SlabAllocator<4, Task> = SlabAllocator::new();
 
-pub fn new_kernel_task(entry: *const ()) -> Option<SlabBox<Task>> {
+/// The returned [Task] already has an initialized call stack in its kernel context
+/// and can be safely [scheduled](crate::sched::schedule) directly.
+///
+/// # Safety
+/// `entry` must point to an executable address (e.g. a function).
+pub unsafe fn new_kernel_task(entry: *const ()) -> Option<SlabBox<Task>> {
     let mut task = TASK_ALLOC.alloc(Task::new_kernel()?)?;
+    let task_sp = task.tcb().task_stack_virt.end_addr();
 
-    let task_sp = task.task_stack_virt.end_addr();
+    let mut stack = task.build_stack();
     // Safety: The allocated kernel stack fits the fabricated stack
-    task.context_sp = unsafe {
-        StackBuilder::new(task.kernel_stack_ptr)
+    unsafe {
+        stack
             .push(arch::create_init_trap_frame(entry, task_sp))
-            .push(arch::create_init_context())
-            .get()
-    };
+            .push(arch::create_init_context());
+    }
+    stack.finish();
     Some(task)
 }

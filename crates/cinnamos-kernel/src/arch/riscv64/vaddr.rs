@@ -16,14 +16,17 @@ pub struct VAddr(usize);
 impl VAddr {
     pub const NULL: Self = Self(0);
 
+    #[inline]
     pub const fn new(addr: usize) -> Self {
         Self(addr)
     }
 
+    #[inline]
     pub const fn identity(paddr: PAddr) -> Self {
         Self(paddr.addr())
     }
 
+    #[inline]
     pub const fn from_parts(vpn: [usize; 4], page_offset: usize) -> Self {
         debug_assert!(vpn[0] < PT_MAX_ENTRIES);
         debug_assert!(vpn[1] < PT_MAX_ENTRIES);
@@ -40,26 +43,31 @@ impl VAddr {
     }
 
     #[inline]
-    pub fn from_ptr<T>(ptr: *const T) -> Self {
-        Self(ptr as usize)
+    pub fn from_ptr<T: ?Sized>(ptr: *const T) -> Self {
+        Self(ptr as *const () as usize)
     }
 
+    #[inline]
     pub const fn as_ptr<T>(&self) -> *const T {
         self.0 as *const T
     }
 
+    #[inline]
     pub const fn as_mut<T>(&self) -> *mut T {
         self.0 as *mut T
     }
 
+    #[inline]
     pub const fn as_nonnull<T>(&self) -> Option<NonNull<T>> {
         NonNull::new(self.0 as *mut T)
     }
 
+    #[inline]
     pub const fn addr(&self) -> usize {
         self.0
     }
 
+    #[inline]
     pub const fn vpn(&self) -> [usize; 4] {
         [
             (self.0 >> 12) & 0x1ff,
@@ -69,26 +77,31 @@ impl VAddr {
         ]
     }
 
+    #[inline]
     pub const fn vpn_all(&self) -> usize {
         (self.0 / PAGE_SIZE) & ((1 << 36) - 1)
     }
 
     /// Only correct if `align` is a [power of two](usize::is_power_of_two).
+    #[inline]
     pub const fn align_down(&self, align: usize) -> Self {
         debug_assert!(align.is_power_of_two());
         Self(self.0 & !(align - 1))
     }
     
     /// Only correct if `align` is a [power of two](usize::is_power_of_two).
+    #[inline]
     pub const fn align_up(&self, align: usize) -> Self {
         debug_assert!(align.is_power_of_two());
         Self((self.0 + align - 1) & !(align - 1))
     }
 
+    #[inline]
     pub const fn align_to_page(&self) -> Self {
         self.align_down(PAGE_SIZE)
     }
 
+    #[inline]
     pub const fn align_to_next_page(&self) -> Self {
         self.align_up(PAGE_SIZE)
     }

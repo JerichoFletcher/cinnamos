@@ -5,15 +5,16 @@ extern crate alloc;
 
 use core::ptr::NonNull;
 
-use alloc::vec::Vec;
 use cinnamos_kernel::{
     arch::{PAddr, VAddr},
-    mem::SizedMemoryRegion,
+    mem::{PhysFrameAlloc, SizedMemoryRegion},
     sym::*,
     *,
 };
 use fdt::Fdt;
 
+/// Fills in the global offset table for dynamic symbol relocations and calls the kernel entry function.
+///
 /// # Safety
 /// - `hid` must be equal to the executing hart ID.
 /// - `dtb_ptr` must point to the physical location of a devicetree blob.
@@ -24,10 +25,10 @@ unsafe extern "C" fn kernel_relocate(
     dtb_ptr: *const u8,
     dyn_ptr: *const rel::Elf64Dyn,
 ) -> ! {
-    unsafe {
-        rel::relocate(dyn_ptr);
-        entry(hid, dtb_ptr, dyn_ptr);
-    }
+    // Safety: dyn_ptr points to _DYNAMIC
+    unsafe { rel::relocate(dyn_ptr) };
+    // Safety: All arguments forwarded from parameters
+    unsafe { entry(hid, dtb_ptr, dyn_ptr) };
 }
 
 /// # Safety
@@ -35,12 +36,14 @@ unsafe extern "C" fn kernel_relocate(
 /// - `dtb_ptr` must point to the physical location of a devicetree blob.
 /// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol.
 unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
-    // Safety: hid is the current hart ID, and trap_stack_end_v lies at the end of the kernel's internal stack
-    unsafe {
-        hloc::init_boot_hart_local(hid, trap_stack_end_v());
-    }
+    let trap_stack = mem::physalloc::alloc(2).expect("failed to allocate trap stack");
+    let tsp = VAddr::identity(trap_stack.end_addr());
+    core::mem::forget(trap_stack);
+    // Safety: tsp points to the top of trap_stack, which is mapped in bump space
+    unsafe { hloc::load_init(hid, tsp) };
     arch::init();
 
+    // Safety: dtb_ptr points to a devicetree blob
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("invalid devicetree blob") };
     if let Some((uart, uart_reg)) = devicetree::find_compatible(&fdt, &["ns16550", "ns16550a"]) {
         let irq_id = uart
@@ -57,17 +60,18 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
 
     mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("failed to initialize VMS");
     klog::disable();
-    unsafe {
-        jump_higher_half(entry_virt as *const (), hid, dtb_ptr, dyn_ptr);
-    }
+    unsafe { relocate_jump_higher_half(entry_virt as *const (), hid, dtb_ptr, dyn_ptr) };
 }
 
+/// Shifts all relocations to virtual space and jumps to `entry`.
+///
 /// # Safety
+/// - The virtual kernel and direct map space must be mapped.
 /// - `entry` must point to the physical address of a function, which is mapped in kernel space.
 /// - `hid` must be equal to the executing hart ID.
-/// - `dtb_ptr` must point to the physical location of a devicetree blob, which is mapped in virtual space.
+/// - `dtb_ptr` must point to the physical location of a devicetree blob, which is mapped in direct map space.
 /// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol, which is mapped in kernel space.
-unsafe fn jump_higher_half(
+unsafe fn relocate_jump_higher_half(
     entry: *const (),
     hid: usize,
     dtb_ptr: *const u8,
@@ -79,13 +83,9 @@ unsafe fn jump_higher_half(
     let vsp = mem::vms::phys_to_kernel(stack_end_p());
 
     // Safety: vdyn is the virtual address of _DYNAMIC
-    unsafe {
-        rel::shift_relocation(vdyn.as_ptr(), mem::vms::PHYS_TO_KERNEL_SLIDE);
-    }
+    unsafe { rel::shift_relocation(vdyn.as_ptr(), mem::vms::PHYS_TO_KERNEL_SLIDE) };
     // Safety: Safety conditions are fulfilled in parameters
-    unsafe {
-        arch::jump_higher_half(ventry.as_ptr(), hid, vdtb, vsp);
-    }
+    unsafe { arch::jump_higher_half(ventry.as_ptr(), hid, vdtb, vsp) };
 }
 
 /// # Safety
@@ -93,9 +93,7 @@ unsafe fn jump_higher_half(
 /// - `dtb_ptr` must point to the virtual location of a devicetree blob.
 unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     // Safety: Bump space is mapped into kernel space
-    unsafe {
-        mem::heap::shift_bump(&mem::vms::phys_to_kernel);
-    }
+    unsafe { mem::heap::shift_bump(&mem::vms::phys_to_kernel) };
 
     // Safety: dtb_ptr points to a devicetree blob
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("invalid devicetree blob") };
@@ -113,28 +111,11 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     klog::enable();
     log::info!("higher-half entry");
 
-    let cpus = fdt.cpus().collect::<Vec<_>>();
-    for cpu in cpus.iter() {
-        log::debug!(
-            "CPU id={} f_time={}",
-            cpu.ids().first(),
-            cpu.timebase_frequency(),
-        );
-    }
-
-    let trap_stacks = cpus
-        .iter()
-        .map(|_| mem::physalloc::alloc(4).expect("failed to allocate trap stack"))
-        .collect::<Vec<_>>()
-        .into_boxed_slice();
-    // Safety: All frames allocated in trap_stacks are within kernel space
-    unsafe {
-        hloc::init_hlocs(trap_stacks, mem::vms::phys_to_kernel);
-    }
-    // Safety: hid is the current hart's HID
-    unsafe {
-        hloc::load_hart_local(hid);
-    }
+    let trap_stack = mem::physalloc::alloc(4).expect("failed to allocate trap stack");
+    let tsp = mem::vms::phys_to_kernel(trap_stack.end_addr());
+    core::mem::forget(trap_stack);
+    // Safety: tsp points to the top of trap_stack, which is mapped in bump space
+    unsafe { hloc::load_init(hid, tsp) };
     arch::init_higher_half();
 
     mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));
@@ -158,13 +139,17 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
         mem::physalloc::add_region(&reg);
     }
 
-    sched::enqueue(task::new_kernel_task(idle as _).expect("failed to create idle task"));
+    // Safety: idle is a callable function
+    let task = unsafe { task::new_kernel_task(idle as _).expect("failed to create idle task") };
+    // Safety: task already has a context
+    unsafe { sched::enqueue(task) };
     arch::init_interrupts(hid, &fdt);
 
     log::info!("starting scheduler");
     sched::start();
 }
 
+/// An idle task that simply yields. Required to make sure the scheduler run queue is never empty.
 fn idle() -> ! {
     log::trace!("hello from idle()");
     loop {

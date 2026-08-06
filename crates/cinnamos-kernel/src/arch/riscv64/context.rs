@@ -1,5 +1,7 @@
 use crate::arch::VAddr;
 
+const _: () = debug_assert!(size_of::<Context>() == 13 * size_of::<usize>());
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct Context {

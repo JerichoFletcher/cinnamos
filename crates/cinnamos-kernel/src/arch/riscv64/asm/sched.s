@@ -1,5 +1,5 @@
 .equ SWITCH_FRAME_SIZE,     13*8
-.equ TASK_CTXSP_OFFSET,     16
+.equ TASK_CTXSP_OFFSET,     0
 
 .section .text
 .global __switch

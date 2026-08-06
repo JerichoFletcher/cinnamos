@@ -5,27 +5,13 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-#[derive(Debug)]
-struct BoundedQueueSlot<T> {
-    seq: AtomicUsize,
-    val: UnsafeCell<MaybeUninit<T>>,
-}
-
-impl<T> BoundedQueueSlot<T> {
-    const fn new(seq: usize) -> Self {
-        Self {
-            seq: AtomicUsize::new(seq),
-            val: UnsafeCell::new(MaybeUninit::uninit()),
-        }
-    }
-}
-
 /// A multi-producer, multi-consumer implementation of a Vyukov bounded queue.
 #[derive(Debug)]
 pub struct BoundedQueue<T, const N: usize> {
     enqueue_rsv: AtomicUsize,
     dequeue_rsv: AtomicUsize,
-    buf: [BoundedQueueSlot<T>; N],
+    seq: [AtomicUsize; N],
+    buf: [UnsafeCell<MaybeUninit<T>>; N],
 }
 
 impl<T, const N: usize> BoundedQueue<T, N> {
@@ -33,17 +19,21 @@ impl<T, const N: usize> BoundedQueue<T, N> {
         Self {
             enqueue_rsv: AtomicUsize::new(0),
             dequeue_rsv: AtomicUsize::new(0),
-            buf: core::array::from_fn(BoundedQueueSlot::new),
+            seq: core::array::from_fn(AtomicUsize::new),
+            buf: core::array::from_fn(const |_| UnsafeCell::new(MaybeUninit::uninit())),
         }
     }
 
     /// Returns [Ok] if `value` is successfully inserted. Otherwise, the original value is returned.
     pub fn enqueue(&self, value: T) -> Result<(), T> {
         let mut rsv = self.enqueue_rsv.load(Ordering::Relaxed);
-        let mut slot;
+        let mut slot_cell;
+        let mut slot_seq;
         loop {
-            slot = &self.buf[rsv % N];
-            let seq = slot.seq.load(Ordering::Acquire);
+            slot_cell = &self.buf[rsv % N];
+            slot_seq = &self.seq[rsv % N];
+
+            let seq = slot_seq.load(Ordering::Acquire);
             let diff = seq as isize - rsv as isize;
             if diff == 0 {
                 // Slot is free to use: try reserving
@@ -66,20 +56,21 @@ impl<T, const N: usize> BoundedQueue<T, N> {
         }
 
         // Safety: This slot is guaranteed to only be exclusively accessed by this thread
-        unsafe {
-            slot.val.get().write(MaybeUninit::new(value));
-        }
-        slot.seq.store(rsv + 1, Ordering::Release);
+        unsafe { slot_cell.get().write(MaybeUninit::new(value)) };
+        slot_seq.store(rsv + 1, Ordering::Release);
         Ok(())
     }
 
     /// Returns the dequeued item if it exists, otherwise returns [None].
     pub fn dequeue(&self) -> Option<T> {
         let mut rsv = self.dequeue_rsv.load(Ordering::Relaxed);
-        let mut slot;
+        let mut slot_cell;
+        let mut slot_seq;
         loop {
-            slot = &self.buf[rsv % N];
-            let seq = slot.seq.load(Ordering::Acquire);
+            slot_cell = &self.buf[rsv % N];
+            slot_seq = &self.seq[rsv % N];
+
+            let seq = slot_seq.load(Ordering::Acquire);
             let diff = seq as isize - (rsv + 1) as isize;
             if diff == 0 {
                 // Slot is ready to be read: try reserving
@@ -102,10 +93,10 @@ impl<T, const N: usize> BoundedQueue<T, N> {
         }
 
         // Safety: This slot is guaranteed to only be exclusively accessed by this thread
-        let value = unsafe { slot.val.get().read() };
+        let value = unsafe { slot_cell.get().read() };
         // Safety: Since this slot has been written to by a producer, the contents of the slot is initialized
         let value = unsafe { value.assume_init() };
-        slot.seq.store(rsv + N + 1, Ordering::Release);
+        slot_seq.store(rsv + N + 1, Ordering::Release);
         Some(value)
     }
 }
@@ -119,12 +110,10 @@ impl<T, const N: usize> Drop for BoundedQueue<T, N> {
         let head = self.dequeue_rsv.load(Ordering::Relaxed);
         let tail = self.enqueue_rsv.load(Ordering::Relaxed);
         for pos in head..tail {
-            let slot = &self.buf[pos % N];
+            let slot_cell = &self.buf[pos % N];
             // Safety: Since every slot before enqueue_rsv has been enqueued and every slot starting from dequeue_rsv
             // has not been dequeued, all the slots in between contains initialized data and can be safely dropped
-            unsafe {
-                slot.val.get().read().assume_init_drop();
-            }
+            unsafe { slot_cell.get().read().assume_init_drop() };
         }
     }
 }
