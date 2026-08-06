@@ -1,5 +1,6 @@
 use core::{
-    alloc::Layout, sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
+    alloc::Layout,
+    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
 
 use crate::{

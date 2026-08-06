@@ -1,5 +1,8 @@
 use core::{
-    cell::UnsafeCell, fmt::Debug, mem::MaybeUninit, sync::atomic::{AtomicUsize, Ordering},
+    cell::UnsafeCell,
+    fmt::Debug,
+    mem::MaybeUninit,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 #[derive(Debug)]
@@ -63,7 +66,9 @@ impl<T, const N: usize> BoundedQueue<T, N> {
         }
 
         // Safety: This slot is guaranteed to only be exclusively accessed by this thread
-        unsafe { slot.val.get().write(MaybeUninit::new(value)); }
+        unsafe {
+            slot.val.get().write(MaybeUninit::new(value));
+        }
         slot.seq.store(rsv + 1, Ordering::Release);
         Ok(())
     }
@@ -89,7 +94,7 @@ impl<T, const N: usize> BoundedQueue<T, N> {
                 }
             } else if diff < 0 {
                 // Slot is waiting for a producer: the queue is empty
-                return None
+                return None;
             } else {
                 // Slot was already reserved by another consumer: fetch a new reservation
                 rsv = self.dequeue_rsv.load(Ordering::Relaxed);
@@ -121,6 +126,12 @@ impl<T, const N: usize> Drop for BoundedQueue<T, N> {
                 slot.val.get().read().assume_init_drop();
             }
         }
+    }
+}
+
+impl<T, const N: usize> Default for BoundedQueue<T, N> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

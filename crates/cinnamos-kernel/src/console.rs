@@ -1,23 +1,23 @@
-use core::fmt::{self, Write};
+use core::fmt::{self, Write as CoreWrite};
 
 use crate::{
-    device::uart::SerialWrite,
+    io::serial::SerialOutputWrite,
     sync::mutex_irqsave::{MutexIrqSave, MutexIrqSaveGuard},
 };
 
-pub trait ConsoleWrite: fmt::Write + Sync {
+pub trait ConsoleWrite: CoreWrite + Sync {
     fn flush(&mut self);
 }
 
 pub struct Console {
-    serial: SerialWrite,
+    serial: SerialOutputWrite,
 }
 
 impl Console {
     #[inline]
     pub const fn new() -> Self {
         Self {
-            serial: SerialWrite::new(),
+            serial: SerialOutputWrite,
         }
     }
 
@@ -43,7 +43,7 @@ impl Default for Console {
     }
 }
 
-impl fmt::Write for Console {
+impl CoreWrite for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write(s)
     }
