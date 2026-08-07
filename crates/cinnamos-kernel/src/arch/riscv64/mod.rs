@@ -24,11 +24,16 @@ use vaddr::VAddr;
 
 pub type ElfDyn = Elf64_Dyn;
 
+/// Halts the current hart until an interrupt might need servicing. Does not guarantee that an interrupt
+/// is serviceable, so callers must not assume such. However, the hart is guaranteed to continue execution
+/// when an enabled interrupt is pending.
 #[inline]
 pub fn wait_for_interrupt() {
     riscv::asm::wfi();
 }
 
+/// Loads the address of `_DYNAMIC` using pure PC-relative address loading strategy. Because this load
+/// skips the global offset table entirely, it is safe to use before any symbol relocation is performed.
 #[inline(always)]
 pub fn get_dyn() -> *const ElfDyn {
     let ptr: *const ElfDyn;
@@ -42,42 +47,15 @@ pub fn get_dyn() -> *const ElfDyn {
     ptr
 }
 
+/// Performs any necessary architecture-specific initializations.
 pub fn init() {
     trap::init();
 }
 
+/// Performs any necessary architecture-specific initializations, strictly after higher-half mapping
+/// is enabled on the current hart.
 pub fn init_higher_half() {
-    trap::init_higher_half();
-}
-
-pub fn init_interrupts(hid: usize, fdt: &Fdt) {
-    if let Some(plic_node) = fdt.find_compatible(&["riscv,plic0"])
-        && let Some(mut plic_reg) = plic_node.reg()
-    {
-        let plic_reg = plic_reg.next().unwrap();
-        let pa = PAddr::from_ptr(plic_reg.starting_address);
-
-        device::plic::init(unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) });
-        let mut plic = device::plic::get_plic_mut();
-        for (node, ints) in devicetree::all_with_interrupts(fdt, &plic_node) {
-            for int in ints {
-                log::debug!("enabling interrupt {}: {}", int, node.name);
-                plic.set_priority(int as u16, 1);
-                plic.set_enabled(int as u16, hid, true);
-            }
-        }
-        plic.set_threshold(hid, 0);
-    }
-    init_timer(hid, fdt);
-    interrupt::enable_interrupts();
-}
-
-pub fn init_timer(hid: usize, fdt: &Fdt) {
-    let cpu = fdt
-        .cpus()
-        .find(|cpu| cpu.ids().all().any(|id| id == hid))
-        .expect("missing devicetree /cpus entry");
-    timer::init_timer(cpu.timebase_frequency() / 100);
+    trap::init();
 }
 
 /// # Safety
@@ -100,4 +78,42 @@ pub unsafe fn jump_higher_half(
             options(noreturn),
         );
     }
+}
+
+/// Initializes interrupt controllers and enables interrupts for the current hart.
+///
+/// # Safety
+/// `hid` must be equal to the current hart ID.
+pub unsafe fn init_interrupts(hid: usize, fdt: &Fdt) {
+    if let Some(plic_node) = fdt.find_compatible(&["riscv,plic0"])
+        && let Some(mut plic_reg) = plic_node.reg()
+    {
+        let plic_reg = plic_reg.next().unwrap();
+        let pa = PAddr::from_ptr(plic_reg.starting_address);
+
+        let plic_ptr = NonNull::new(mem::vms::phys_to_virt(pa).as_mut()).expect("plic is null");
+        // Safety: plic_ptr is direct-mapped to PLIC region
+        unsafe { device::plic::init(plic_ptr) };
+        let mut plic = device::plic::get_plic_mut();
+        for (node, ints) in devicetree::all_with_interrupts(fdt, &plic_node) {
+            for int in ints {
+                log::debug!("enabling interrupt {}: {}", int, node.name);
+                plic.set_priority(int as u16, 1);
+                plic.set_enabled(int as u16, hid, true);
+            }
+        }
+        plic.set_threshold(hid, 0);
+    }
+    init_timer(hid, fdt);
+    interrupt::enable_interrupts();
+}
+
+/// Initializes timer interrupts. Depends on the `timebase-frequency` property on the current hart
+/// to determine the cycle interval between interrupts.
+pub fn init_timer(hid: usize, fdt: &Fdt) {
+    let cpu = fdt
+        .cpus()
+        .find(|cpu| cpu.ids().all().any(|id| id == hid))
+        .expect("missing devicetree /cpus entry");
+    timer::init_timer(cpu.timebase_frequency() / 100);
 }

@@ -30,7 +30,7 @@ cfg_select! {
         pub use riscv64::sv48::{
             PAGE_SIZE,
             PAGE_TABLE_DEPTH,
-            PageSize,
+            PageLevel,
             PageTable,
             PTE,
             PTEFlags,
@@ -39,8 +39,6 @@ cfg_select! {
             get_max_asid,
             switch_address_space,
             flush_address_space,
-            PageTableAlloc,
-            PageTableAllocMap,
             MapError,
             UnmapError,
         };

@@ -2,10 +2,13 @@ use crate::arch::VAddr;
 
 const _: () = debug_assert!(size_of::<Context>() == 13 * size_of::<usize>());
 
+/// Represents a context within a call stack.
 #[repr(C)]
 #[derive(Debug)]
 pub struct Context {
+    /// The return address from the current context.
     pub ra: VAddr,
+    /// The contents of callee-saved registers.
     pub saved: [usize; 12],
 }
 
@@ -23,6 +26,7 @@ impl Context {
     pub const REG_S10: usize = 10;
     pub const REG_S11: usize = 11;
 
+    /// Creates an empty context with the given return address.
     pub const fn new(ret: VAddr) -> Self {
         Self { ra: ret, saved: [0; 12] }
     }

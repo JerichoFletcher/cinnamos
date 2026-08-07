@@ -187,7 +187,7 @@ impl BuddyFrameAllocator {
             buf_ptr = buf_ptr + next_buf_size(l_order) * size_of::<BlockIndex>();
             let r_next_ptr = buf_ptr;
             buf_ptr = buf_ptr + next_buf_size(r_order) * size_of::<BlockIndex>();
-            let l_start = buf_ptr.next_multiple_of(PAGE_SIZE);
+            let l_start = buf_ptr.align_to_next_page();
 
             // Only actually create the allocator for L if metadata buffers don't exceed the size of L
             if l_start < r_base {
@@ -254,7 +254,7 @@ impl BuddyFrameAllocator {
             buf_ptr = buf_ptr + bitmap_buf_size(size_order) * size_of::<u64>();
             let next_ptr = buf_ptr;
             buf_ptr = buf_ptr + next_buf_size(size_order) * size_of::<BlockIndex>();
-            let start = buf_ptr.next_multiple_of(PAGE_SIZE);
+            let start = buf_ptr.align_to_next_page();
 
             let alloc = unsafe {
                 BuddyRegion::new(

@@ -129,7 +129,8 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     let task = unsafe { task::new_kernel_task(idle as _).expect("failed to create idle task") };
     // Safety: task already has a context
     unsafe { sched::enqueue(task) };
-    arch::init_interrupts(hid, &fdt);
+    // Safety: hid is the current hart ID
+    unsafe { arch::init_interrupts(hid, &fdt) };
 
     log::info!("starting scheduler");
     sched::start();

@@ -8,6 +8,7 @@ const _: () = debug_assert!(offset_of!(HartLocal, scratch) == 8);
 const _: () = debug_assert!(offset_of!(HartLocal, curr_task_ptr) == 16);
 const _: () = debug_assert!(offset_of!(HartLocal, trap_stack_top) == 24);
 
+/// The storage object that is exclusive for each hart.
 #[repr(C)]
 #[derive(Debug)]
 pub struct HartLocal {
@@ -15,7 +16,7 @@ pub struct HartLocal {
     hid: usize,
     /// Scratch memory used for temporaries.
     scratch: usize,
-    /// Equals to the [Task] pointed by `curr_task`, or null if it is [None].
+    /// Equals to the [Task] pointed by `curr_task`, or null if it is [`None`](None).
     curr_task_ptr: *mut Task,
     /// Equals to the address of the trap stack top for the current hart.
     trap_stack_top: VAddr,
@@ -24,6 +25,7 @@ pub struct HartLocal {
 }
 
 impl HartLocal {
+    /// Creates a new hart-local storage object. This does not load it into the hart state.
     #[inline]
     pub fn new(hid: usize, tsp: VAddr) -> Self {
         Self {
@@ -35,22 +37,26 @@ impl HartLocal {
         }
     }
 
+    /// The ID of the current hart.
     #[inline]
     pub const fn hid(&self) -> usize {
         self.hid
     }
 
+    /// The current task being executed by the current hart, if any.
     #[inline]
     pub const fn curr_task(&mut self) -> Option<&mut SlabBox<Task>> {
         self.curr_task.as_mut()
     }
 
+    /// Takes the current task out of the storage.
     #[inline]
     pub fn take_curr_task(&mut self) -> Option<SlabBox<Task>> {
         self.curr_task_ptr = core::ptr::null_mut();
         self.curr_task.take()
     }
 
+    /// Saves a task into the storage.
     #[inline]
     pub fn set_curr_task(&mut self, task: SlabBox<Task>) {
         self.curr_task_ptr = task.as_ptr();
@@ -58,6 +64,7 @@ impl HartLocal {
     }
 }
 
+/// Installs a pointer to a hart-local storage into the hart state.
 #[inline]
 pub fn load_hart_local(hloc: *const HartLocal) {
     unsafe {
@@ -69,6 +76,7 @@ pub fn load_hart_local(hloc: *const HartLocal) {
     }
 }
 
+/// Gets the pointer to the hart-local storage associated with this hart.
 #[inline]
 pub fn hart_local() -> *mut HartLocal {
     let ptr: *mut HartLocal;

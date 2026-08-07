@@ -66,15 +66,11 @@ __trap_entry:
     csrr    t1, sscratch
     csrr    t2, sstatus
     csrr    t3, sepc
-    csrr    t4, scause
-    csrr    t5, stval
 
     sd      t0, 2*8(sp)
     sd      t1, 4*8(sp)
     sd      t2, 32*8(sp)
     sd      t3, 33*8(sp)
-    sd      t4, 34*8(sp)
-    sd      t5, 35*8(sp)
 
 # Restore hart-local pointer to sscratch
     csrw    sscratch, tp
@@ -98,7 +94,7 @@ __trap_exit:
 1:
 # Store new kernel TSP ahead of time
 # Shouldn't matter but will make improper stack switches visible
-    sd      t0, HLOC_TSP_OFFSET(tp)
+#    sd      t0, HLOC_TSP_OFFSET(tp)
 
 2:
 # Restore CSRs

@@ -26,6 +26,9 @@ impl ConsoleWrite for SbiWrite {
     fn flush(&mut self) {}
 }
 
+/// Retrieves a fallback [console writer](ConsoleWrite) that is always safe to use. Note that
+/// it is allowed that the returned value is a do-nothing writer; the only guarantee that the
+/// fallback writer upholds is that it is valid during the entire lifetime of the kernel from boot.
 pub fn get_fallback_console() -> impl ConsoleWrite {
     SbiWrite
 }

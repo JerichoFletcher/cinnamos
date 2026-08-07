@@ -12,19 +12,28 @@ use crate::{
     },
 };
 
+/// The size of a page, in bytes.
 pub const PAGE_SIZE: usize = 0x1000;
+/// The maximum number of entries in a [`PageTable`].
 pub const PT_MAX_ENTRIES: usize = PAGE_SIZE / size_of::<PTE>();
-pub const PAGE_TABLE_DEPTH: usize = PageSize::ALL.len();
+/// The maximum page table depth used by the current protocol.
+pub const PAGE_TABLE_DEPTH: usize = PageLevel::ALL.len();
 
+/// The supported page levels that can be mapped with a single [`PTE`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum PageSize {
+pub enum PageLevel {
+    /// A page of size 4 KiB.
     Page4K,
+    /// A megapage of size 2 MiB.
     Megapage2M,
+    /// A gigapage of size 1 GiB.
     Gigapage1G,
+    /// A terapage of size 512 GiB.
     Terapage512G,
 }
 
-impl PageSize {
+impl PageLevel {
+    /// An array containing all available page levels.
     pub const ALL: [Self; 4] = [
         Self::Page4K,
         Self::Megapage2M,
@@ -32,6 +41,11 @@ impl PageSize {
         Self::Terapage512G,
     ];
 
+    /// Returns the largest [`PageLevel`] such that a page of such level fulfills these criteria:
+    /// - The page size is greater than or equal to `size_bytes`.
+    /// - The base address aligns with both `va` and `pa`.
+    ///
+    /// If no such `PageLevel` exists, the function returns [`None`](None).
     pub fn select_size(va: VAddr, pa: PAddr, size_bytes: usize) -> Option<Self> {
         let size_bytes = size_bytes.max(Self::Page4K.size());
 
@@ -49,50 +63,72 @@ impl PageSize {
         None
     }
 
+    /// Checks whether an address has sufficient alignment for this level.
+    pub const fn is_aligned(&self, addr: usize) -> bool {
+        addr & (self.size() - 1) == 0
+    }
+
+    /// The corresponding size, in bytes.
     pub const fn size(&self) -> usize {
         match self {
-            PageSize::Page4K => PAGE_SIZE,
-            PageSize::Megapage2M => PAGE_SIZE << 9,
-            PageSize::Gigapage1G => PAGE_SIZE << 18,
-            PageSize::Terapage512G => PAGE_SIZE << 27,
+            PageLevel::Page4K => PAGE_SIZE,
+            PageLevel::Megapage2M => PAGE_SIZE << 9,
+            PageLevel::Gigapage1G => PAGE_SIZE << 18,
+            PageLevel::Terapage512G => PAGE_SIZE << 27,
         }
     }
 
+    /// The corresponding level, in bytes.
     const fn level(&self) -> usize {
         match self {
-            PageSize::Page4K => 0,
-            PageSize::Megapage2M => 1,
-            PageSize::Gigapage1G => 2,
-            PageSize::Terapage512G => 3,
+            PageLevel::Page4K => 0,
+            PageLevel::Megapage2M => 1,
+            PageLevel::Gigapage1G => 2,
+            PageLevel::Terapage512G => 3,
         }
     }
 }
 
 bitflags! {
+    /// Various flags that can be associated with a [`PTE`](PTE).
     #[derive(Debug, Clone, Copy)]
     pub struct PTEFlags: u8 {
+        /// Marks a [`PTE`] as representing a valid mapping.
         const VALID     = 0x01;
+        /// Marks a [`PTE`] mapping as a readable leaf.
         const READ      = 0x02;
+        /// Marks a [`PTE`] mapping as a writable leaf.
         const WRITE     = 0x04;
+        /// Marks a [`PTE`] mapping as an executable leaf, allowing the CPU to fetch instructions from this page.
         const EXECUTE   = 0x08;
+        /// Marks a [`PTE`] mapping as accessible from user-mode.
         const USER      = 0x10;
+        /// Marks a [`PTE`] mapping as global and should stay valid in the cache across flushes.
         const GLOBAL    = 0x20;
+        /// Marks a [`PTE`] mapping as accessed (the memory contents have been fetched).
         const ACCESSED  = 0x40;
+        /// Marks a [`PTE`] mapping as dirty (the memory contents have been modified).
         const DIRTY     = 0x80;
 
+        /// Marks a [`PTE`] mapping as readable and writable.
         const RW        = 0x02 | 0x04;
+        /// Marks a [`PTE`] mapping as readable and executable.
         const RX        = 0x02 | 0x08;
+        /// Marks a [`PTE`] mapping as readable, writable, and executable.
         const RWX       = 0x02 | 0x04 | 0x08;
     }
 }
 
+/// A [`PageTable`] entry.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
 pub struct PTE(usize);
 
 impl PTE {
+    /// An empty [`PTE`].
     pub const EMPTY: Self = Self(0);
 
+    /// Creates a [`PTE`] that points to the given physical address.
     pub fn new(page_addr: PAddr, flags: PTEFlags) -> Self {
         debug_assert!(page_addr.addr().is_multiple_of(PAGE_SIZE), "Address misaligned");
         let flags = flags.bits() as usize & 0xff;
@@ -100,18 +136,26 @@ impl PTE {
         Self(paddr | flags)
     }
 
+    /// Gets the physical address pointed to by the entry.
     pub fn phys_addr(&self) -> PAddr {
         PAddr::new(((self.0 << 10) as isize >> 8) as usize & !(PAGE_SIZE - 1))
     }
 
+    /// Gets the flags set on the entry.
     pub fn flags(&self) -> PTEFlags {
         PTEFlags::from_bits_retain((self.0 & 0xff) as u8)
     }
 
+    /// Returns whether this entry is valid (i.e. [`PTEFlags::VALID`] is set).
     pub fn is_valid(&self) -> bool {
         self.flags().contains(PTEFlags::VALID)
     }
 
+    /// Returns whether this entry is a leaf.
+    ///
+    /// A [`PTE`] is a leaf entry if all of these are true:
+    /// - The entry is valid (i.e. [`PTEFlags::VALID`]).
+    /// - Either [`PTEFlags::READ`], [`PTEFlags::WRITE`], or [`PTEFlags::EXECUTE`] is set.
     pub fn is_leaf(&self) -> bool {
         self.is_valid()
             && self
@@ -119,33 +163,44 @@ impl PTE {
                 .intersects(PTEFlags::RWX)
     }
 
-    pub fn set_table(&mut self, pa: PAddr) {
+    /// Sets the entry as a non-leaf entry pointing to another [`PageTable`].
+    ///
+    /// # Safety
+    /// `pa` must be the physical address of a [`PageTable`].
+    pub unsafe fn set_table(&mut self, pa: PAddr) {
         self.set(pa, PTEFlags::VALID);
     }
 
-    pub fn set_leaf(&mut self, pa: PAddr, size: PageSize, flags: PTEFlags) {
-        let mask = usize::MAX << (12 + size.level() * 9);
-        let pa = PAddr::new(pa.addr() & mask);
+    /// Sets the entry as a leaf entry pointing to a physical memory location.
+    ///
+    /// # Panics
+    /// This function will panic if `pa` is not aligned to `level`.
+    pub fn set_leaf(&mut self, pa: PAddr, level: PageLevel, flags: PTEFlags) {
+        assert!(level.is_aligned(pa.addr()), "physical address misaligned");
         self.set(pa, flags | PTEFlags::VALID);
     }
 
+    /// Clears this entry.
     pub fn clear(&mut self) {
         self.0 = 0;
     }
 
     fn set(&mut self, page_addr: PAddr, flags: PTEFlags) {
         let flags = flags.bits() as usize & 0xff;
-        let paddr = (page_addr.addr() & 0xff_ffff_ffff_f000) >> 2;
+        let paddr = page_addr.ppn_all() << 10;
         self.0 = flags | paddr;
     }
 }
 
-#[repr(transparent)]
+/// A page table.
+#[repr(align(4096))]
 pub struct PageTable {
     pub entries: [PTE; PT_MAX_ENTRIES],
 }
 
 impl PageTable {
+    /// Initializes a memory location with an empty [`PageTable`].
+    ///
     /// # Safety
     /// `slot` must be dereferenceable to [PageTable](PageTable).
     pub unsafe fn init(slot: *mut MaybeUninit<Self>) -> *mut Self {
@@ -161,48 +216,30 @@ impl PageTable {
     }
 }
 
-pub enum PageTableAlloc {
-    None,
-    New(FrameAlloc),
-    Existing(*mut PageTable),
-}
-
-pub struct PageTableAllocMap {
-    allocs: [PageTableAlloc; 3],
-}
-
-impl PageTableAllocMap {
-    pub fn forget(self) {
-        for v in self.allocs {
-            core::mem::forget(v);
-        }
-    }
-
-    pub fn take_new_allocs(self) -> impl Iterator<Item = FrameAlloc> {
-        core::iter::from_coroutine(
-            #[coroutine]
-            || {
-                for v in self.allocs.into_iter().rev() {
-                    if let PageTableAlloc::New(alloc) = v {
-                        yield alloc
-                    }
-                }
-            },
-        )
-    }
-}
-
+/// Represents possible errors that might occur when mapping a virtual address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MapError {
+    /// Virtual mapping fails because the allocator fails to provide a memory location for a page table.
     OutOfMemory,
-    AlreadyMapped(VAddr, PAddr, PageSize),
+    /// The virtual or physical address is not aligned to the requested level.
+    Misaligned,
+    /// The virtual address is already mapped to a physical address at the given level.
+    AlreadyMapped(VAddr, PAddr, PageLevel),
 }
 
+/// Represents possible errors that might occur when unmapping a virtual address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnmapError {
+    /// The virtual address is not mapped.
     NotMapped,
 }
 
+/// Performs a virtual address translation by walking the page tables starting from the given root table.
+///
+/// Returns a [`Some`] containing the physical address, or [`None`] if:
+/// - The virtual address is not mapped by any valid entry.
+/// - The virtual address corresponds to a valid, but not a leaf entry.
+/// - The virtual address is mapped, but the physical address is invalid at its level.
 #[cfg(debug_assertions)]
 pub fn translate_virt(
     root_pt: *mut PageTable,
@@ -212,12 +249,11 @@ pub fn translate_virt(
     let vpn = va.vpn();
     let mut table = root_pt;
 
-    for curr_size in PageSize::ALL.iter().rev() {
+    for curr_size in PageLevel::ALL.iter().rev() {
         let pte = unsafe { &mut (*table).entries[vpn[curr_size.level()]] };
         let flags = pte.flags();
 
         if !pte.is_valid() || (!flags.contains(PTEFlags::READ) && flags.contains(PTEFlags::WRITE)) {
-            // log::trace!("translate {:#016x} unmapped/non-leaf (flags={:?})", va, flags);
             return None;
         } else if flags.intersects(PTEFlags::RX) {
             let pa = pte.phys_addr();
@@ -237,30 +273,38 @@ pub fn translate_virt(
     None
 }
 
+/// Maps a virtual address to a given physical address at a certain level, using the provided root table.
+///
+/// Returns an iterator of all the frame allocations made for intermediate tables, or a [`MapError`]
+/// if virtual mapping fails for any reason.
 pub fn map_page(
     root_pt: *mut PageTable,
     va: VAddr,
     pa: PAddr,
-    size: PageSize,
+    level: PageLevel,
     flags: PTEFlags,
     p2v: &impl Fn(PAddr) -> VAddr,
 ) -> impl Iterator<Item = Result<FrameAlloc, MapError>> {
     core::iter::from_coroutine(
         #[coroutine]
         move || {
+            if !level.is_aligned(va.addr()) || !level.is_aligned(pa.addr()) {
+                yield Err(MapError::Misaligned);
+                return;
+            }
+
             let vpn = va.vpn();
             let mut table = root_pt;
 
-            for curr_size in PageSize::ALL.iter().rev() {
-                let pte = unsafe { &mut (*table).entries[vpn[curr_size.level()]] };
+            for curr_level in PageLevel::ALL.iter().rev() {
+                let pte = unsafe { &mut (*table).entries[vpn[curr_level.level()]] };
 
-                if *curr_size == size {
+                if *curr_level == level {
                     if pte.is_valid() {
-                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr(), *curr_size));
+                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr(), *curr_level));
                         return;
                     }
-                    // log::trace!("sv48 map {:#016x} -> {:#016x} level={}", va, pa, level);
-                    pte.set_leaf(pa, size, flags);
+                    pte.set_leaf(pa, level, flags);
                     return;
                 } else {
                     if pte.is_valid() && !pte.is_leaf() {
@@ -272,8 +316,11 @@ pub fn map_page(
                                 let next_pa = alloc.start_addr();
 
                                 let table_uninit = p2v(next_pa).as_mut::<MaybeUninit<_>>();
+                                // Safety: PageTable has the size and alignment of one physical frame
                                 table = unsafe { PageTable::init(table_uninit) };
-                                pte.set_table(alloc.start_addr());
+                                // Safety: pa points to the base of the table_uninit frame
+                                unsafe { pte.set_table(alloc.start_addr()) };
+
                                 yield Ok(alloc);
                             }
                             None => {
@@ -282,7 +329,7 @@ pub fn map_page(
                             }
                         }
                     } else {
-                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr(), *curr_size));
+                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr(), *curr_level));
                         return;
                     }
                 }
@@ -291,11 +338,15 @@ pub fn map_page(
     )
 }
 
+/// Unmaps a virtual address from the address space within the provided root table.
+///
+/// Returns the [`PageLevel`] of the entry that was cleared, or an [`UnmapError`] if virtual
+/// unmapping fails for any reason.
 pub fn unmap_page(
     root_pt: *mut PageTable,
     va: VAddr,
     p2v: impl Fn(PAddr) -> VAddr,
-) -> Result<PageSize, UnmapError> {
+) -> Result<PageLevel, UnmapError> {
     let vpn = va.vpn();
     let mut table = root_pt;
 
@@ -306,8 +357,7 @@ pub fn unmap_page(
             table = p2v(next_pa).as_mut();
         } else if pte.is_valid() {
             pte.clear();
-            riscv::asm::sfence_vma(0, va.addr());
-            return Ok(PageSize::ALL[level]);
+            return Ok(PageLevel::ALL[level]);
         } else {
             return Err(UnmapError::NotMapped);
         }
@@ -315,6 +365,7 @@ pub fn unmap_page(
     unreachable!()
 }
 
+/// Probes `satp` to determine the maximum implemented value of address space ID.
 pub fn get_max_asid() -> usize {
     let mut satp = satp::read();
     let old_asid = satp.asid();
@@ -329,6 +380,8 @@ pub fn get_max_asid() -> usize {
     max_asid
 }
 
+/// Switch to another address space. A [`flush_address_space`] call should follow this switch
+/// if the new address space reuses a previously cached address space ID.
 pub fn switch_address_space(addrsp: &AddressSpace) {
     let mut satp = satp::read();
     satp.set_ppn(addrsp.root_pa().ppn_all());
@@ -337,6 +390,7 @@ pub fn switch_address_space(addrsp: &AddressSpace) {
     unsafe { satp::write(satp) };
 }
 
-pub fn flush_address_space(asid: usize) {
-    riscv::asm::sfence_vma(asid, 0);
+/// Flushes the translation cache for all pages within the given address space.
+pub fn flush_address_space(addrsp: &AddressSpace) {
+    riscv::asm::sfence_vma(addrsp.id(), 0);
 }

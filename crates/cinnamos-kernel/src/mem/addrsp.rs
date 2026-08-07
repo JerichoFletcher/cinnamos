@@ -5,7 +5,7 @@ use spin::Mutex;
 
 use crate::{
     arch::{
-        self, MapError, PAGE_TABLE_DEPTH, PAddr, PTEFlags, PageSize, PageTable, UnmapError, VAddr,
+        self, MapError, PAGE_TABLE_DEPTH, PAddr, PTEFlags, PageLevel, PageTable, UnmapError, VAddr,
     },
     mem::{PhysFrameAlloc, physalloc::FrameAlloc, virt::VirtAlloc},
 };
@@ -143,7 +143,7 @@ impl<'a> AddressSpace<'a> {
         let pa_end = pa + size_bytes;
 
         while pa < pa_end {
-            let next_size = PageSize::select_size(va, pa, pa_end - pa)
+            let next_size = PageLevel::select_size(va, pa, pa_end - pa)
                 .ok_or(AddressSpaceError::AddressMisaligned(va, pa))?;
 
             let (_, allocs) = arch::map_page(self.root_ptr, va, pa, next_size, flags, &self.p2v)
@@ -195,7 +195,7 @@ impl<'a> AddressSpace<'a> {
         let pa_end = pa + size_bytes;
 
         while pa < pa_end {
-            let mut next_size = PageSize::select_size(va, pa, pa_end - pa)
+            let mut next_size = PageLevel::select_size(va, pa, pa_end - pa)
                 .ok_or(AddressSpaceError::AddressMisaligned(va, pa))?;
 
             match arch::map_page(self.root_ptr, va, pa, next_size, flags, &self.p2v).try_fold(

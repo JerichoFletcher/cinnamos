@@ -4,21 +4,24 @@ use spin::{Once, RwLock, RwLockReadGuard, rwlock::RwLockWriteGuard};
 
 use crate::hloc;
 
+/// The maximum number of interrupt numbers supported by the PLIC specification.
 pub const INTERRUPT_COUNT: usize = 1024;
+/// The maximum number of PLIC contexts supported by the PLIC specification.
 pub const MAX_PLIC_CONTEXT: usize = 15872;
 
 const OFFSET_INTERRUPT_PRIORITY: usize  = 0x000000;
 const OFFSET_INTERRUPT_ENABLE: usize    = 0x002000;
 const OFFSET_INTERRUPT_CONTEXT: usize   = 0x200000;
-
 const STRIDE_INTERRUPT_CONTEXT: usize   = 0x001000;
 
+/// Corresponds to a PLIC context register.
 #[repr(C)]
 struct PlicContext {
     priority_threshold: u32,
     irq_claim_complete: u32,
 }
 
+/// A memory-mapped PLIC driver.
 #[derive(Debug)]
 pub struct Plic {
     base_addr: *mut u32,
@@ -42,6 +45,9 @@ impl Plic {
         }
     }
 
+    /// Sets the global priority for an interrupt source. A pending interrupt for this
+    /// source will raise an external interrupt on [contexts](PlicContext) with a
+    /// [threshold](PlicContext::priority_threshold) equal or less than `priority`.
     pub fn set_priority(&mut self, source: u16, priority: u32) {
         debug_assert!((1..INTERRUPT_COUNT as u16).contains(&source));
         unsafe {
@@ -53,6 +59,9 @@ impl Plic {
         }
     }
 
+    /// Enables or disables interrupts from a source. Interrupts will only be raised for a
+    /// [context](PlicContext) if it is enabled and assigned a priority equal or greater
+    /// than its [priority threshold](PlicContext::priority_threshold).
     pub fn set_enabled(&mut self, source: u16, hid: usize, enabled: bool) {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         debug_assert!((1..INTERRUPT_COUNT as u16).contains(&source));
@@ -73,6 +82,7 @@ impl Plic {
         }
     }
 
+    /// Sets the minimum priority for interrupts that can be taken by this hart's S-mode context.
     pub fn set_threshold(&mut self, hid: usize, threshold: u32) {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         unsafe {
@@ -81,6 +91,7 @@ impl Plic {
         }
     }
 
+    /// `hid` must be equal to the current hart's ID.
     fn claim_irq(&self, hid: usize) -> u16 {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         debug_assert_eq!(
@@ -96,6 +107,7 @@ impl Plic {
         }
     }
 
+    /// `hid` must be equal to the current hart's ID.
     fn complete_irq(&self, hid: usize, irq: NonZero<u16>) {
         debug_assert!(hid < (MAX_PLIC_CONTEXT / 2));
         debug_assert_eq!(
@@ -123,11 +135,19 @@ impl Plic {
     }
 }
 
+// Safety: base_addr is mapped to a PLIC MMIO region, which is valid for all harts
 unsafe impl Send for Plic {}
+// Safety: All &self accesses are required to be hart-exclusive
+// In particular, hid must be equal to the current hart's ID
 unsafe impl Sync for Plic {}
 
 static PLIC: Once<RwLock<Plic>> = Once::new();
 
+/// Represents a PLIC IRQ claim. IRQs under the same ID will be disabled for as long as
+/// a claim guard is active, and a claim will be completed when this guard is dropped.
+///
+/// A `PlicIrqClaim` must remain active for as long as an interrupt is served, and it
+/// should be dropped when its corresponding interrupt service is complete.
 #[derive(Debug)]
 pub struct PlicIrqClaim {
     hid: usize,
@@ -136,6 +156,7 @@ pub struct PlicIrqClaim {
 }
 
 impl PlicIrqClaim {
+    /// Gets the ID of the interrupt being served.
     pub const fn irq_id(&self) -> NonZero<u16> {
         self.irq_id
     }
@@ -159,11 +180,20 @@ pub fn get_plic_mut<'a>() -> RwLockWriteGuard<'a, Plic> {
     PLIC.get().expect("PLIC used before init").write()
 }
 
-pub fn init(base_addr: NonNull<u8>) {
+/// Initializes the PLIC driver.
+///
+/// # Safety
+/// `base_addr` must be the base address of a memory-mapped PLIC region.
+pub unsafe fn init(base_addr: NonNull<u8>) {
     PLIC.call_once(|| unsafe { RwLock::new(Plic::new(base_addr.as_ptr().cast())) });
 }
 
-pub fn claim_irq(hid: usize) -> Option<PlicIrqClaim> {
+/// Claims an interrupt from the current hart context. If no interrupts are pending and
+/// claimable, this function will return [`None`](None) instead.
+///
+/// # Safety
+/// `hid` must be equal to the current hart's ID.
+pub unsafe fn claim_irq(hid: usize) -> Option<PlicIrqClaim> {
     let irq = get_plic().claim_irq(hid);
     Some(PlicIrqClaim {
         hid,

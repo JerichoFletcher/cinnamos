@@ -61,7 +61,7 @@ impl<T, const N: usize> BoundedQueue<T, N> {
         Ok(())
     }
 
-    /// Returns the dequeued item if it exists, otherwise returns [None].
+    /// Returns the dequeued item if it exists, otherwise returns [`None`](None).
     pub fn dequeue(&self) -> Option<T> {
         let mut rsv = self.dequeue_rsv.load(Ordering::Relaxed);
         let mut slot_cell;

@@ -76,18 +76,17 @@ static TASK_ALLOC: SlabAllocator<4, Task> = SlabAllocator::new();
 /// and can be safely [scheduled](crate::sched::schedule) directly.
 ///
 /// # Safety
-/// `entry` must point to an executable address (e.g. a function).
+/// `entry` must point to executable code (e.g. a function or user task entry point).
 pub unsafe fn new_kernel_task(entry: *const ()) -> Option<SlabBox<Task>> {
     let mut task = TASK_ALLOC.alloc(Task::new_kernel()?)?;
     let task_sp = task.tcb().task_stack_virt.end_addr();
 
-    let mut stack = task.build_stack();
     // Safety: The allocated kernel stack fits the fabricated stack
     unsafe {
-        stack
+        task.build_stack()
+            // Safety: entry points to executable code, and task_sp points to the task's virtual stack
             .push(arch::create_init_trap_frame(entry, task_sp))
             .push(arch::create_init_context());
     }
-    stack.finish();
     Some(task)
 }
