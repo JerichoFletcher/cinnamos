@@ -16,14 +16,12 @@ use crate::{
     *,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PAllocError {
-    AllocatorUninitialized,
-}
-
+/// A physical frame allocation.
 #[derive(Debug)]
 pub enum FrameAlloc {
+    /// This allocation comes from the bump allocator.
     BumpAlloc((PAddr, usize)),
+    /// This allocation comes from the dedicated buddy allocator.
     BuddyAlloc(BuddyFrameAlloc),
 }
 
@@ -62,6 +60,8 @@ enum SendAllocator {
 }
 
 impl SendAllocator {
+    /// Allocates a number of physical frames.
+    /// If allocation fails, this function returns [`None`].
     fn alloc(&self, frame_count: usize) -> Option<FrameAlloc> {
         match self {
             Self::Bump => mem::alloc::bump::alloc_frame(frame_count)
@@ -70,9 +70,8 @@ impl SendAllocator {
         }
     }
 
-    /// # Safety
-    /// `alloc` must be an allocation from the currently active allocator.
-    unsafe fn dealloc(&self, handle: &mut FrameAlloc) {
+    /// Deallocates a previously created physical frame allocation.
+    fn dealloc(&self, handle: &mut FrameAlloc) {
         match self {
             Self::Bump => (),
             Self::Buddy(alloc) => {
@@ -84,11 +83,12 @@ impl SendAllocator {
     }
 }
 
-unsafe impl Sync for SendAllocator {}
-
 static ALLOCATOR: RwLock<SendAllocator> = RwLock::new(SendAllocator::Bump);
 
-/// Should only be called once on higher-half phase
+/// Initializes the buddy allocator. This function scans the devicetree for usable memory regions
+/// and adds them to the allocator.
+///
+/// Should only be called once on higher-half phase.
 pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
     let (mut usable_regs, _) = devicetree::get_region_slices(
         fdt,
@@ -115,7 +115,10 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
     *ALLOCATOR.write() = SendAllocator::Buddy(alloc);
 }
 
-/// Only adds region on bump allocator
+/// Adds a memory region to the frame allocator.
+///
+/// This function only adds the region when the buddy allocator is initialized.
+/// Otherwise, it does nothing.
 pub fn add_region(reg: &SizedMemoryRegion) {
     let mut alloc = ALLOCATOR.write();
     if let SendAllocator::Buddy(alloc) = &mut *alloc {
@@ -123,6 +126,8 @@ pub fn add_region(reg: &SizedMemoryRegion) {
     }
 }
 
+/// Requests a number of physical frames to be allocated.
+/// If allocation fails, this function returns [`None`].
 pub fn alloc(frame_count: usize) -> Option<FrameAlloc> {
     let a = ALLOCATOR.read().alloc(frame_count);
     match &a {
@@ -136,8 +141,8 @@ pub fn alloc(frame_count: usize) -> Option<FrameAlloc> {
     a
 }
 
+/// Releases a physical frame allocation.
 fn dealloc(handle: &mut FrameAlloc) {
     let a = ALLOCATOR.read();
-    // Safety: Bump-backed frames are never deallocated
-    unsafe { a.dealloc(handle) };
+    a.dealloc(handle);
 }

@@ -2,7 +2,7 @@ use uart::*;
 
 use crate::io::{Read, Write};
 
-/// An [`io::Read`](`Read`) reader for reading bytes out of a memory-mapped UART device. 
+/// An [`io::Read`](`Read`) reader for reading bytes out of a memory-mapped UART device.
 pub struct UartReceiveRead<'a>(&'a mut Uart<address::MmioAddress, Data>);
 
 impl<'a> UartReceiveRead<'a> {

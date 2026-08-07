@@ -51,18 +51,8 @@ impl Task {
 
         let kernel_stack_virt = mem::vmalloc::alloc_guarded(3, 1)?;
         let task_stack_virt = mem::vmalloc::alloc_guarded(31, 1)?;
-        mem::vms::map(
-            &kernel_stack_virt,
-            &kernel_stack_phys,
-            PTEFlags::GLOBAL | PTEFlags::RW,
-        )
-        .ok()?;
-        mem::vms::map(
-            &task_stack_virt,
-            &task_stack_phys,
-            PTEFlags::GLOBAL | PTEFlags::RW,
-        )
-        .ok()?;
+        mem::vms::map(&kernel_stack_virt, &kernel_stack_phys, PTEFlags::GRW).ok()?;
+        mem::vms::map(&task_stack_virt, &task_stack_phys, PTEFlags::GRW).ok()?;
 
         let sp = kernel_stack_virt.end_addr();
         let tcb = TaskControlBlock {

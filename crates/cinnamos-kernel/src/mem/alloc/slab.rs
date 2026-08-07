@@ -94,7 +94,7 @@ impl<T> Slab<T> {
             virt.page_count(),
             "Mismatched physical and virtual allocation size"
         );
-        let _ = mem::vms::map(&virt, &phys, PTEFlags::GLOBAL | PTEFlags::RW);
+        let _ = mem::vms::map(&virt, &phys, PTEFlags::GRW);
 
         let total = virt.size() / size_of::<T>();
         let bitmap = alloc::vec![0; 1 + total / 64];

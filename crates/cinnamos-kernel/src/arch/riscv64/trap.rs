@@ -1,7 +1,11 @@
 use cinnamos_abi::{Syscall, SyscallError};
 use riscv::{
-    interrupt::{Exception, Interrupt, Trap}, register::{
-        scause, sscratch, sstatus::{self, Sstatus}, stval, stvec::{self, Stvec, TrapMode},
+    interrupt::{Exception, Interrupt, Trap},
+    register::{
+        sscratch,
+        sstatus::{self, Sstatus},
+        stval,
+        stvec::{self, Stvec, TrapMode},
     },
 };
 
@@ -107,54 +111,49 @@ pub fn create_init_context() -> Context {
 #[unsafe(no_mangle)]
 extern "C" fn trap_handler(frame: &mut TrapFrame) {
     let mut hloc = hloc::get();
-    let scause = scause::read();
-    let stval = stval::read();
-
-    let tcause = scause
-        .cause()
-        .try_into::<Interrupt, Exception>()
-        .expect("Invalid trap cause");
+    let tcause = riscv::interrupt::cause();
+    let tval = stval::read();
 
     match tcause {
         Trap::Exception(Exception::InstructionMisaligned) => panic!(
             "[at {:#016x}] Instruction misaligned {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::InstructionFault) => panic!(
             "[at {:#016x}] Instruction fault {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::IllegalInstruction) => panic!(
             "[at {:#016x}] Illegal instruction {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::LoadMisaligned) => panic!(
             "[at {:#016x}] Load misaligned {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::LoadFault) => panic!(
             "[at {:#016x}] Load fault {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::StoreMisaligned) => panic!(
             "[at {:#016x}] Store misaligned {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::StoreFault) => panic!(
             "[at {:#016x}] Store fault {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::InstructionPageFault) => panic!(
             "[at {:#016x}] Instruction page fault {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::LoadPageFault) => panic!(
             "[at {:#016x}] Load page fault {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::StorePageFault) => panic!(
             "[at {:#016x}] Store page fault {:#016x}",
-            frame.sepc, stval
+            frame.sepc, tval
         ),
         Trap::Exception(Exception::UserEnvCall) => {
             // Safety: Syscalls are invoked from the userspace using the call stubs generated from
@@ -183,12 +182,12 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
         Trap::Interrupt(Interrupt::SupervisorSoft) => {
             log::trace!(
                 "[at {:#016x}] Software interrupt {:#016x}",
-                frame.sepc, stval
+                frame.sepc, tval
             );
         }
         _ => panic!(
             "[at {:#016x}] Unhandled trap {:?} {:#016x}",
-            frame.sepc, tcause, stval
+            frame.sepc, tcause, tval
         ),
     }
 }

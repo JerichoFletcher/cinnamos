@@ -3,7 +3,7 @@ use core::{
     ops::{Add, Sub},
 };
 
-use crate::mem::PAGE_SIZE;
+use crate::{arch::{PageLevel, VAddr, sv48::PT_MAX_ENTRIES}, mem::PAGE_SIZE};
 
 /// Represents a physical address. A pointer should not be safely derived from this address directly
 /// unless it has been made sure that the resulting pointer is properly mapped.
@@ -21,6 +21,23 @@ impl PAddr {
         Self(addr)
     }
 
+    /// Creates a physical address from known physical page numbers, as well as an offset.
+    #[inline]
+    pub const fn from_parts(ppn: [usize; 4], page_offset: usize) -> Self {
+        debug_assert!(ppn[0] < PT_MAX_ENTRIES);
+        debug_assert!(ppn[1] < PT_MAX_ENTRIES);
+        debug_assert!(ppn[2] < PT_MAX_ENTRIES);
+        debug_assert!(ppn[3] < PT_MAX_ENTRIES);
+
+        let ppn0 = (ppn[0] & 0x1ff) << 12;
+        let ppn1 = (ppn[1] & 0x1ff) << 21;
+        let ppn2 = (ppn[2] & 0x1ff) << 30;
+        let ppn3 = (ppn[3] & 0x1ff) << 39;
+        let page_offset = page_offset & 0xfff;
+
+        Self(ppn3 | ppn2 | ppn1 | ppn0 | page_offset)
+    }
+
     /// Creates a physical address from a pointer.
     #[inline]
     pub fn from_ptr<T: ?Sized>(ptr: *const T) -> Self {
@@ -31,6 +48,17 @@ impl PAddr {
     #[inline]
     pub const fn addr(&self) -> usize {
         self.0
+    }
+
+    /// Gets the physical page numbers of the physical page containing this address.
+    #[inline]
+    pub const fn ppn(&self) -> [usize; 4] {
+        [
+            (self.0 >> 12) & 0x1ff,
+            (self.0 >> 21) & 0x1ff,
+            (self.0 >> 30) & 0x1ff,
+            (self.0 >> 39) & 0x1ffff,
+        ]
     }
 
     /// Gets the aggregated physical page number of the physical page containing this address.
@@ -67,6 +95,23 @@ impl PAddr {
     #[inline]
     pub const fn align_to_next_page(&self) -> Self {
         self.align_up(PAGE_SIZE)
+    }
+
+    /// Computes the effective physical address from the combination of the base physical address
+    /// and the effective offset, which is computed from the given virtual address and the [`PageLevel`]
+    /// at which the cutoff should happen.
+    pub const fn compute_phys(&self, va: &VAddr, level: Option<PageLevel>) -> Self {
+        let offset = va.addr() % PAGE_SIZE;
+        let [ppn0, ppn1, ppn2, ppn3] = self.ppn();
+        let [vpn0, vpn1, vpn2, vpn3] = va.vpn();
+        let ppns = match level {
+            None                            => [ppn0, ppn1, ppn2, ppn3],
+            Some(PageLevel::Page4K)         => [vpn0, ppn1, ppn2, ppn3],
+            Some(PageLevel::Megapage2M)     => [vpn0, vpn1, ppn2, ppn3],
+            Some(PageLevel::Gigapage1G)     => [vpn0, vpn1, vpn2, ppn3],
+            Some(PageLevel::Terapage512G)   => [vpn0, vpn1, vpn2, vpn3],
+        };
+        Self::from_parts(ppns, offset)
     }
 }
 

@@ -3,7 +3,7 @@ use core::{
     sync::atomic::{AtomicPtr, Ordering},
 };
 
-use riscv::register::{sie, sstatus};
+use riscv::{interrupt::Interrupt, register::sstatus};
 
 use crate::arch::device::plic::INTERRUPT_COUNT;
 
@@ -59,12 +59,23 @@ pub fn dispatch_irq(irq: NonZero<u16>) -> Result<(), InterruptError> {
 }
 
 /// Enables general interrupts, including timers, software interrupts, and external interrupts.
+#[inline]
 pub fn enable_interrupts() {
-    let mut sie = sie::read();
-    sie.set_stimer(true);
-    sie.set_ssoft(true);
-    sie.set_sext(true);
-    unsafe { sie::write(sie) };
+    interrupt_free(|| {
+        // Safety: All interrupts are enabled while global interrupt is disabled
+        unsafe { riscv::interrupt::enable_interrupt(Interrupt::SupervisorSoft) };
+        unsafe { riscv::interrupt::enable_interrupt(Interrupt::SupervisorTimer) };
+        unsafe { riscv::interrupt::enable_interrupt(Interrupt::SupervisorExternal) };
+    })
+}
+
+/// Executes a closure with interrupts disabled for the current hart.
+#[inline]
+pub fn interrupt_free<T>(f: impl FnOnce() -> T) -> T {
+    let irq = IrqState::save_disable();
+    let val = f();
+    irq.restore();
+    val
 }
 
 /// Encapsulates a saved IRQ state of a hart.
@@ -75,18 +86,27 @@ pub struct IrqState {
 
 impl IrqState {
     /// Saves the current interrupt state and disables interrupts (if it is currently enabled).
+    ///
+    /// When paired with a [`restore`](Self::restore), this creates a single-hart critical section
+    /// where execution cannot be preempted by interrupts. Re-enabling interrupts within a critical
+    /// section is unsafe and can lead to breaking the critical section.
+    #[inline]
     pub fn save_disable() -> Self {
         let sstatus = sstatus::read();
-        unsafe { sstatus::clear_sie() };
+        riscv::interrupt::disable();
         Self { enabled: sstatus.sie() }
     }
 
     /// Consumes and restores the previously saved interrupt state.
+    ///
+    /// When paired with a [`save_disable`](Self::save_disable), this creates a single-hart critical
+    /// section where execution cannot be preempted by interrupts. Re-enabling interrupts within a
+    /// critical section is unsafe and can lead to breaking the critical section.
+    #[inline]
     pub fn restore(self) {
         if self.enabled {
-            unsafe { sstatus::set_sie() };
-        } else {
-            unsafe { sstatus::clear_sie() };
+            // Safety: This marks the end of the critical section; thus, re-enabling interrupts is safe
+            unsafe { riscv::interrupt::enable() };
         }
     }
 }

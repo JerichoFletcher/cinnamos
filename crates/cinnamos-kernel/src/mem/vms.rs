@@ -1,6 +1,5 @@
 use core::mem::MaybeUninit;
 
-use alloc::vec::Vec;
 use fdt::Fdt;
 use spin::RwLock;
 
@@ -11,11 +10,13 @@ use crate::{
         addrsp::{AddressSpace, AddressSpaceError},
         physalloc::FrameAlloc,
         virt::VirtAlloc,
+        vmalloc::PageAlloc,
     },
     sym::*,
     *,
 };
 
+/// Represents errors that might be raised during virtual memory manipulations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VmsError {
     FrameAllocFailed,
@@ -30,38 +31,52 @@ struct SendAddressSpace(AddressSpace<'static>);
 
 static ROOT_ADDRSP: RwLock<Option<SendAddressSpace>> = RwLock::new(None);
 
+/// Information about virtual memory settings present on the CPU.
 pub struct VirtualMemoryInfo {
     pub max_asid: usize,
 }
 
+/// A dynamic integer that is equal to the difference between a kernel-space virtual address and
+/// its physical address equivalent, relative to the current relocation.
+///
+/// In particular, in the early boot phase when the kernel is identity-relocated, then
+/// [`phys_to_kernel_dynslide`] is equal to `0`. After the kernel is relocated to higher-half space,
+/// this is equal to [`KERNEL_MAP_BASE`]`-`[`KERNEL_LOAD_BASE`].
 #[inline]
 pub fn phys_to_kernel_dynslide() -> usize {
     kernel_start_v().addr().wrapping_sub(KERNEL_LOAD_BASE)
 }
 
+/// The difference between a virtual kernel space address and its physical address equivalent.
 pub const PHYS_TO_KERNEL_SLIDE: usize = KERNEL_MAP_BASE - KERNEL_LOAD_BASE;
 
+/// Translates a physical address to virtual kernel space.
 #[inline]
 pub fn phys_to_kernel(pa: PAddr) -> VAddr {
     VAddr::new(pa.addr().wrapping_add(PHYS_TO_KERNEL_SLIDE))
 }
 
+/// Translates a virtual kernel space address to physical space.
 #[inline]
 pub fn kernel_to_phys(va: VAddr) -> PAddr {
     PAddr::new(va.addr().wrapping_sub(PHYS_TO_KERNEL_SLIDE))
 }
 
+/// Translates a physical address to direct map space.
 #[inline]
 pub fn phys_to_virt(pa: PAddr) -> VAddr {
     VAddr::new(pa.addr().wrapping_add(DIRECT_MAP_BASE))
 }
 
+/// Translates a direct map address to physical space.
 #[inline]
 pub fn virt_to_phys(va: VAddr) -> PAddr {
     PAddr::new(va.addr().wrapping_sub(DIRECT_MAP_BASE))
 }
 
-/// Should only be called once in early phase
+/// Initializes the kernel address space and creates the higher-half virtual map.
+///
+/// Should only be called once in early phase.
 pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
     if ROOT_ADDRSP.read().is_none() {
         let root_alloc = mem::physalloc::alloc(1).ok_or(VmsError::FrameAllocFailed)?;
@@ -69,16 +84,9 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
         // Safety: root_ptr exactly fits and is aligned to a page table
         let root_ptr = unsafe { PageTable::init(root_ptr.as_mut_unchecked()) };
         // Safety: root_ptr is derived from root_alloc and identity-mapped
-        let root_addrsp = unsafe {
-            AddressSpace::new(
-                0,
-                root_ptr,
-                root_alloc,
-                Vec::with_capacity(32),
-                &VAddr::identity,
-            )
-        }
-        .map_err(VmsError::AddressSpace)?;
+        let root_addrsp =
+            unsafe { AddressSpace::new(0, root_ptr, root_alloc, 32, &VAddr::identity) }
+                .map_err(VmsError::AddressSpace)?;
 
         log::debug!(
             "{:#016x} .. {:#016x} -> {:#016x} .. {:#016x} id-map text",
@@ -88,11 +96,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             text_end_p(),
         );
         root_addrsp
-            .map_raw(
+            .map_raw_relaxed(
                 VAddr::identity(text_start_p()),
                 text_start_p(),
                 text_size(),
-                PTEFlags::RX,
+                PTEFlags::GRX,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -104,11 +112,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             rodata_end_p(),
         );
         root_addrsp
-            .map_raw(
+            .map_raw_relaxed(
                 VAddr::identity(rodata_start_p()),
                 rodata_start_p(),
                 rodata_size(),
-                PTEFlags::READ,
+                PTEFlags::GR,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -120,11 +128,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             data_end_p(),
         );
         root_addrsp
-            .map_raw(
+            .map_raw_relaxed(
                 VAddr::identity(data_start_p()),
                 data_start_p(),
                 data_size(),
-                PTEFlags::RW,
+                PTEFlags::GRW,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -136,11 +144,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             kmem_end_p(),
         );
         root_addrsp
-            .map_raw(
+            .map_raw_relaxed(
                 VAddr::identity(kmem_start_p()),
                 kmem_start_p(),
                 kmem_size(),
-                PTEFlags::RW,
+                PTEFlags::GRW,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -152,11 +160,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             bump_heap_end_p(),
         );
         root_addrsp
-            .map_raw_skip_mapped(
+            .map_raw_relaxed(
                 VAddr::identity(bump_heap_start_p()),
                 bump_heap_start_p(),
                 bump_heap_size(),
-                PTEFlags::RW,
+                PTEFlags::GRW,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -168,11 +176,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             text_end_p(),
         );
         root_addrsp
-            .map_raw(
+            .map_raw_relaxed(
                 phys_to_kernel(text_start_p()),
                 text_start_p(),
                 text_size(),
-                PTEFlags::GLOBAL | PTEFlags::RX,
+                PTEFlags::GRX,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -184,11 +192,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             rodata_end_p(),
         );
         root_addrsp
-            .map_raw(
+            .map_raw_relaxed(
                 phys_to_kernel(rodata_start_p()),
                 rodata_start_p(),
                 rodata_size(),
-                PTEFlags::GLOBAL | PTEFlags::READ,
+                PTEFlags::GR,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -200,11 +208,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             data_end_p(),
         );
         root_addrsp
-            .map_raw(
+            .map_raw_relaxed(
                 phys_to_kernel(data_start_p()),
                 data_start_p(),
                 data_size(),
-                PTEFlags::GLOBAL | PTEFlags::RW,
+                PTEFlags::GRW,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -216,11 +224,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             kmem_end_p(),
         );
         root_addrsp
-            .map_raw(
+            .map_raw_relaxed(
                 phys_to_kernel(kmem_start_p()),
                 kmem_start_p(),
                 kmem_size(),
-                PTEFlags::GLOBAL | PTEFlags::RW,
+                PTEFlags::GRW,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -232,11 +240,11 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             bump_heap_end_p(),
         );
         root_addrsp
-            .map_raw(
+            .map_raw_relaxed(
                 phys_to_kernel(bump_heap_start_p()),
                 bump_heap_start_p(),
                 bump_heap_size(),
-                PTEFlags::GLOBAL | PTEFlags::RW,
+                PTEFlags::GRW,
             )
             .map_err(VmsError::AddressSpace)?;
 
@@ -278,12 +286,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                 pa_end,
             );
             root_addrsp
-                .map_raw(
-                    phys_to_virt(pa),
-                    pa,
-                    r.size,
-                    PTEFlags::GLOBAL | PTEFlags::RW,
-                )
+                .map_raw_relaxed(phys_to_virt(pa), pa, r.size.get(), PTEFlags::GRW)
                 .map_err(VmsError::AddressSpace)?;
         }
 
@@ -295,12 +298,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             dtb_pa + fdt.total_size(),
         );
         root_addrsp
-            .map_raw(
-                phys_to_virt(dtb_pa),
-                dtb_pa,
-                fdt.total_size(),
-                PTEFlags::GLOBAL | PTEFlags::READ,
-            )
+            .map_raw_relaxed(phys_to_virt(dtb_pa), dtb_pa, fdt.total_size(), PTEFlags::GR)
             .map_err(VmsError::AddressSpace)?;
 
         if let Some(soc) = fdt.find_node("/soc") {
@@ -320,12 +318,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                                 n.name,
                             );
                             root_addrsp
-                                .map_raw(
-                                    phys_to_virt(pa),
-                                    pa,
-                                    size,
-                                    PTEFlags::GLOBAL | PTEFlags::RW,
-                                )
+                                .map_raw_relaxed(phys_to_virt(pa), pa, size, PTEFlags::GRW)
                                 .map_err(VmsError::AddressSpace)?;
                         }
                     }
@@ -396,6 +389,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
         if g.is_none() {
             let max_asid = arch::get_max_asid();
             arch::switch_address_space(&root_addrsp);
+            arch::flush_address_space(&root_addrsp);
             *g = Some(SendAddressSpace(root_addrsp));
             Ok(VirtualMemoryInfo { max_asid })
         } else {
@@ -406,6 +400,8 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
     }
 }
 
+/// Remaps the kernel address space page tables to higher-half.
+///
 /// Should only be called once from the kernel address space.
 pub fn remap_tables() -> Result<(), VmsError> {
     log::debug!("remapping page tables");
@@ -413,15 +409,23 @@ pub fn remap_tables() -> Result<(), VmsError> {
     let root_addrsp = g.as_mut().ok_or(VmsError::RootTableUninitialized)?;
 
     // Safety: phys_to_virt maps to direct space which is always valid
-    unsafe {
+    let result = unsafe {
         root_addrsp
             .0
             .remap(&phys_to_virt)
             .map_err(VmsError::AddressSpace)
+    };
+    if result.is_ok() {
+        arch::flush_address_space(&root_addrsp.0);
     }
+    result
 }
 
-/// Should only be called once after [remapping the address space](remap_tables) and [initializing the heap](mem::heap::init_heap).
+/// Unmaps the lower-half portion of the kernel address space mapping.
+/// After this function is called, the entire
+///
+/// Should only be called once after [remapping the address space tables](remap_tables)
+/// and [initializing the heap](mem::heap::init_heap).
 pub fn uninit_identity_map() -> Result<(), VmsError> {
     let g = ROOT_ADDRSP.read();
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
@@ -432,26 +436,40 @@ pub fn uninit_identity_map() -> Result<(), VmsError> {
         kernel_start_p(),
         kernel_end_p()
     );
-    root_addrsp
+    let result = root_addrsp
         .0
         .unmap_raw(VAddr::identity(kernel_start_p()), kernel_size())
-        .map_err(VmsError::AddressSpace)
+        .map_err(VmsError::AddressSpace);
+    if result.is_ok() {
+        arch::flush_address_space(&root_addrsp.0);
+    }
+    result
 }
 
-pub fn map(virt: &impl VirtAlloc, phys: &FrameAlloc, flags: PTEFlags) -> Result<(), VmsError> {
+pub fn map(virt: &PageAlloc, phys: &FrameAlloc, flags: PTEFlags) -> Result<(), VmsError> {
     let g = ROOT_ADDRSP.read();
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
-    root_addrsp
+
+    let result = root_addrsp
         .0
         .map(virt, phys, flags)
-        .map_err(VmsError::AddressSpace)
+        .map_err(VmsError::AddressSpace);
+    if result.is_ok() {
+        arch::flush_address_space_at(&root_addrsp.0, virt.start_addr());
+    }
+    result
 }
 
 pub fn map_raw(va: VAddr, pa: PAddr, size_bytes: usize, flags: PTEFlags) -> Result<(), VmsError> {
     let g = ROOT_ADDRSP.read();
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
-    root_addrsp
+
+    let result = root_addrsp
         .0
-        .map_raw(va, pa, size_bytes, flags)
-        .map_err(VmsError::AddressSpace)
+        .map_raw_relaxed(va, pa, size_bytes, flags)
+        .map_err(VmsError::AddressSpace);
+    if result.is_ok() {
+        arch::flush_address_space_at(&root_addrsp.0, va);
+    }
+    result
 }

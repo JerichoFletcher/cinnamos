@@ -91,7 +91,7 @@ impl PageLevel {
 
 bitflags! {
     /// Various flags that can be associated with a [`PTE`](PTE).
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct PTEFlags: u8 {
         /// Marks a [`PTE`] as representing a valid mapping.
         const VALID     = 0x01;
@@ -116,6 +116,35 @@ bitflags! {
         const RX        = 0x02 | 0x08;
         /// Marks a [`PTE`] mapping as readable, writable, and executable.
         const RWX       = 0x02 | 0x04 | 0x08;
+
+        /// Marks a [`PTE`] mapping as global readable.
+        const GR        = 0x02 | 0x20;
+        /// Marks a [`PTE`] mapping as global readable and writable.
+        const GRW       = 0x02 | 0x04 | 0x20;
+        /// Marks a [`PTE`] mapping as global readable and executable.
+        const GRX       = 0x02 | 0x08 | 0x20;
+        /// Marks a [`PTE`] mapping as global readable, writable, and executable.
+        const GRWX      = 0x02 | 0x04 | 0x08 | 0x20;
+
+        /// A mask that is used to compare if two [`PTE`] entries have matching access modifier and privileges.
+        /// Equals to `RWXUG`.
+        const COMPARE_MASK = 0x02 | 0x04 | 0x08 | 0x10 | 0x20;
+    }
+}
+
+impl PTEFlags {
+    /// Gets the compare mask of the field.
+    ///
+    /// This includes all access and privilege flags that matter in terms of comparation with other fields.
+    #[inline]
+    pub const fn get_mask(&self) -> Self {
+        self.intersection(Self::COMPARE_MASK)
+    }
+
+    /// Returns `true` if two fields have matching access and privilege flags.
+    #[inline]
+    pub const fn matches(&self, other: &Self) -> bool {
+        self.get_mask().bits() == other.get_mask().bits()
     }
 }
 
@@ -224,7 +253,7 @@ pub enum MapError {
     /// The virtual or physical address is not aligned to the requested level.
     Misaligned,
     /// The virtual address is already mapped to a physical address at the given level.
-    AlreadyMapped(VAddr, PAddr, PageLevel),
+    AlreadyMapped(PAddr, PageLevel, PTEFlags),
 }
 
 /// Represents possible errors that might occur when unmapping a virtual address.
@@ -301,7 +330,8 @@ pub fn map_page(
 
                 if *curr_level == level {
                     if pte.is_valid() {
-                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr(), *curr_level));
+                        let mapped_pa = pte.phys_addr().compute_phys(&va, Some(level));
+                        yield Err(MapError::AlreadyMapped(mapped_pa, *curr_level, pte.flags()));
                         return;
                     }
                     pte.set_leaf(pa, level, flags);
@@ -329,7 +359,8 @@ pub fn map_page(
                             }
                         }
                     } else {
-                        yield Err(MapError::AlreadyMapped(va, pte.phys_addr(), *curr_level));
+                        let mapped_pa = pte.phys_addr().compute_phys(&va, Some(level));
+                        yield Err(MapError::AlreadyMapped(mapped_pa, *curr_level, pte.flags()));
                         return;
                     }
                 }
@@ -393,4 +424,9 @@ pub fn switch_address_space(addrsp: &AddressSpace) {
 /// Flushes the translation cache for all pages within the given address space.
 pub fn flush_address_space(addrsp: &AddressSpace) {
     riscv::asm::sfence_vma(addrsp.id(), 0);
+}
+
+/// Flushes the translation cache for a page within the given address space.
+pub fn flush_address_space_at(addrsp: &AddressSpace, at: VAddr) {
+    riscv::asm::sfence_vma(addrsp.id(), at.addr());
 }

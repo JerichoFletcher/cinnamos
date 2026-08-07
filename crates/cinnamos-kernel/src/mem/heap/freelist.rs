@@ -88,12 +88,7 @@ impl FreeListHeap {
                 let base_va = VAddr::new(next_va);
                 let end_va = base_va + alloc_size;
 
-                match vms::map_raw(
-                    base_va,
-                    alloc.start_addr(),
-                    alloc_size,
-                    PTEFlags::GLOBAL | PTEFlags::RW,
-                ) {
+                match vms::map_raw(base_va, alloc.start_addr(), alloc_size, PTEFlags::GRW) {
                     Ok(()) => {
                         let mut next_va = VAddr::NULL;
                         let mut prev_va = end_va - size;

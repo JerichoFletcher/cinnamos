@@ -158,7 +158,7 @@ impl BuddyFrameAllocator {
     pub fn add_region(&mut self, reg: &SizedMemoryRegion) {
         // TODO: This algorithm still has a wrong behavior if R has differing size and alignment order
         // An iterative filling algorithm should be considered
-        let size_order = BuddyRegion::order_of_size(reg.size);
+        let size_order = BuddyRegion::order_of_size(reg.size.get());
         let align_order = BuddyRegion::max_align_order_of(reg.base);
 
         if size_order != align_order {
@@ -304,3 +304,6 @@ impl super::PhysFrameAllocator<BuddyFrameAlloc> for BuddyFrameAllocator {
         }
     }
 }
+
+// Safety: All interior mutations are synchronized with a lock
+unsafe impl Sync for BuddyFrameAllocator {}
