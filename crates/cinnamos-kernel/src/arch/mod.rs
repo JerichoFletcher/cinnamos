@@ -11,7 +11,9 @@ cfg_select! {
         pub const HEAP_MAP_BASE: usize      = 0xffff_ff00_0000_0000;
 
         pub use riscv64::{
+            ElfDyn,
             wait_for_interrupt,
+            get_dyn,
             init,
             init_interrupts,
             init_higher_half,

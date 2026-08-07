@@ -1,74 +1,49 @@
-use crate::mem::vms::PHYS_TO_KERNEL_SLIDE;
+use elf::{
+    abi::{DT_NULL, DT_RELA, DT_RELAENT, DT_RELASZ, R_RISCV_RELATIVE},
+    relocation::Elf64_Rela,
+};
 
-#[repr(C)]
-pub struct Elf64Dyn {
-    pub tag: u64,
-    pub val: u64,
-}
-
-pub const DT_NULL: u64 = 0;
-pub const DT_RELA: u64 = 7;
-pub const DT_RELASZ: u64 = 8;
-pub const DT_RELAENT: u64 = 9;
-
-#[repr(C)]
-pub struct Elf64Rela {
-    pub offset: u64,
-    pub info: u64,
-    pub addend: i64,
-}
-
-pub const R_RISCV_RELATIVE: u64 = 3;
+use crate::{arch, mem::vms::PHYS_TO_KERNEL_SLIDE};
 
 #[inline(always)]
-fn relocate_entry(rela: &Elf64Rela) {
-    let kernel_to_phys_slide = PHYS_TO_KERNEL_SLIDE.wrapping_neg();
-    let rela_type = rela.info & 0xffffffff;
-
-    match rela_type {
-        R_RISCV_RELATIVE => {
-            let target = (rela.offset as usize).wrapping_add(kernel_to_phys_slide) as *mut usize;
-            unsafe { *target = (rela.addend as usize).wrapping_add(kernel_to_phys_slide) };
-        }
-        _ => (),
+fn relocate_entry(rela: &Elf64_Rela) {
+    let rela_type = (rela.r_info & 0xffffffff) as u32;
+    if rela_type == R_RISCV_RELATIVE {
+        let target = (rela.r_offset as usize).wrapping_sub(PHYS_TO_KERNEL_SLIDE) as *mut usize;
+        unsafe { *target = (rela.r_addend as usize).wrapping_sub(PHYS_TO_KERNEL_SLIDE) };
     }
 }
 
 #[inline(always)]
-unsafe fn slide_entry(rela: &Elf64Rela, slide: usize) {
-    let rela_type = rela.info & 0xffffffff;
-    match rela_type {
-        R_RISCV_RELATIVE => {
-            let target = rela.offset as *mut usize;
-            unsafe {
-                let paddr = *target;
-                *target = paddr + slide;
-            }
+unsafe fn slide_entry(rela: &Elf64_Rela, slide: usize) {
+    let rela_type = (rela.r_info & 0xffffffff) as u32;
+    if rela_type == R_RISCV_RELATIVE {
+        let target = rela.r_offset as *mut usize;
+        unsafe {
+            let paddr = *target;
+            *target = paddr + slide;
         }
-        _ => (),
     }
 }
 
-/// # Safety
-/// `dyn_ptr` must point to the `_DYNAMIC` symbol.
 #[inline(always)]
-pub unsafe fn relocate(dyn_ptr: *const Elf64Dyn) {
-    let mut rela_addr: *const Elf64Rela = core::ptr::null();
+pub fn relocate() {
+    let dyn_ptr = arch::get_dyn();
+    let mut rela_addr: *const Elf64_Rela = core::ptr::null();
     let mut rela_size = 0usize;
     let mut rela_ent_size = 0usize;
 
-    let kernel_to_phys_slide = PHYS_TO_KERNEL_SLIDE.wrapping_neg();
-
+    // Safety: All operations are safe given that dyn_ptr initially points to _DYNAMIC
     unsafe {
         let mut dyn_ptr = dyn_ptr;
-        while (*dyn_ptr).tag != DT_NULL {
-            match (*dyn_ptr).tag {
+        while (*dyn_ptr).d_tag != DT_NULL {
+            match (*dyn_ptr).d_tag {
                 DT_RELA => {
-                    rela_addr = ((*dyn_ptr).val as usize).wrapping_add(kernel_to_phys_slide)
-                        as *const Elf64Rela
+                    rela_addr = ((*dyn_ptr).d_un as usize).wrapping_sub(PHYS_TO_KERNEL_SLIDE)
+                        as *const Elf64_Rela
                 }
-                DT_RELASZ => rela_size = (*dyn_ptr).val as usize,
-                DT_RELAENT => rela_ent_size = (*dyn_ptr).val as usize,
+                DT_RELASZ => rela_size = (*dyn_ptr).d_un as usize,
+                DT_RELAENT => rela_ent_size = (*dyn_ptr).d_un as usize,
                 _ => (),
             }
             dyn_ptr = dyn_ptr.add(1);
@@ -77,7 +52,7 @@ pub unsafe fn relocate(dyn_ptr: *const Elf64Dyn) {
         if !rela_addr.is_null() && rela_size != 0 {
             let rela_ent_count = rela_size / rela_ent_size;
             for i in 0..rela_ent_count {
-                let rela = &*((rela_addr as usize + i * rela_ent_size) as *const Elf64Rela);
+                let rela = &*((rela_addr as usize + i * rela_ent_size) as *const Elf64_Rela);
                 relocate_entry(rela);
             }
         }
@@ -85,20 +60,23 @@ pub unsafe fn relocate(dyn_ptr: *const Elf64Dyn) {
 }
 
 /// # Safety
-/// `dyn_ptr` must point to the `_DYNAMIC` symbol.
+/// `slide` must be equal to the difference between a kernel virtual address
+/// and the physical address it is mapped to (the kernel space's slide amount).
 #[inline(always)]
-pub unsafe fn shift_relocation(dyn_ptr: *const Elf64Dyn, slide: usize) {
-    let mut rela_addr: *const Elf64Rela = core::ptr::null();
+pub unsafe fn shift_relocation(slide: usize) {
+    let dyn_ptr = arch::get_dyn();
+    let mut rela_addr: *const Elf64_Rela = core::ptr::null();
     let mut rela_size = 0usize;
     let mut rela_ent_size = 0usize;
 
+    // Safety: All operations are safe given that dyn_ptr initially points to _DYNAMIC
     unsafe {
         let mut dyn_ptr = dyn_ptr;
-        while (*dyn_ptr).tag != DT_NULL {
-            match (*dyn_ptr).tag {
-                DT_RELA => rela_addr = (*dyn_ptr).val as *const Elf64Rela,
-                DT_RELASZ => rela_size = (*dyn_ptr).val as usize,
-                DT_RELAENT => rela_ent_size = (*dyn_ptr).val as usize,
+        while (*dyn_ptr).d_tag != DT_NULL {
+            match (*dyn_ptr).d_tag {
+                DT_RELA => rela_addr = (*dyn_ptr).d_un as *const Elf64_Rela,
+                DT_RELASZ => rela_size = (*dyn_ptr).d_un as usize,
+                DT_RELAENT => rela_ent_size = (*dyn_ptr).d_un as usize,
                 _ => (),
             }
             dyn_ptr = dyn_ptr.add(1);
@@ -107,7 +85,7 @@ pub unsafe fn shift_relocation(dyn_ptr: *const Elf64Dyn, slide: usize) {
         if !rela_addr.is_null() && rela_size != 0 {
             let rela_ent_count = rela_size / rela_ent_size;
             for i in 0..rela_ent_count {
-                let rela = &*((rela_addr as usize + i * rela_ent_size) as *const Elf64Rela);
+                let rela = &*((rela_addr as usize + i * rela_ent_size) as *const Elf64_Rela);
                 slide_entry(rela, slide);
             }
         }

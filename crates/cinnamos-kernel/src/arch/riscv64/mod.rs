@@ -1,5 +1,6 @@
 use core::{arch::asm, ptr::NonNull};
 
+use elf::dynamic::Elf64_Dyn;
 use fdt::Fdt;
 
 use crate::{devicetree, mem};
@@ -21,9 +22,24 @@ pub mod vaddr;
 use paddr::PAddr;
 use vaddr::VAddr;
 
+pub type ElfDyn = Elf64_Dyn;
+
 #[inline]
 pub fn wait_for_interrupt() {
     riscv::asm::wfi();
+}
+
+#[inline(always)]
+pub fn get_dyn() -> *const ElfDyn {
+    let ptr: *const ElfDyn;
+    unsafe {
+        asm!(
+            "lla {}, _DYNAMIC",
+            out(reg) ptr,
+            options(nomem, nostack),
+        )
+    };
+    ptr
 }
 
 pub fn init() {

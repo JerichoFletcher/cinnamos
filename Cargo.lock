@@ -34,6 +34,7 @@ dependencies = [
  "bitflags",
  "cinnamos-abi",
  "cinnamos-kernel-macros",
+ "elf",
  "fdt",
  "log",
  "pastey",
@@ -60,6 +61,12 @@ name = "critical-section"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
+
+[[package]]
+name = "elf"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55dd888a213fc57e957abf2aa305ee3e8a28dbe05687a251f33b637cd46b0070"
 
 [[package]]
 name = "embedded-hal"

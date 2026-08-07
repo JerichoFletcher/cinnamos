@@ -18,24 +18,17 @@ use fdt::Fdt;
 /// # Safety
 /// - `hid` must be equal to the executing hart ID.
 /// - `dtb_ptr` must point to the physical location of a devicetree blob.
-/// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn kernel_relocate(
-    hid: usize,
-    dtb_ptr: *const u8,
-    dyn_ptr: *const rel::Elf64Dyn,
-) -> ! {
-    // Safety: dyn_ptr points to _DYNAMIC
-    unsafe { rel::relocate(dyn_ptr) };
+unsafe extern "C" fn kernel_relocate(hid: usize, dtb_ptr: *const u8) -> ! {
+    rel::relocate();
     // Safety: All arguments forwarded from parameters
-    unsafe { entry(hid, dtb_ptr, dyn_ptr) };
+    unsafe { entry(hid, dtb_ptr) };
 }
 
 /// # Safety
 /// - `hid` must be equal to the executing hart ID.
 /// - `dtb_ptr` must point to the physical location of a devicetree blob.
-/// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol.
-unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -> ! {
+unsafe fn entry(hid: usize, dtb_ptr: *const u8) -> ! {
     let trap_stack = mem::physalloc::alloc(2).expect("failed to allocate trap stack");
     let tsp = VAddr::identity(trap_stack.end_addr());
     core::mem::forget(trap_stack);
@@ -60,7 +53,7 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
 
     mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("failed to initialize VMS");
     klog::disable();
-    unsafe { relocate_jump_higher_half(entry_virt as *const (), hid, dtb_ptr, dyn_ptr) };
+    unsafe { relocate_jump_higher_half(entry_virt as *const (), hid, dtb_ptr) };
 }
 
 /// Shifts all relocations to virtual space and jumps to `entry`.
@@ -70,20 +63,13 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8, dyn_ptr: *const rel::Elf64Dyn) -
 /// - `entry` must point to the physical address of a function, which is mapped in kernel space.
 /// - `hid` must be equal to the executing hart ID.
 /// - `dtb_ptr` must point to the physical location of a devicetree blob, which is mapped in direct map space.
-/// - `dyn_ptr` must point to the physical `_DYNAMIC` symbol, which is mapped in kernel space.
-unsafe fn relocate_jump_higher_half(
-    entry: *const (),
-    hid: usize,
-    dtb_ptr: *const u8,
-    dyn_ptr: *const rel::Elf64Dyn,
-) -> ! {
+unsafe fn relocate_jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *const u8) -> ! {
     let ventry = mem::vms::phys_to_kernel(PAddr::from_ptr(entry));
     let vdtb = mem::vms::phys_to_virt(PAddr::from_ptr(dtb_ptr));
-    let vdyn = mem::vms::phys_to_kernel(PAddr::from_ptr(dyn_ptr));
     let vsp = mem::vms::phys_to_kernel(stack_end_p());
 
-    // Safety: vdyn is the virtual address of _DYNAMIC
-    unsafe { rel::shift_relocation(vdyn.as_ptr(), mem::vms::PHYS_TO_KERNEL_SLIDE) };
+    // Safety: _DYNAMIC is part of the kernel space
+    unsafe { rel::shift_relocation(mem::vms::PHYS_TO_KERNEL_SLIDE) };
     // Safety: Safety conditions are fulfilled in parameters
     unsafe { arch::jump_higher_half(ventry.as_ptr(), hid, vdtb, vsp) };
 }

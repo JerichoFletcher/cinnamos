@@ -12,5 +12,4 @@ _start:
 
 2:
     lla     sp, _stack_end
-    lla     a2, _DYNAMIC
     tail    kernel_relocate
