@@ -11,18 +11,20 @@ use crate::{
     sync::mutex_irqsave::MutexIrqSave,
 };
 
+/// A queue buffer for storing bytes read from the serial input.
 pub struct SerialInputBuffer {
     queue: BoundedQueue<u8, 256>,
 }
 
 impl SerialInputBuffer {
+    /// Pops a byte from the buffer, if any.
     fn read(&self) -> Option<u8> {
-        self.queue.dequeue()
+        self.queue.try_dequeue()
     }
 
-    /// Drops the byte if the queue is full.
+    /// Pushes a byte into the buffer. Drops the byte if the queue is full.
     fn write(&self, byte: u8) -> bool {
-        self.queue.enqueue(byte).is_ok()
+        self.queue.try_enqueue(byte).is_ok()
     }
 }
 
@@ -30,7 +32,9 @@ static SERIAL_INPUT_BUF: SerialInputBuffer = SerialInputBuffer {
     queue: BoundedQueue::new(),
 };
 
+/// A writer that targets the kernel's serial input.
 pub struct SerialInputWrite;
+
 impl Write for SerialInputWrite {
     type Error = ();
 
@@ -47,7 +51,9 @@ impl Write for SerialInputWrite {
     }
 }
 
+/// A reader that targets the kernel's serial input.
 pub struct SerialInputRead;
+
 impl Read for SerialInputRead {
     type Error = ();
 
@@ -65,9 +71,16 @@ impl Read for SerialInputRead {
 
 struct SendUart(Uart<address::MmioAddress, Data>);
 
+// Safety: The memory-mapped address is valid across harts
+unsafe impl Send for SendUart {}
+
 static IO_UART: MutexIrqSave<Option<SendUart>> = MutexIrqSave::new(None);
 
-pub fn init(base_addr: NonNull<u8>, irq_id: u16) {
+/// Initializes the serial input UART driver.
+///
+/// # Safety
+/// `base_addr` must be the base address of a memory-mapped UART region.
+pub unsafe fn init(base_addr: NonNull<u8>, irq_id: u16) {
     let mut drv = unsafe { <Uart<_, Data>>::new(address::MmioAddress::new(base_addr, 1)) };
     drv.write_fifo_control(
         FifoControl::ENABLE
@@ -84,6 +97,7 @@ pub fn init(base_addr: NonNull<u8>, irq_id: u16) {
     *IO_UART.lock() = Some(SendUart(drv));
 }
 
+/// Reads bytes from the UART receive register and inserts them into the input buffer.
 fn handle_uart_irq() {
     let mut g = IO_UART.lock();
     if let Some(drv) = g.as_mut() {
@@ -98,7 +112,9 @@ fn handle_uart_irq() {
     }
 }
 
+/// A writer that targets the kernel's serial output.
 pub struct SerialOutputWrite;
+
 impl fmt::Write for SerialOutputWrite {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let mut g = IO_UART.lock();

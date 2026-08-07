@@ -15,6 +15,7 @@ pub struct BoundedQueue<T, const N: usize> {
 }
 
 impl<T, const N: usize> BoundedQueue<T, N> {
+    /// Creates an empty queue.
     pub const fn new() -> Self {
         Self {
             enqueue_rsv: AtomicUsize::new(0),
@@ -24,8 +25,10 @@ impl<T, const N: usize> BoundedQueue<T, N> {
         }
     }
 
-    /// Returns [Ok] if `value` is successfully inserted. Otherwise, the original value is returned.
-    pub fn enqueue(&self, value: T) -> Result<(), T> {
+    /// Attempts to insert a value into the back of the queue.
+    ///
+    /// Returns [`Ok`] if `value` is successfully inserted. Otherwise, the original value is returned.
+    pub fn try_enqueue(&self, value: T) -> Result<(), T> {
         let mut rsv = self.enqueue_rsv.load(Ordering::Relaxed);
         let mut slot_cell;
         let mut slot_seq;
@@ -61,8 +64,10 @@ impl<T, const N: usize> BoundedQueue<T, N> {
         Ok(())
     }
 
-    /// Returns the dequeued item if it exists, otherwise returns [`None`](None).
-    pub fn dequeue(&self) -> Option<T> {
+    /// Attempts to take a value from the front of the queue.
+    ///
+    /// Returns the dequeued item if it exists, otherwise returns [`None`].
+    pub fn try_dequeue(&self) -> Option<T> {
         let mut rsv = self.dequeue_rsv.load(Ordering::Relaxed);
         let mut slot_cell;
         let mut slot_seq;
@@ -124,5 +129,5 @@ impl<T, const N: usize> Default for BoundedQueue<T, N> {
     }
 }
 
-unsafe impl<T: Send, const N: usize> Send for BoundedQueue<T, N> {}
+// Safety: Operations are synchronized using atomic operations
 unsafe impl<T: Sync, const N: usize> Sync for BoundedQueue<T, N> {}

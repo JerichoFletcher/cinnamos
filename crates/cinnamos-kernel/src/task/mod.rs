@@ -13,19 +13,27 @@ use crate::{
 
 pub mod proc;
 
+/// The state of a task.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskState {
+    /// The task is ready to be run.
     Ready,
+    /// The task is currently running.
     Running,
+    /// The task has been terminated and can be safely reaped.
     Stopped,
 }
 
+/// A container for states that affect how a task is executed.
 #[expect(unused)]
 #[derive(Debug)]
 pub struct TaskControlBlock {
+    /// The ID of this task.
     pub id: ThreadId,
+    /// The current state of this task.
     pub state: TaskState,
+    /// The remaining time budget of this task.
     pub time_quantum: usize,
 
     kernel_stack_phys: FrameAlloc,
@@ -36,6 +44,7 @@ pub struct TaskControlBlock {
 }
 
 impl Task {
+    /// Creates a new kernel task.
     fn new_kernel() -> Option<Self> {
         let kernel_stack_phys = mem::physalloc::alloc(3)?;
         let task_stack_phys = mem::physalloc::alloc(31)?;
@@ -72,6 +81,8 @@ impl Task {
 
 static TASK_ALLOC: SlabAllocator<4, Task> = SlabAllocator::new();
 
+/// Creates a new kernel task with the given entry point.
+///
 /// The returned [Task] already has an initialized call stack in its kernel context
 /// and can be safely [scheduled](crate::sched::schedule) directly.
 ///

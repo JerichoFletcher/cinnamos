@@ -7,11 +7,13 @@ use spin::mutex::{Mutex, MutexGuard};
 
 use crate::arch::IrqState;
 
+/// An augmentation of [`Mutex`] that also temporarily disables interrupts while a lock is held.
 pub struct MutexIrqSave<T: ?Sized, R = spin::Spin> {
     inner: Mutex<T, R>,
 }
 
 impl<T, R> MutexIrqSave<T, R> {
+    /// Creates a new [`MutexIrqSave`] wrapping `value`.
     #[inline(always)]
     pub const fn new(value: T) -> Self {
         Self {
@@ -21,6 +23,7 @@ impl<T, R> MutexIrqSave<T, R> {
 }
 
 impl<T: ?Sized, R: spin::RelaxStrategy> MutexIrqSave<T, R> {
+    /// Disables interrupts and locks the [`Mutex`], returning a guard.
     #[inline(always)]
     pub fn lock(&self) -> MutexIrqSaveGuard<'_, T, R> {
         let irq = IrqState::save_disable();
@@ -32,9 +35,13 @@ impl<T: ?Sized, R: spin::RelaxStrategy> MutexIrqSave<T, R> {
     }
 }
 
-unsafe impl<T: ?Sized, R> Send for MutexIrqSave<T, R> {}
-unsafe impl<T: ?Sized, R> Sync for MutexIrqSave<T, R> {}
+// Safety: Matches std::sync::Mutex
+unsafe impl<T: ?Sized + Send, R> Send for MutexIrqSave<T, R> {}
+// Safety: Matches std::sync::Mutex
+unsafe impl<T: ?Sized + Send, R> Sync for MutexIrqSave<T, R> {}
 
+/// A lock guard for a [`MutexIrqSave`].
+/// Allows access to the inner data using dereference.
 pub struct MutexIrqSaveGuard<'a, T: ?Sized + 'a, R = spin::Spin> {
     inner: ManuallyDrop<MutexGuard<'a, T, R>>,
     irq: Option<IrqState>,
@@ -65,5 +72,6 @@ impl<'a, T: ?Sized, R> DerefMut for MutexIrqSaveGuard<'a, T, R> {
     }
 }
 
+// Safety: Mutex lock guards are spinlock-synchronized mutable references
 unsafe impl<T: ?Sized, R> Sync for MutexIrqSaveGuard<'_, T, R> where for<'a> &'a mut T: Sync {}
 unsafe impl<T: ?Sized, R> Send for MutexIrqSaveGuard<'_, T, R> where for<'a> &'a mut T: Send {}

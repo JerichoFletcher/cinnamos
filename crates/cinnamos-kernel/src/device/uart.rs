@@ -2,9 +2,11 @@ use uart::*;
 
 use crate::io::{Read, Write};
 
+/// An [`io::Read`](`Read`) reader for reading bytes out of a memory-mapped UART device. 
 pub struct UartReceiveRead<'a>(&'a mut Uart<address::MmioAddress, Data>);
 
 impl<'a> UartReceiveRead<'a> {
+    /// Creates a reader on the given [`Uart`] driver.
     pub const fn new(drv: &'a mut Uart<address::MmioAddress, Data>) -> Self {
         Self(drv)
     }
@@ -28,9 +30,11 @@ impl Read for UartReceiveRead<'_> {
     }
 }
 
+/// An [`io::Write`](`Write`) writer for writing bytes into a memory-mapped UART device.
 pub struct UartTransmitWrite<'a>(&'a mut Uart<address::MmioAddress, Data>);
 
 impl<'a> UartTransmitWrite<'a> {
+    /// Creates a writer on the given [`Uart`] driver.
     pub const fn new(drv: &'a mut Uart<address::MmioAddress, Data>) -> Self {
         Self(drv)
     }

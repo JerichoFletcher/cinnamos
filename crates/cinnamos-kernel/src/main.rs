@@ -43,11 +43,14 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8) -> ! {
             .interrupts()
             .map(|mut c| c.next().unwrap_or(0))
             .expect("failed to get interrupt ID for UART");
-        io::serial::init(
-            // Safety: uart_reg does not have a null base address
-            unsafe { NonNull::new_unchecked(uart_reg.start_ptr().cast_mut()) },
-            irq_id as u16,
-        );
+
+        // Safety: uart_reg is a non-null address of the serial IO UART region
+        unsafe {
+            io::serial::init(
+                NonNull::new_unchecked(uart_reg.start_ptr().cast_mut()),
+                irq_id as u16,
+            )
+        }
     }
     klog::init();
 
@@ -89,10 +92,14 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
             .map(|mut c| c.next().unwrap_or(0))
             .expect("failed to get interrupt ID for UART");
         let pa = PAddr::from_ptr(uart_reg.start_ptr());
-        io::serial::init(
-            unsafe { NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()) },
-            irq_id as u16,
-        );
+
+        // Safety: uart_reg is a non-null address of the serial IO UART region
+        unsafe {
+            io::serial::init(
+                NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()),
+                irq_id as u16,
+            )
+        };
     }
     klog::enable();
     log::info!("higher-half entry");
