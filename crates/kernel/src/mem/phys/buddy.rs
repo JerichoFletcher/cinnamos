@@ -1,10 +1,10 @@
 use core::num::NonZero;
 
 use alloc::collections::linked_list::LinkedList;
-use spin::RwLock;
-use structs::buddy::{
+use cinnamos_structs::buddy::{
     BlockIndex, BuddyAllocator, FlatArray, bitmap_buf_size, next_buf_size, order_of,
 };
+use spin::RwLock;
 
 use crate::{
     arch::PAddr,
@@ -67,10 +67,12 @@ impl<'a> BuddyRegion<'a> {
 
         #[cfg(debug_assertions)] region: SizedMemoryRegion,
     ) -> Self {
+        let align_order = Self::max_align_order_of(base);
         assert!(
-            Self::max_align_order_of(base) >= order,
-            "Base address not aligned: {:016x}, order {}",
-            base.addr(),
+            align_order >= order,
+            "Base address not aligned: {:#016x}, ord of align={} vs. exp={}",
+            base,
+            align_order,
             order
         );
 
@@ -151,11 +153,16 @@ impl<'a> BuddyRegion<'a> {
     }
 
     #[inline]
-    const fn order_of_size(size: usize) -> usize {
+    const fn size_order(size: usize) -> usize {
         if size == 0 {
             return 0;
         }
         order_of((size / PAGE_SIZE) as _)
+    }
+
+    #[inline]
+    fn size_fit_order(size: usize) -> usize {
+        Self::size_order(size.next_power_of_two())
     }
 }
 
@@ -181,31 +188,34 @@ impl<'a> BuddyFrameAllocator<'a> {
         #[cfg(debug_assertions)]
         {
             if let Some(r) = self.regions.iter().find(|r| r.region.intersects(reg)) {
-                panic!("region {:?} intersects with existing region {:?}", reg, r,);
+                panic!(
+                    "region {:#016x} .. {:#016x} intersects with existing region {:#016x} .. {:#016x}",
+                    reg.base,
+                    reg.end(),
+                    r.region.base,
+                    r.region.end(),
+                );
             }
         }
 
-        // TODO: This algorithm still has a wrong behavior if R has differing size and alignment order
-        // An iterative filling algorithm should be considered
-        let size_order = BuddyRegion::order_of_size(reg.size.get());
+        let size_order = BuddyRegion::size_fit_order(reg.size.get());
         let align_order = BuddyRegion::max_align_order_of(reg.base);
 
         if size_order != align_order {
             // Base address alignment max order doesn't match max order for region size
             // Split the region into L and R with max-order-aligned base addresses
-            let r_base = PAddr::new(reg.base.addr().next_multiple_of(PAGE_SIZE << size_order));
+            let r_base = reg.end().align_down(PAGE_SIZE << size_order);
 
             let mut l_base = r_base;
             let mut l_order = size_order;
             while l_base > reg.base {
                 let diff = l_base - reg.base;
-                let ord = BuddyRegion::order_of_size(diff) + 1;
+                let ord = BuddyRegion::size_fit_order(diff);
                 l_base = l_base - (PAGE_SIZE << ord);
                 l_order = ord;
             }
-            let l_size = r_base - reg.base;
             let r_size = reg.end() - r_base;
-            let r_order = BuddyRegion::order_of_size(r_size.next_power_of_two());
+            let r_order = BuddyRegion::size_fit_order(r_size);
 
             // Carve out memory for L and R metadata buffer (excluded from managed region)
             let mut buf_ptr = reg.base;
@@ -218,9 +228,26 @@ impl<'a> BuddyFrameAllocator<'a> {
             let r_next_ptr = buf_ptr;
             buf_ptr = buf_ptr + next_buf_size(r_order) * size_of::<BlockIndex>();
             let l_start = buf_ptr.align_to_next_page();
+            let r_start = Ord::max(l_start, r_base);
+
+            log::trace!(
+                "split L={:#016x} .. {:#016x} R={:#016x} .. {:#016x}",
+                l_base,
+                l_base + (1 << l_order) * PAGE_SIZE,
+                r_base,
+                r_base + (1 << r_order) * PAGE_SIZE,
+            );
 
             // Only actually create the allocator for L if metadata buffers don't exceed the size of L
             if l_start < r_base {
+                log::info!(
+                    "add region range={:#016x} .. {:#016x} region={:#016x} .. {:#016x} ord={} left",
+                    l_base,
+                    l_base + (1 << l_order) * PAGE_SIZE,
+                    l_start,
+                    r_base,
+                    l_order,
+                );
                 // Safety: All buffer slices are exclusively inside the memory this region manages
                 let l_alloc = unsafe {
                     BuddyRegion::new(
@@ -238,55 +265,46 @@ impl<'a> BuddyFrameAllocator<'a> {
                         )
                         .as_mut_unchecked(),
                         #[cfg(debug_assertions)]
-                        SizedMemoryRegion::new_unchecked(l_start, l_size),
+                        SizedMemoryRegion::new_unchecked(l_start, r_base - l_start),
                     )
                 };
-
-                log::info!(
-                    "add region range={:#016x} .. {:#016x} region={:#016x} .. {:#016x} ord={} left",
-                    l_base,
-                    l_base + (1 << l_order) * PAGE_SIZE,
-                    l_start,
-                    r_base,
-                    l_order,
-                );
                 l_alloc.add_range(l_start, r_base);
                 self.regions.push_back(l_alloc);
             }
 
-            // Now create the allocator for R
-            // Safety: All buffer slices are exclusively inside the memory this region manages
-            let r_alloc = unsafe {
-                BuddyRegion::new(
-                    self.regions.len(),
+            if r_size != 0 {
+                // Create the allocator for R if there is a remaining tail region
+                log::info!(
+                    "add region range={:#016x} .. {:#016x} region={:#016x} .. {:#016x} ord={} right",
                     r_base,
+                    r_base + (1 << r_order) * PAGE_SIZE,
+                    r_start,
+                    reg.end(),
                     r_order,
-                    core::ptr::slice_from_raw_parts_mut(
-                        phys_to_virt(r_next_ptr).as_mut(),
-                        next_buf_size(r_order),
+                );
+                // Safety: All buffer slices are exclusively inside the memory this region manages
+                let r_alloc = unsafe {
+                    BuddyRegion::new(
+                        self.regions.len(),
+                        r_base,
+                        r_order,
+                        core::ptr::slice_from_raw_parts_mut(
+                            phys_to_virt(r_next_ptr).as_mut(),
+                            next_buf_size(r_order),
+                        )
+                        .as_mut_unchecked(),
+                        core::ptr::slice_from_raw_parts_mut(
+                            phys_to_virt(r_bitmap_ptr).as_mut(),
+                            bitmap_buf_size(r_order),
+                        )
+                        .as_mut_unchecked(),
+                        #[cfg(debug_assertions)]
+                        SizedMemoryRegion::new_unchecked(r_start, reg.end() - r_start),
                     )
-                    .as_mut_unchecked(),
-                    core::ptr::slice_from_raw_parts_mut(
-                        phys_to_virt(r_bitmap_ptr).as_mut(),
-                        bitmap_buf_size(r_order),
-                    )
-                    .as_mut_unchecked(),
-                    #[cfg(debug_assertions)]
-                    SizedMemoryRegion::new_unchecked(r_base, r_size),
-                )
-            };
-
-            let r_start = Ord::max(l_start, r_base);
-            log::info!(
-                "add region range={:#016x} .. {:#016x} region={:#016x} .. {:#016x} ord={} right",
-                r_base,
-                r_base + (1 << r_order) * PAGE_SIZE,
-                r_start,
-                reg.end(),
-                r_order,
-            );
-            r_alloc.add_range(r_start, reg.end());
-            self.regions.push_back(r_alloc);
+                };
+                r_alloc.add_range(r_start, reg.end());
+                self.regions.push_back(r_alloc);
+            }
         } else {
             // Carve out memory for L and R metadata buffer (excluded from managed region)
             let mut buf_ptr = reg.base;

@@ -1,6 +1,6 @@
 use core::{fmt, num::NonZero, ptr::NonNull};
 
-use structs::queue::BoundedQueue;
+use cinnamos_structs::queue::BoundedQueue;
 use uart::*;
 
 use super::{Read, Write};

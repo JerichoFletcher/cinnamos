@@ -1,7 +1,7 @@
 use core::num::NonZero;
 
+use cinnamos_structs::buddy::{AllocMap, BlockIndex, BuddyAllocator, order_of};
 use spin::Mutex;
-use structs::buddy::{AllocMap, BlockIndex, BuddyAllocator, order_of};
 
 use crate::{arch::VAddr, mem::PAGE_SIZE};
 
@@ -51,7 +51,7 @@ impl BuddyVirtAllocator {
     pub fn new(start: VAddr, end: VAddr) -> Self {
         debug_assert!(start <= end);
         let space_size = end - start;
-        let size_order = Self::order_of_size(space_size.next_power_of_two());
+        let size_order = Self::size_fit_order(space_size);
         let align_order = Self::max_align_order_of(start);
         debug_assert!(size_order <= align_order, "Start is not aligned to size");
 
@@ -63,13 +63,20 @@ impl BuddyVirtAllocator {
         }
     }
 
-    const fn order_of_size(size: usize) -> usize {
+    #[inline]
+    const fn size_order(size: usize) -> usize {
         if size == 0 {
             return 0;
         }
         order_of((size / PAGE_SIZE) as _)
     }
 
+    #[inline]
+    const fn size_fit_order(size: usize) -> usize {
+        Self::size_order(size.next_power_of_two())
+    }
+
+    #[inline]
     const fn max_align_order_of(va: VAddr) -> usize {
         va.vpn_all().trailing_zeros() as usize
     }

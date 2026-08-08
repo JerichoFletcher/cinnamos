@@ -93,7 +93,7 @@ impl IrqState {
     ///
     /// When paired with a [`restore`](Self::restore), this creates a single-hart critical section
     /// where execution cannot be preempted by interrupts. Re-enabling interrupts within a critical
-    /// section is unsafe and can lead to breaking the critical section.
+    /// section is therefore unsafe.
     #[inline]
     pub fn save_disable() -> Self {
         let sstatus = sstatus::read();

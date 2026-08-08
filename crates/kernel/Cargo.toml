@@ -15,7 +15,7 @@ bench = false
 [dependencies]
 cinnamos-kernel-macros = { path = "../macros" }
 cinnamos-abi = { path = "../abi" }
-structs = { path = "../structs" }
+cinnamos-structs = { path = "../structs" }
 riscv = { version = "0.16", features = ["s-mode"] }
 bitflags = "2.13"
 sbi = "0.3"

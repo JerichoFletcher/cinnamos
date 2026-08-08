@@ -13,6 +13,7 @@ cfg_select! {
     }
 }
 
+#[inline]
 pub const fn order_of(size: BlockIndex) -> usize {
     if size != 0 {
         // Equal to floor(log2(size))
@@ -22,10 +23,12 @@ pub const fn order_of(size: BlockIndex) -> usize {
     }
 }
 
+#[inline]
 pub const fn next_buf_size(order: usize) -> usize {
     2 << order
 }
 
+#[inline]
 pub fn bitmap_buf_size(order: usize) -> usize {
     (1 << order).max(64) / 64
 }
@@ -43,18 +46,22 @@ pub struct FlatArray<'a> {
     bitmap: &'a mut [u64],
 }
 impl BackingBuffer for FlatArray<'_> {
+    #[inline]
     fn get_next(&self, index: &BlockIndex) -> BlockIndex {
         self.next[*index as usize]
     }
 
+    #[inline]
     fn get_bitmap(&self, index: &BlockIndex) -> u64 {
         self.bitmap[*index as usize]
     }
 
+    #[inline]
     fn set_next(&mut self, index: &BlockIndex, value: BlockIndex) {
         self.next[*index as usize] = value;
     }
 
+    #[inline]
     fn set_bitmap(&mut self, index: &BlockIndex, value: u64) {
         self.bitmap[*index as usize] = value;
     }
@@ -65,14 +72,17 @@ pub struct AllocMap {
     bitmap: BTreeMap<BlockIndex, u64>,
 }
 impl BackingBuffer for AllocMap {
+    #[inline]
     fn get_next(&self, index: &BlockIndex) -> BlockIndex {
         self.next.get(index).copied().unwrap_or(BlockIndex::MAX)
     }
 
+    #[inline]
     fn get_bitmap(&self, index: &BlockIndex) -> u64 {
         self.bitmap.get(index).copied().unwrap_or(0)
     }
 
+    #[inline]
     fn set_next(&mut self, index: &BlockIndex, value: BlockIndex) {
         if value == BlockIndex::MAX {
             self.next.remove(index);
@@ -81,6 +91,7 @@ impl BackingBuffer for AllocMap {
         }
     }
 
+    #[inline]
     fn set_bitmap(&mut self, index: &BlockIndex, value: u64) {
         if value == 0 {
             self.bitmap.remove(index);
@@ -133,7 +144,7 @@ impl<'a> BuddyAllocator<FlatArray<'a>> {
 }
 
 impl BuddyAllocator<AllocMap> {
-    pub fn new(order: usize) -> Self {
+    pub const fn new(order: usize) -> Self {
         Self {
             order,
             free_lists: [BlockIndex::MAX; MAX_ORDER],
@@ -242,14 +253,17 @@ impl<B: BackingBuffer> BuddyAllocator<B> {
         }
     }
 
+    #[inline]
     pub const fn max_order(&self) -> usize {
         self.order
     }
 
+    #[inline]
     pub const fn max_block_count(&self) -> BlockIndex {
         1 << self.order
     }
 
+    #[inline]
     pub const fn free_count(&self) -> usize {
         self.free
     }
@@ -287,10 +301,12 @@ impl<B: BackingBuffer> BuddyAllocator<B> {
         panic!("Block {} not found at order {}", block, order);
     }
 
+    #[inline]
     const fn order_offset(&self, order: usize) -> BlockIndex {
         (2 << self.order) - (2 << (self.order - order))
     }
 
+    #[inline]
     const fn next_idx(&self, order: usize, block: BlockIndex) -> BlockIndex {
         self.order_offset(order) + (block >> (order + 1))
     }
@@ -319,6 +335,7 @@ impl<B: BackingBuffer> BuddyAllocator<B> {
         self.buffers.set_bitmap(&idx, bits ^ (1 << bit));
     }
 
+    #[inline]
     fn buddy_of(order: usize, block: BlockIndex) -> BlockIndex {
         debug_assert_eq!(block % (1 << order), 0);
         block ^ (1 << order)

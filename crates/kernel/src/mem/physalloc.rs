@@ -116,7 +116,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
         );
         usable_regs.sort_unstable_by_key(|a| Reverse(a.size));
         for r in &usable_regs {
-            log::info!("usable at {:#016x} .. {:#016x}", r.base, r.end());
+            log::debug!("usable at {:#016x} .. {:#016x}", r.base, r.end());
             // Safety: get_region_slices guarantees disjoint usable regions
             unsafe { alloc.add_region(r) };
         }

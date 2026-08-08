@@ -34,6 +34,7 @@ dependencies = [
  "bitflags",
  "cinnamos-abi",
  "cinnamos-kernel-macros",
+ "cinnamos-structs",
  "elf",
  "fdt",
  "log",
@@ -41,7 +42,6 @@ dependencies = [
  "riscv",
  "sbi",
  "spin",
- "structs",
  "uart",
 ]
 
@@ -55,6 +55,10 @@ dependencies = [
  "quote",
  "syn 3.0.3",
 ]
+
+[[package]]
+name = "cinnamos-structs"
+version = "0.1.0"
 
 [[package]]
 name = "critical-section"
@@ -225,10 +229,6 @@ checksum = "8abadc99fd9c7bbb7d0ca2b31d72a067d0c0dcd7aad25ab8cac71ba91417694b"
 dependencies = [
  "lock_api",
 ]
-
-[[package]]
-name = "structs"
-version = "0.1.0"
 
 [[package]]
 name = "syn"
