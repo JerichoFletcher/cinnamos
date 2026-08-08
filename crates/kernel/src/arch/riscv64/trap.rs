@@ -11,7 +11,6 @@ use riscv::{
 
 use crate::{
     arch::{self, Context, VAddr, interrupt},
-    hloc::HartLocalGuard,
     *,
 };
 
@@ -82,7 +81,7 @@ impl TrapFrame {
 
         let mut regs = [0; 32];
         regs[Self::REG_SP] = stack_ptr.addr();
-        regs[Self::REG_TP] = hloc::get().as_ptr() as usize;
+        regs[Self::REG_TP] = hloc::get_ptr() as usize;
         Self {
             regs,
             sstatus,
@@ -110,7 +109,6 @@ pub fn create_init_context() -> Context {
 /// Dispatches the appropriate handler for a trap.
 #[unsafe(no_mangle)]
 extern "C" fn trap_handler(frame: &mut TrapFrame) {
-    let mut hloc = hloc::get();
     let tcause = riscv::interrupt::cause();
     let tval = stval::read();
 
@@ -167,17 +165,20 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             arch::timer::schedule_timer();
-            if let Some(curr) = hloc.curr_task() {
-                let t = curr.tcb().time_quantum;
-                if t == 0 {
-                    sched::schedule();
-                } else {
-                    curr.tcb_mut().time_quantum -= 1;
+            hloc::try_with_critical(|mut hloc| {
+                if let Some(curr) = hloc.curr_task() {
+                    let t = curr.tcb().time_quantum;
+                    if t == 0 {
+                        sched::schedule();
+                    } else {
+                        curr.tcb_mut().time_quantum -= 1;
+                    }
                 }
-            }
+            })
+            .expect("failed to get hart-local storage");
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
-            handle_external_interrupt(&mut hloc);
+            handle_external_interrupt();
         }
         Trap::Interrupt(Interrupt::SupervisorSoft) => {
             log::trace!(
@@ -223,14 +224,15 @@ unsafe fn dispatch_syscall(frame: &mut TrapFrame) {
 
 /// Attempts to claim an IRQ and dispatch the appropriate handler. It is possible and allowed that
 /// no enabled IRQs are pending, in which case this function will do nothing.
-fn handle_external_interrupt(hloc: &mut HartLocalGuard) {
-    // Safety: The ID is passed from the current hart-local
-    if let Some(claim) = unsafe { arch::device::plic::claim_irq(hloc.hid()) } {
+fn handle_external_interrupt() {
+    let hid = hloc::get_hid();
+    // Safety: The ID is read from the current hart-local
+    if let Some(claim) = unsafe { arch::device::plic::claim_irq(hid) } {
         let irq = claim.irq_id();
         if let Err(e) = interrupt::dispatch_irq(irq) {
             log::warn!(
                 "failed to handle claimed interrupt hid={} irq={}: {:?}",
-                hloc.hid(),
+                hid,
                 irq,
                 e
             );
@@ -244,6 +246,6 @@ pub fn init() {
     let stvec = Stvec::new(trap_entry_addr, TrapMode::Direct);
     unsafe {
         stvec::write(stvec);
-        sscratch::write(hloc::get().as_ptr() as usize);
+        sscratch::write(hloc::get_ptr() as usize);
     }
 }

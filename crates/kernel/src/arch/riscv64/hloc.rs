@@ -37,7 +37,7 @@ impl HartLocal {
         }
     }
 
-    /// The ID of the current hart.
+    /// The ID of the current hart. Since hart ID is practically a constant, it is always safe to read.
     #[inline]
     pub const fn hid(&self) -> usize {
         self.hid
@@ -56,11 +56,11 @@ impl HartLocal {
         self.curr_task.take()
     }
 
-    /// Saves a task into the storage.
+    /// Saves a task into the storage, returning the previous one if it exists.
     #[inline]
-    pub fn set_curr_task(&mut self, mut task: SlabBox<Task>) {
+    pub fn set_curr_task(&mut self, mut task: SlabBox<Task>) -> Option<SlabBox<Task>> {
         self.curr_task_ptr = task.as_mut() as *mut _;
-        self.curr_task = Some(task);
+        self.curr_task.replace(task)
     }
 }
 
@@ -86,6 +86,6 @@ pub fn hart_local() -> *mut HartLocal {
             out(reg) ptr,
             options(nomem, nostack, preserves_flags)
         );
-        &mut *ptr
+        ptr
     }
 }

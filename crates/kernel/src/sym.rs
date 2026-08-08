@@ -88,5 +88,4 @@ def_symbols!(data);
 def_symbols!(bss);
 def_symbols!(kmem);
 def_symbols!(stack);
-def_symbols!(trap_stack);
 def_symbols!(bump_heap);

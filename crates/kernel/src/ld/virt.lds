@@ -48,10 +48,6 @@ SECTIONS {
     PROVIDE(_stack_start = .);
     . += 512K;
     PROVIDE(_stack_end = .);
-
-    PROVIDE(_trap_stack_start = .);
-    . += 16K;
-    PROVIDE(_trap_stack_end = .);
     PROVIDE(_kmem_end = .);
 
     PROVIDE(_bump_heap_start = .);

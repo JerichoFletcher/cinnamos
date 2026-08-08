@@ -1,4 +1,4 @@
-use core::fmt::{self, Write as CoreWrite};
+use core::fmt::{self, Write};
 
 use crate::{
     arch::get_fallback_console,
@@ -6,15 +6,21 @@ use crate::{
     sync::mutex_irqsave::{MutexIrqSave, MutexIrqSaveGuard},
 };
 
-pub trait ConsoleWrite: CoreWrite + Sync {
+/// A trait for a possibly flushable UTF-8-encoded data writer.
+///
+/// This trait should be implemented for a type that can act as a backend for [`Console`].
+pub trait ConsoleWrite: Write + Sync {
+    /// Flushes any buffered data to the output.
     fn flush(&mut self);
 }
 
+/// An abstraction of the kernel output console. Supports multiple console backends.
 pub struct Console {
     serial: SerialOutputWrite,
 }
 
 impl Console {
+    /// Creates a new console.
     #[inline]
     pub const fn new() -> Self {
         Self {
@@ -22,6 +28,11 @@ impl Console {
         }
     }
 
+    /// Writes a UTF-8-encoded string to the console output.
+    ///
+    /// Writes will be performed on all currently active [`ConsoleWrite`] backends.
+    /// If none of the writes succeed, the function will write to the fallback console,
+    /// which is always available (see [`get_fallback_console`]).
     #[inline]
     pub fn write(&mut self, s: &str) -> fmt::Result {
         if self.serial.write_str(s).is_err() {
@@ -30,14 +41,10 @@ impl Console {
         Ok(())
     }
 
+    /// Flushes all currently active [`ConsoleWrite`] backends.
     #[inline]
     pub fn flush(&mut self) {
         self.serial.flush();
-    }
-
-    #[inline]
-    pub fn lock<'a>() -> MutexIrqSaveGuard<'a, Console> {
-        CONSOLE.lock()
     }
 }
 
@@ -47,10 +54,16 @@ impl Default for Console {
     }
 }
 
-impl CoreWrite for Console {
+impl Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write(s)
     }
 }
 
 static CONSOLE: MutexIrqSave<Console> = MutexIrqSave::new(Console::new());
+
+/// Acquires a lock on the global console.
+#[inline]
+pub fn lock<'a>() -> MutexIrqSaveGuard<'a, Console> {
+    CONSOLE.lock()
+}

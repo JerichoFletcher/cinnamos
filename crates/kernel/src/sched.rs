@@ -5,6 +5,7 @@ use spin::Mutex;
 
 use crate::{arch::Task, hloc, mem::alloc::slab::SlabBox, task::TaskState};
 
+// improper_ctypes is fine since only the fields with specified layouts are accessed from assembly code.
 #[expect(improper_ctypes)]
 unsafe extern "C" {
     /// Saves the current execution context to `curr_task` and loads a new one from `next_task`.
@@ -21,14 +22,20 @@ unsafe extern "C" {
     fn __switch_noprev(next_task: *const Task);
 }
 
+/// A task scheduler responsible for managing which and when tasks should be executed.
 pub struct Scheduler {
     next_free_id: AtomicUsize,
     run_queue: Mutex<VecDeque<SlabBox<Task>>>,
 }
 
 impl Scheduler {
+    /// Adds a task to the scheduler.
+    ///
+    /// The scheduler will assign a [`ThreadId`](cinnamos_abi::ThreadId) and set the task's status to
+    /// [`Ready`](TaskState::Ready). The task will be available to be scheduled for eventual execution.
+    ///
     /// # Safety
-    /// `task` must have an initialized call stack loaded into its context.
+    /// `task` must be in an enterable state, i.e. it has an initialized call stack loaded into its context.
     pub unsafe fn enqueue(&self, mut task: SlabBox<Task>) {
         let next_free_id = self.next_free_id.fetch_add(1, Ordering::Relaxed);
         log::trace!("enqueueing task id={}", next_free_id);
@@ -39,75 +46,85 @@ impl Scheduler {
         self.run_queue.lock().push_back(task);
     }
 
+    /// Yields execution of the current task and switches to the next one.
+    ///
+    /// Because this function accesses the hart-local storage, it is executed in a critical section.
     pub fn schedule(&self) {
-        let mut hloc = hloc::get();
-        let mut curr = hloc
-            .take_curr_task()
-            .expect("Scheduler::schedule() expects a current task");
-        let tcb = curr.tcb_mut();
-        if tcb.state == TaskState::Running {
-            tcb.state = TaskState::Ready;
-        }
+        hloc::try_with_critical(|mut hloc| {
+            let mut curr = hloc
+                .take_curr_task()
+                .expect("Scheduler::schedule() expects a current task");
+            let tcb = curr.tcb_mut();
+            if tcb.state == TaskState::Running {
+                tcb.state = TaskState::Ready;
+            }
 
-        let curr_ptr = curr.as_mut() as *mut _;
-        let curr_id = curr.tcb().id;
+            let curr_ptr = curr.as_mut() as *mut _;
+            let curr_id = curr.tcb().id;
 
-        let next = {
-            let mut rq = self.run_queue.lock();
-            rq.push_back(curr);
-            rq.pop_front()
-        };
-        match next {
-            Some(mut next) => {
-                let tcb = next.tcb_mut();
-                tcb.state = TaskState::Running;
-                if tcb.time_quantum == 0 {
-                    // TODO: Priority-based quantum budget assignment
-                    tcb.time_quantum = 5;
+            let next = {
+                let mut rq = self.run_queue.lock();
+                rq.push_back(curr);
+                rq.pop_front()
+            };
+            match next {
+                Some(mut next) => {
+                    let tcb = next.tcb_mut();
+                    tcb.state = TaskState::Running;
+                    if tcb.time_quantum == 0 {
+                        // TODO: Priority-based quantum budget assignment
+                        tcb.time_quantum = 5;
+                    }
+                    let next_ptr = next.as_ref() as *const _;
+                    log::trace!(
+                        "scheduling next task curr={} next={}",
+                        curr_id,
+                        next.tcb().id
+                    );
+
+                    hloc.set_curr_task(next);
+                    // Safety: Both pointers are derived from allocated slab boxes, and
+                    // the next task has a call stack in its context
+                    unsafe { __switch(next_ptr, curr_ptr) };
                 }
-                let next_ptr = next.as_ref() as *const _;
-                log::trace!(
-                    "scheduling next task curr={} next={}",
-                    curr_id,
-                    next.tcb().id
-                );
-
-                hloc.set_curr_task(next);
-                // Safety: Both pointers are derived from allocated slab boxes, and
-                // the next task has a call stack in its context
-                unsafe { __switch(next_ptr, curr_ptr) };
+                None => {
+                    panic!("schedule run queue is empty")
+                }
             }
-            None => {
-                panic!("schedule run queue is empty")
-            }
-        }
+        })
+        .expect("failed to get hart-local storage");
     }
 
+    /// Starts execution of the scheduler.
     pub fn start(&self) -> ! {
-        let mut hloc = hloc::get();
-        let next = self.run_queue.lock().pop_front();
-        match next {
-            Some(mut next) => {
-                let tcb = next.tcb_mut();
-                tcb.state = TaskState::Running;
-                if tcb.time_quantum == 0 {
-                    // TODO: Priority-based quantum budget assignment
-                    tcb.time_quantum = 5;
-                }
-                let next_ptr = next.as_ref() as *const _;
-                log::trace!("scheduling first task next={}", next.tcb().id);
+        hloc::try_with_critical(|mut hloc| {
+            let next = self.run_queue.lock().pop_front();
+            match next {
+                Some(mut next) => {
+                    let tcb = next.tcb_mut();
+                    tcb.state = TaskState::Running;
+                    if tcb.time_quantum == 0 {
+                        // TODO: Priority-based quantum budget assignment
+                        tcb.time_quantum = 5;
+                    }
+                    let next_ptr = next.as_ref() as *const _;
+                    log::trace!("scheduling first task next={}", next.tcb().id);
 
-                hloc.set_curr_task(next);
-                // Safety: The pointer is derived from an allocated slab box, and
-                // the next task has a call stack in its context
-                unsafe { __switch_noprev(next_ptr) };
-                unreachable!("__switch_noprev should never return to Scheduler::start()");
+                    hloc.set_curr_task(next);
+                    drop(hloc);
+                    // Safety: The pointer is derived from an allocated slab box, and
+                    // the next task has a call stack in its context
+                    unsafe { __switch_noprev(next_ptr) };
+                }
+                None => panic!("schedule run queue is empty"),
             }
-            None => panic!("schedule run queue is empty"),
-        }
+            unreachable!("__switch_noprev should never return to Scheduler::start()");
+        })
+        .expect("failed to get hart-local storage")
     }
 }
 
+// Safety: Queue mutations are synchronized with critical sections and mutexes
 unsafe impl Sync for Scheduler {}
 
 static GLOBAL_SCHEDULER: Scheduler = Scheduler {
@@ -115,17 +132,26 @@ static GLOBAL_SCHEDULER: Scheduler = Scheduler {
     run_queue: Mutex::new(VecDeque::new()),
 };
 
+/// Starts execution of the kernel global scheduler.
 pub fn start() -> ! {
     GLOBAL_SCHEDULER.start()
 }
 
+/// Adds a task to the kernel global scheduler.
+///
+/// The scheduler will assign a [`ThreadId`](cinnamos_abi::ThreadId) and set the task's status to
+/// [`Ready`](TaskState::Ready). The task will be available to be scheduled for eventual execution.
+///
 /// # Safety
-/// `task` must have an initialized call stack loaded into its context.
+/// `task` must be in an enterable state, i.e. it has an initialized call stack loaded into its context.
 pub unsafe fn enqueue(task: SlabBox<Task>) {
     // Safety: task has an initialized call stack
     unsafe { GLOBAL_SCHEDULER.enqueue(task) };
 }
 
+/// Yields execution of the current task and switches to the next one.
+///
+/// Because this function accesses the hart-local storage, it is executed in a critical section.
 pub fn schedule() {
     GLOBAL_SCHEDULER.schedule();
 }

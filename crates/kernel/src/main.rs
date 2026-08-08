@@ -35,27 +35,11 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8) -> ! {
     // Safety: tsp points to the top of trap_stack, which is mapped in bump space
     unsafe { hloc::load_init(hid, tsp) };
     arch::init();
+    klog::init();
 
     // Safety: dtb_ptr points to a devicetree blob
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("invalid devicetree blob") };
-    if let Some((uart, uart_reg)) = devicetree::find_compatible(&fdt, &["ns16550", "ns16550a"]) {
-        let irq_id = uart
-            .interrupts()
-            .map(|mut c| c.next().unwrap_or(0))
-            .expect("failed to get interrupt ID for UART");
-
-        // Safety: uart_reg is a non-null address of the serial IO UART region
-        unsafe {
-            io::serial::init(
-                NonNull::new_unchecked(uart_reg.start_ptr().cast_mut()),
-                irq_id as u16,
-            )
-        }
-    }
-    klog::init();
-
     mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("failed to initialize VMS");
-    klog::disable();
     unsafe { relocate_jump_higher_half(entry_virt as *const (), hid, dtb_ptr) };
 }
 
@@ -71,7 +55,7 @@ unsafe fn relocate_jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *cons
     let vdtb = mem::vms::phys_to_virt(PAddr::from_ptr(dtb_ptr));
     let vsp = mem::vms::phys_to_kernel(stack_end_p());
 
-    // Safety: _DYNAMIC is part of the kernel space
+    // Safety: PHYS_TO_KERNEL_SLIDE is the kernel space's slide amount
     unsafe { rel::shift_relocation(mem::vms::PHYS_TO_KERNEL_SLIDE) };
     // Safety: Safety conditions are fulfilled in parameters
     unsafe { arch::jump_higher_half(ventry.as_ptr(), hid, vdtb, vsp) };
@@ -101,7 +85,6 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
             )
         };
     }
-    klog::enable();
     log::info!("higher-half entry");
 
     let trap_stack = mem::physalloc::alloc(4).expect("failed to allocate trap stack");

@@ -19,13 +19,13 @@ unsafe fn slide_entry(rela: &Elf64_Rela, slide: usize) {
     let rela_type = (rela.r_info & 0xffffffff) as u32;
     if rela_type == R_RISCV_RELATIVE {
         let target = rela.r_offset as *mut usize;
-        unsafe {
-            let paddr = *target;
-            *target = paddr + slide;
-        }
+        unsafe { *target += slide };
     }
 }
 
+/// Performs dynamic relocation by filling in the global offset table entries.
+///
+/// This function will relocate kernel symbols to their load addresses.
 #[inline(always)]
 pub fn relocate() {
     let dyn_ptr = arch::get_dyn();
@@ -59,6 +59,8 @@ pub fn relocate() {
     }
 }
 
+/// Shifts all relocated symbol offsets by the given slide amount.
+///
 /// # Safety
 /// `slide` must be equal to the difference between a kernel virtual address
 /// and the physical address it is mapped to (the kernel space's slide amount).
