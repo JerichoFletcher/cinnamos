@@ -1,9 +1,14 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use alloc::collections::vec_deque::VecDeque;
-use spin::Mutex;
 
-use crate::{arch::Task, hloc, mem::alloc::slab::SlabBox, task::TaskState};
+use crate::{
+    arch::{self, Task},
+    hloc,
+    mem::alloc::slab::SlabBox,
+    sync::mutex_irq::MutexIrq,
+    task::TaskState,
+};
 
 // improper_ctypes is fine since only the fields with specified layouts are accessed from assembly code.
 #[expect(improper_ctypes)]
@@ -25,7 +30,7 @@ unsafe extern "C" {
 /// A task scheduler responsible for managing which and when tasks should be executed.
 pub struct Scheduler {
     next_free_id: AtomicUsize,
-    run_queue: Mutex<VecDeque<SlabBox<Task>>>,
+    run_queue: MutexIrq<VecDeque<SlabBox<Task>>>,
 }
 
 impl Scheduler {
@@ -43,14 +48,18 @@ impl Scheduler {
         tcb.id = next_free_id.into();
         tcb.state = TaskState::Ready;
         tcb.time_quantum = 0;
-        self.run_queue.lock().push_back(task);
+
+        arch::interrupt_free(|ms| {
+            self.run_queue.lock(ms).push_back(task);
+        });
     }
 
     /// Yields execution of the current task and switches to the next one.
     ///
     /// Because this function accesses the hart-local storage, it is executed in a critical section.
     pub fn schedule(&self) {
-        hloc::try_with_critical(|mut hloc| {
+        arch::interrupt_free(|ms| {
+            let mut hloc = hloc::borrow(ms);
             let mut curr = hloc
                 .take_curr_task()
                 .expect("Scheduler::schedule() expects a current task");
@@ -63,7 +72,7 @@ impl Scheduler {
             let curr_id = curr.tcb().id;
 
             let next = {
-                let mut rq = self.run_queue.lock();
+                let mut rq = self.run_queue.lock(ms);
                 rq.push_back(curr);
                 rq.pop_front()
             };
@@ -91,14 +100,14 @@ impl Scheduler {
                     panic!("schedule run queue is empty")
                 }
             }
-        })
-        .expect("failed to get hart-local storage");
+        });
     }
 
     /// Starts execution of the scheduler.
     pub fn start(&self) -> ! {
-        hloc::try_with_critical(|mut hloc| {
-            let next = self.run_queue.lock().pop_front();
+        arch::interrupt_free(|ms| {
+            let mut hloc = hloc::borrow(ms);
+            let next = self.run_queue.lock(ms).pop_front();
             match next {
                 Some(mut next) => {
                     let tcb = next.tcb_mut();
@@ -111,7 +120,6 @@ impl Scheduler {
                     log::trace!("scheduling first task next={}", next.tcb().id);
 
                     hloc.set_curr_task(next);
-                    drop(hloc);
                     // Safety: The pointer is derived from an allocated slab box, and
                     // the next task has a call stack in its context
                     unsafe { __switch_noprev(next_ptr) };
@@ -120,7 +128,6 @@ impl Scheduler {
             }
             unreachable!("__switch_noprev should never return to Scheduler::start()");
         })
-        .expect("failed to get hart-local storage")
     }
 }
 
@@ -129,7 +136,7 @@ unsafe impl Sync for Scheduler {}
 
 static GLOBAL_SCHEDULER: Scheduler = Scheduler {
     next_free_id: AtomicUsize::new(0),
-    run_queue: Mutex::new(VecDeque::new()),
+    run_queue: MutexIrq::new(VecDeque::new()),
 };
 
 /// Starts execution of the kernel global scheduler.

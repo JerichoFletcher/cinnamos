@@ -1,4 +1,4 @@
-use core::mem::offset_of;
+use core::{mem::offset_of, sync::atomic::AtomicUsize};
 
 use crate::{
     arch::{Task, VAddr}, mem::alloc::slab::SlabBox,
@@ -22,6 +22,9 @@ pub struct HartLocal {
     trap_stack_top: VAddr,
     /// The current task being executed by this hart.
     curr_task: Option<SlabBox<Task>>,
+
+    /// The nesting level of critical sections by this hart.
+    critical_nesting: AtomicUsize,
 }
 
 impl HartLocal {
@@ -34,6 +37,7 @@ impl HartLocal {
             curr_task_ptr: core::ptr::null_mut(),
             trap_stack_top: tsp,
             curr_task: None,
+            critical_nesting: AtomicUsize::new(0),
         }
     }
 
@@ -61,6 +65,12 @@ impl HartLocal {
     pub fn set_curr_task(&mut self, mut task: SlabBox<Task>) -> Option<SlabBox<Task>> {
         self.curr_task_ptr = task.as_mut() as *mut _;
         self.curr_task.replace(task)
+    }
+
+    /// The nesting level of critical sections by this hart.
+    #[inline]
+    pub const fn critical_nesting(&self) -> &AtomicUsize {
+        &self.critical_nesting
     }
 }
 

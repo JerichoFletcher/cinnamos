@@ -8,7 +8,7 @@ use crate::{
     arch,
     console::ConsoleWrite,
     device::uart::{UartReceiveRead, UartTransmitWrite},
-    sync::mutex_irqsave::MutexIrqSave,
+    sync::mutex_irq::MutexIrq,
 };
 
 /// A queue buffer for storing bytes read from the serial input.
@@ -74,7 +74,7 @@ struct SendUart(Uart<address::MmioAddress, Data>);
 // Safety: The memory-mapped address is valid across harts
 unsafe impl Send for SendUart {}
 
-static IO_UART: MutexIrqSave<Option<SendUart>> = MutexIrqSave::new(None);
+static IO_UART: MutexIrq<Option<SendUart>> = MutexIrq::new(None);
 
 /// Initializes the serial input UART driver.
 ///
@@ -94,22 +94,26 @@ pub unsafe fn init(base_addr: NonNull<u8>, irq_id: u16) {
     {
         drv.write_interrupt_enable(InterruptEnable::RECEIVED_DATA);
     }
-    *IO_UART.lock() = Some(SendUart(drv));
+    arch::interrupt_free(|ms| {
+        *IO_UART.lock(ms) = Some(SendUart(drv));
+    });
 }
 
 /// Reads bytes from the UART receive register and inserts them into the input buffer.
 fn handle_uart_irq() {
-    let mut g = IO_UART.lock();
-    if let Some(drv) = g.as_mut() {
-        let mut buf = [0u8; 32];
-        let mut reader = UartReceiveRead::new(&mut drv.0);
+    arch::interrupt_free(|ms| {
+        let mut g = IO_UART.lock(ms);
+        if let Some(drv) = g.as_mut() {
+            let mut buf = [0u8; 32];
+            let mut reader = UartReceiveRead::new(&mut drv.0);
 
-        while let Ok(len) = reader.read(&mut buf)
-            && len > 0
-        {
-            let _ = SerialInputWrite.write(&buf[..len]);
+            while let Ok(len) = reader.read(&mut buf)
+                && len > 0
+            {
+                let _ = SerialInputWrite.write(&buf[..len]);
+            }
         }
-    }
+    });
 }
 
 /// A writer that targets the kernel's serial output.
@@ -117,21 +121,23 @@ pub struct SerialOutputWrite;
 
 impl fmt::Write for SerialOutputWrite {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        let mut g = IO_UART.lock();
-        match g.as_mut() {
-            Some(drv) => {
-                let mut writer = UartTransmitWrite::new(&mut drv.0);
-                let mut len = 0;
-                while len < s.len() {
-                    match writer.write(&s.as_bytes()[len..]) {
-                        Ok(chunk) => len += chunk,
-                        Err(()) => return Err(fmt::Error),
+        arch::interrupt_free(|ms| {
+            let mut g = IO_UART.lock(ms);
+            match g.as_mut() {
+                Some(drv) => {
+                    let mut writer = UartTransmitWrite::new(&mut drv.0);
+                    let mut len = 0;
+                    while len < s.len() {
+                        match writer.write(&s.as_bytes()[len..]) {
+                            Ok(chunk) => len += chunk,
+                            Err(()) => return Err(fmt::Error),
+                        }
                     }
+                    Ok(())
                 }
-                Ok(())
+                None => Err(fmt::Error),
             }
-            None => Err(fmt::Error),
-        }
+        })
     }
 }
 

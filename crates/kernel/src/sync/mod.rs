@@ -1,1 +1,1 @@
-pub mod mutex_irqsave;
+pub mod mutex_irq;

@@ -1,9 +1,11 @@
 use core::fmt::{self, Write};
 
+use spin::MutexGuard;
+
 use crate::{
-    arch::get_fallback_console,
+    arch::{IrqDisabledSection, get_fallback_console},
     io::serial::SerialOutputWrite,
-    sync::mutex_irqsave::{MutexIrqSave, MutexIrqSaveGuard},
+    sync::mutex_irq::MutexIrq,
 };
 
 /// A trait for a possibly flushable UTF-8-encoded data writer.
@@ -60,10 +62,10 @@ impl Write for Console {
     }
 }
 
-static CONSOLE: MutexIrqSave<Console> = MutexIrqSave::new(Console::new());
+static CONSOLE: MutexIrq<Console> = MutexIrq::new(Console::new());
 
 /// Acquires a lock on the global console.
 #[inline]
-pub fn lock<'a>() -> MutexIrqSaveGuard<'a, Console> {
-    CONSOLE.lock()
+pub fn lock<'ms>(ms: IrqDisabledSection<'ms>) -> MutexGuard<'ms, Console> {
+    CONSOLE.lock(ms)
 }

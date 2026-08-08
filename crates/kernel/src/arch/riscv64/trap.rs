@@ -165,7 +165,8 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             arch::timer::schedule_timer();
-            hloc::try_with_critical(|mut hloc| {
+            arch::interrupt_free(|ms| {
+                let mut hloc = hloc::borrow(ms);
                 if let Some(curr) = hloc.curr_task() {
                     let t = curr.tcb().time_quantum;
                     if t == 0 {
@@ -174,8 +175,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
                         curr.tcb_mut().time_quantum -= 1;
                     }
                 }
-            })
-            .expect("failed to get hart-local storage");
+            });
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
             handle_external_interrupt();

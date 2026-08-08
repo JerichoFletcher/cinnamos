@@ -1,17 +1,20 @@
+use core::sync::atomic::AtomicUsize;
+
 use alloc::boxed::Box;
 
 use crate::{
-    arch::{self, HartLocal, Task, VAddr},
+    arch::{self, HartLocal, IrqDisabledSection, Task, VAddr},
     mem::alloc::slab::SlabBox,
 };
 
-/// Allows safe access to the hart-local storage.
-pub struct HartLocalGuard {
+/// Allows access to the hart-local storage within a critical section.
+pub struct HartLocalGuard<'cs> {
     /// Invariant: This pointer is not null and points to an initialized [`HartLocal`] in memory.
     ptr: *mut HartLocal,
+    _ms: IrqDisabledSection<'cs>,
 }
 
-impl HartLocalGuard {
+impl HartLocalGuard<'_> {
     /// Consumes this guard and takes out the [`HartLocal`] pointer.
     ///
     /// While calling this function is safe, dereferencing the pointer is extremely unsafe, since
@@ -66,17 +69,25 @@ pub unsafe fn load_init(hid: usize, tsp: VAddr) {
     arch::load_hart_local(Box::leak(Box::new(HartLocal::new(hid, tsp))));
 }
 
-/// Gets an access guard for the hart-local storage and executes the given closure in a critical section.
+/// Gets an access guard for the hart-local storage from an IRQ-free section.
+///
+/// # Panic
+/// Will panic if the hart-local storage has not been initialized for this hart.
+#[inline]
+pub fn borrow<'ms>(ms: IrqDisabledSection<'ms>) -> HartLocalGuard<'ms> {
+    try_borrow(ms).expect("invalid hart-local pointer")
+}
+
+/// Attempts to get an access guard for the hart-local storage from an IRQ-free section.
 ///
 /// Returns [`Err`] if the hart-local storage has not been initialized for this hart.
 #[inline]
-pub fn try_with_critical<T>(f: impl FnOnce(HartLocalGuard) -> T) -> Result<T, ()> {
+pub fn try_borrow<'ms>(ms: IrqDisabledSection<'ms>) -> Option<HartLocalGuard<'ms>> {
     let ptr = arch::hart_local();
     if ptr.is_null() || !ptr.is_aligned() {
-        Err(())
+        None
     } else {
-        let guard = HartLocalGuard { ptr };
-        Ok(arch::interrupt_free(|| f(guard)))
+        Some(HartLocalGuard { ptr, _ms: ms })
     }
 }
 
@@ -100,6 +111,29 @@ pub fn try_get_hid() -> Option<usize> {
     } else {
         // Safety: hid is constant and safe to read
         Some(unsafe { (*ptr).hid() })
+    }
+}
+
+/// Gets the nesting level of critical sections by this hart.
+///
+/// # Panic
+/// Will panic if the hart-local storage has not been initialized for this hart.
+#[inline]
+pub fn get_critical_nesting<'a>() -> &'a AtomicUsize {
+    try_get_critical_nesting().expect("invalid hart-local pointer")
+}
+
+/// Attempts to get the nesting level of critical sections by this hart.
+///
+/// Returns [`None`] if the hart-local storage has not been initialized for this hart.
+#[inline]
+pub fn try_get_critical_nesting<'a>() -> Option<&'a AtomicUsize> {
+    let ptr = arch::hart_local();
+    if ptr.is_null() || !ptr.is_aligned() {
+        None
+    } else {
+        // Safety: critical nesting is an atomic integer that is safe to read
+        Some(unsafe { (*ptr).critical_nesting() })
     }
 }
 

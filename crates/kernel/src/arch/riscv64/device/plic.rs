@@ -152,7 +152,7 @@ static PLIC: Once<RwLock<Plic>> = Once::new();
 pub struct PlicIrqClaim {
     hid: usize,
     irq_id: NonZero<u16>,
-    _no_send: PhantomData<*const ()>,
+    _no_send_sync: PhantomData<*mut ()>,
 }
 
 impl PlicIrqClaim {
@@ -198,6 +198,6 @@ pub unsafe fn claim_irq(hid: usize) -> Option<PlicIrqClaim> {
     Some(PlicIrqClaim {
         hid,
         irq_id: NonZero::new(irq)?,
-        _no_send: PhantomData,
+        _no_send_sync: PhantomData,
     })
 }

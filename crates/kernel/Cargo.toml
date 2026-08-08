@@ -17,6 +17,7 @@ cinnamos-kernel-macros = { path = "../macros" }
 cinnamos-abi = { path = "../abi" }
 cinnamos-structs = { path = "../structs" }
 riscv = { version = "0.16", features = ["s-mode"] }
+critical-section = { version = "1.2", features = ["restore-state-bool"] }
 bitflags = "2.13"
 sbi = "0.3"
 fdt = "0.1"

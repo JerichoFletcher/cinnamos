@@ -56,7 +56,8 @@ cfg_select! {
         };
         pub use riscv64::interrupt::{
             InterruptError,
-            IrqState,
+            IrqDisabledSection,
+            MasksIrq,
             register_irq_handler,
             interrupt_free,
         };

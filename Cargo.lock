@@ -35,6 +35,7 @@ dependencies = [
  "cinnamos-abi",
  "cinnamos-kernel-macros",
  "cinnamos-structs",
+ "critical-section",
  "elf",
  "fdt",
  "log",

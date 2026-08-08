@@ -2,7 +2,7 @@ use core::fmt::Write;
 
 use log::{LevelFilter, Log};
 
-use crate::{console, hloc};
+use crate::{arch, console, hloc};
 
 struct Location<'a> {
     file: &'a str,
@@ -73,29 +73,33 @@ impl Log for Logger {
             };
             let hid = hloc::try_get_hid();
 
-            let mut writer = console::lock();
-            let _ = match hid {
-                Some(hid) => writeln!(
-                    writer,
-                    "[{:>2}][{:>5}] {:<32}: {}",
-                    hid,
-                    record.level(),
-                    loc,
-                    record.args()
-                ),
-                None => writeln!(
-                    writer,
-                    "[??][{:>5}] {:<32}: {}",
-                    record.level(),
-                    loc,
-                    record.args()
-                ),
-            };
+            arch::interrupt_free(|ms| {
+                let mut writer = console::lock(ms);
+                let _ = match hid {
+                    Some(hid) => writeln!(
+                        writer,
+                        "[{:>2}][{:>5}] {:<32}: {}",
+                        hid,
+                        record.level(),
+                        loc,
+                        record.args()
+                    ),
+                    None => writeln!(
+                        writer,
+                        "[??][{:>5}] {:<32}: {}",
+                        record.level(),
+                        loc,
+                        record.args()
+                    ),
+                };
+            });
         }
     }
 
     fn flush(&self) {
-        console::lock().flush();
+        arch::interrupt_free(|ms| {
+            console::lock(ms).flush();
+        });
     }
 }
 
