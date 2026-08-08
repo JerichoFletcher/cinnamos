@@ -22,7 +22,7 @@ impl core::fmt::Display for Location<'_> {
         };
         let file = self
             .file
-            .strip_prefix("crates/cinnamos-kernel/")
+            .strip_prefix("crates/kernel/")
             .unwrap_or(self.file);
         let file_len = file.len();
         let len = file_len + 1 + line_len;

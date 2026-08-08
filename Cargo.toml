@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/cinnamos-kernel",
-    "crates/cinnamos-abi",
+    "crates/kernel",
+    "crates/abi",
     "crates/structs",
 ]
 
