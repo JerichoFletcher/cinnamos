@@ -12,6 +12,7 @@ use crate::{
     *,
 };
 
+/// A physical frame allocation from a buddy allocator.
 #[derive(Debug)]
 pub struct BuddyFrameAlloc {
     id: usize,
@@ -20,28 +21,39 @@ pub struct BuddyFrameAlloc {
 }
 
 impl super::PhysFrameAlloc for BuddyFrameAlloc {
+    #[inline]
     fn start_addr(&self) -> PAddr {
         self.base
     }
 
+    #[inline]
     fn end_addr(&self) -> PAddr {
         self.base + self.frame_count.get() * PAGE_SIZE
     }
 
-    fn frame_count(&self) -> usize {
-        self.frame_count.get()
+    #[inline]
+    fn frame_count(&self) -> NonZero<usize> {
+        self.frame_count
+    }
+
+    #[inline]
+    fn size(&self) -> usize {
+        self.frame_count.get() * PAGE_SIZE
     }
 }
 
+/// A physical region managed by a buddy allocator.
 #[derive(Debug)]
-struct BuddyRegion {
+struct BuddyRegion<'a> {
     id: usize,
     base: PAddr,
-    buddy: RwLock<BuddyAllocator<FlatArray>>,
-}
-unsafe impl Send for BuddyRegion {}
+    buddy: RwLock<BuddyAllocator<FlatArray<'a>>>,
 
-impl BuddyRegion {
+    #[cfg(debug_assertions)]
+    region: SizedMemoryRegion,
+}
+
+impl<'a> BuddyRegion<'a> {
     /// # Safety
     /// - `base` must be aligned to `order` orders of page boundary.
     /// - `next` must have at least `2 << order` items of capacity.
@@ -50,8 +62,10 @@ impl BuddyRegion {
         id: usize,
         base: PAddr,
         order: usize,
-        next: *mut [BlockIndex],
-        bitmap: *mut [u64],
+        next: &'a mut [BlockIndex],
+        bitmap: &'a mut [u64],
+
+        #[cfg(debug_assertions)] region: SizedMemoryRegion,
     ) -> Self {
         assert!(
             Self::max_align_order_of(base) >= order,
@@ -66,6 +80,9 @@ impl BuddyRegion {
             id,
             base,
             buddy: RwLock::new(buddy),
+
+            #[cfg(debug_assertions)]
+            region,
         }
     }
 
@@ -123,15 +140,18 @@ impl BuddyRegion {
         );
     }
 
+    #[inline]
     fn free_count(&self) -> usize {
         self.buddy.read().free_count()
     }
 
-    pub const fn max_align_order_of(pa: PAddr) -> usize {
+    #[inline]
+    const fn max_align_order_of(pa: PAddr) -> usize {
         pa.ppn_all().trailing_zeros() as usize
     }
 
-    pub const fn order_of_size(size: usize) -> usize {
+    #[inline]
+    const fn order_of_size(size: usize) -> usize {
         if size == 0 {
             return 0;
         }
@@ -139,23 +159,32 @@ impl BuddyRegion {
     }
 }
 
+/// A frame allocator using a buddy tree to enable allocations of various orders.
 #[derive(Debug)]
-pub struct BuddyFrameAllocator {
-    regions: LinkedList<BuddyRegion>,
+pub struct BuddyFrameAllocator<'a> {
+    regions: LinkedList<BuddyRegion<'a>>,
 }
 
-impl BuddyFrameAllocator {
-    pub fn new(init_regions: &[SizedMemoryRegion]) -> Self {
-        let mut instance = Self {
+impl<'a> BuddyFrameAllocator<'a> {
+    /// Creates a frame allocator with no regions.
+    pub const fn new() -> Self {
+        Self {
             regions: LinkedList::new(),
-        };
-        for reg in init_regions {
-            instance.add_region(reg);
         }
-        instance
     }
 
-    pub fn add_region(&mut self, reg: &SizedMemoryRegion) {
+    /// Adds a memory region to this allocator.
+    ///
+    /// # Safety
+    /// The added region must not intersect with all regions managed by the allocator.
+    pub unsafe fn add_region(&mut self, reg: &SizedMemoryRegion) {
+        #[cfg(debug_assertions)]
+        {
+            if let Some(r) = self.regions.iter().find(|r| r.region.intersects(reg)) {
+                panic!("region {:?} intersects with existing region {:?}", reg, r,);
+            }
+        }
+
         // TODO: This algorithm still has a wrong behavior if R has differing size and alignment order
         // An iterative filling algorithm should be considered
         let size_order = BuddyRegion::order_of_size(reg.size.get());
@@ -174,6 +203,7 @@ impl BuddyFrameAllocator {
                 l_base = l_base - (PAGE_SIZE << ord);
                 l_order = ord;
             }
+            let l_size = r_base - reg.base;
             let r_size = reg.end() - r_base;
             let r_order = BuddyRegion::order_of_size(r_size.next_power_of_two());
 
@@ -191,6 +221,7 @@ impl BuddyFrameAllocator {
 
             // Only actually create the allocator for L if metadata buffers don't exceed the size of L
             if l_start < r_base {
+                // Safety: All buffer slices are exclusively inside the memory this region manages
                 let l_alloc = unsafe {
                     BuddyRegion::new(
                         self.regions.len(),
@@ -199,11 +230,15 @@ impl BuddyFrameAllocator {
                         core::ptr::slice_from_raw_parts_mut(
                             phys_to_virt(l_next_ptr).as_mut(),
                             next_buf_size(l_order),
-                        ),
+                        )
+                        .as_mut_unchecked(),
                         core::ptr::slice_from_raw_parts_mut(
                             phys_to_virt(l_bitmap_ptr).as_mut(),
                             bitmap_buf_size(l_order),
-                        ),
+                        )
+                        .as_mut_unchecked(),
+                        #[cfg(debug_assertions)]
+                        SizedMemoryRegion::new_unchecked(l_start, l_size),
                     )
                 };
 
@@ -220,6 +255,7 @@ impl BuddyFrameAllocator {
             }
 
             // Now create the allocator for R
+            // Safety: All buffer slices are exclusively inside the memory this region manages
             let r_alloc = unsafe {
                 BuddyRegion::new(
                     self.regions.len(),
@@ -228,11 +264,15 @@ impl BuddyFrameAllocator {
                     core::ptr::slice_from_raw_parts_mut(
                         phys_to_virt(r_next_ptr).as_mut(),
                         next_buf_size(r_order),
-                    ),
+                    )
+                    .as_mut_unchecked(),
                     core::ptr::slice_from_raw_parts_mut(
                         phys_to_virt(r_bitmap_ptr).as_mut(),
                         bitmap_buf_size(r_order),
-                    ),
+                    )
+                    .as_mut_unchecked(),
+                    #[cfg(debug_assertions)]
+                    SizedMemoryRegion::new_unchecked(r_base, r_size),
                 )
             };
 
@@ -256,6 +296,7 @@ impl BuddyFrameAllocator {
             buf_ptr = buf_ptr + next_buf_size(size_order) * size_of::<BlockIndex>();
             let start = buf_ptr.align_to_next_page();
 
+            // Safety: All buffer slices are exclusively inside the memory this region manages
             let alloc = unsafe {
                 BuddyRegion::new(
                     self.regions.len(),
@@ -264,11 +305,15 @@ impl BuddyFrameAllocator {
                     core::ptr::slice_from_raw_parts_mut(
                         phys_to_virt(next_ptr).as_mut(),
                         next_buf_size(size_order),
-                    ),
+                    )
+                    .as_mut_unchecked(),
                     core::ptr::slice_from_raw_parts_mut(
                         phys_to_virt(bitmap_ptr).as_mut(),
                         bitmap_buf_size(size_order),
-                    ),
+                    )
+                    .as_mut_unchecked(),
+                    #[cfg(debug_assertions)]
+                    *reg,
                 )
             };
             log::info!(
@@ -285,7 +330,7 @@ impl BuddyFrameAllocator {
     }
 }
 
-impl super::PhysFrameAllocator<BuddyFrameAlloc> for BuddyFrameAllocator {
+impl super::PhysFrameAllocator<BuddyFrameAlloc> for BuddyFrameAllocator<'_> {
     fn alloc(&self, frame_count: usize) -> Option<BuddyFrameAlloc> {
         for reg in self.regions.iter() {
             if reg.free_count() >= frame_count {
@@ -304,6 +349,3 @@ impl super::PhysFrameAllocator<BuddyFrameAlloc> for BuddyFrameAllocator {
         }
     }
 }
-
-// Safety: All interior mutations are synchronized with a lock
-unsafe impl Sync for BuddyFrameAllocator {}

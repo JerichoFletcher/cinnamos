@@ -31,11 +31,7 @@ impl Scheduler {
     /// `task` must have an initialized call stack loaded into its context.
     pub unsafe fn enqueue(&self, mut task: SlabBox<Task>) {
         let next_free_id = self.next_free_id.fetch_add(1, Ordering::Relaxed);
-        log::trace!(
-            "enqueueing task ptr={:p} id={}",
-            task.as_ptr(),
-            next_free_id
-        );
+        log::trace!("enqueueing task id={}", next_free_id);
         let tcb = task.tcb_mut();
         tcb.id = next_free_id.into();
         tcb.state = TaskState::Ready;
@@ -53,7 +49,7 @@ impl Scheduler {
             tcb.state = TaskState::Ready;
         }
 
-        let curr_ptr = curr.as_ptr();
+        let curr_ptr = curr.as_mut() as *mut _;
         let curr_id = curr.tcb().id;
 
         let next = {
@@ -69,7 +65,7 @@ impl Scheduler {
                     // TODO: Priority-based quantum budget assignment
                     tcb.time_quantum = 5;
                 }
-                let next_ptr = next.as_ptr();
+                let next_ptr = next.as_ref() as *const _;
                 log::trace!(
                     "scheduling next task curr={} next={}",
                     curr_id,
@@ -98,7 +94,7 @@ impl Scheduler {
                     // TODO: Priority-based quantum budget assignment
                     tcb.time_quantum = 5;
                 }
-                let next_ptr = next.as_ptr();
+                let next_ptr = next.as_ref() as *const _;
                 log::trace!("scheduling first task next={}", next.tcb().id);
 
                 hloc.set_curr_task(next);

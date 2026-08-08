@@ -446,6 +446,7 @@ pub fn uninit_identity_map() -> Result<(), VmsError> {
     result
 }
 
+/// Maps a virtual page to a physical page within the kernel global address space.
 pub fn map(virt: &PageAlloc, phys: &FrameAlloc, flags: PTEFlags) -> Result<(), VmsError> {
     let g = ROOT_ADDRSP.read();
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
@@ -460,7 +461,15 @@ pub fn map(virt: &PageAlloc, phys: &FrameAlloc, flags: PTEFlags) -> Result<(), V
     result
 }
 
-pub fn map_raw(va: VAddr, pa: PAddr, size_bytes: usize, flags: PTEFlags) -> Result<(), VmsError> {
+/// Maps a virtual region to a physical region of the same size within the kernel global address space.
+/// The mapping is done with a relaxed policy: if any subset of the region is already mapped to the same
+/// physical address, with the same [`PTEFlags`], they are skipped.
+pub fn map_raw_relaxed(
+    va: VAddr,
+    pa: PAddr,
+    size_bytes: usize,
+    flags: PTEFlags,
+) -> Result<(), VmsError> {
     let g = ROOT_ADDRSP.read();
     let root_addrsp = g.as_ref().ok_or(VmsError::RootTableUninitialized)?;
 

@@ -28,11 +28,11 @@ pub fn alloc(page_count: usize) -> Option<PageAlloc> {
     let a = get_vmalloc().alloc(page_count);
     match &a {
         Some(a) => log::trace!(
-            "allocate vpage size={} base={:#016x}",
+            "vpage size={} base={:#016x} alloc",
             page_count * PAGE_SIZE,
             &a.start_addr()
         ),
-        None => log::trace!("allocate vpage size={} failed", page_count * PAGE_SIZE),
+        None => log::trace!("vpage size={} failed alloc", page_count * PAGE_SIZE),
     }
     a
 }
@@ -41,18 +41,18 @@ pub fn alloc(page_count: usize) -> Option<PageAlloc> {
 ///
 /// Guard pages are included in the total size of the reserved virtual region, but do not count towards
 /// the allocation region itself. This is useful for ensuring that an allocation has unmapped pages below
-/// its region, which is useful for creating a stack, for example.
+/// its region, which is useful for creating a single-allocation stack, for example.
 pub fn alloc_guarded(page_count: usize, guard_page_count: usize) -> Option<PageAlloc> {
     let a = get_vmalloc().alloc_guarded(page_count, guard_page_count);
     match &a {
         Some(a) => log::trace!(
-            "allocate vpage size={} guard={} base={:#016x}",
+            "vpage size={} guard={} base={:#016x} alloc",
             page_count * PAGE_SIZE,
             guard_page_count * PAGE_SIZE,
             &a.start_addr()
         ),
         None => log::trace!(
-            "allocate vpage size={} guard={} failed",
+            "vpage size={} guard={} failed alloc",
             page_count * PAGE_SIZE,
             guard_page_count * PAGE_SIZE,
         ),

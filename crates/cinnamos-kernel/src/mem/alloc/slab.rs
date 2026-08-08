@@ -13,17 +13,12 @@ use crate::{
     mem::{self, PhysFrameAlloc, physalloc::FrameAlloc, virt::VirtAlloc, vmalloc::PageAlloc},
 };
 
+/// A unique ownership of a `T` within a slab memory.
 pub struct SlabBox<T> {
     /// Invariant: `ptr` always points to an initialized `T` inside its slab memory
     ptr: NonNull<T>,
     /// Invariant: `slab` always points to a valid [Slab<T>] from which the [SlabBox<T>] was created
     slab: NonNull<Slab<T>>,
-}
-
-impl<T> SlabBox<T> {
-    pub fn as_ptr(&self) -> *mut T {
-        self.ptr.as_ptr()
-    }
 }
 
 impl<T> AsRef<T> for SlabBox<T> {
@@ -56,7 +51,7 @@ impl<T> DerefMut for SlabBox<T> {
 impl<T> Drop for SlabBox<T> {
     fn drop(&mut self) {
         // Safety: The pointer is valid after allocated
-        unsafe { self.as_ptr().drop_in_place() };
+        unsafe { self.ptr.drop_in_place() };
         // Safety: Slabs are never dropped after creation
         unsafe { self.slab.as_ref().dealloc(self) };
     }
@@ -65,17 +60,19 @@ impl<T> Drop for SlabBox<T> {
 impl<T: Debug> Debug for SlabBox<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("SlabBox")
-            .field("ptr", &self.as_ptr())
+            .field("ptr", &self.ptr)
             .field("value", self.as_ref())
             .finish()
     }
 }
 
+/// Critical data describing a slab.
 struct SlabData {
     free: usize,
     bitmap: Vec<u64>,
 }
 
+/// A single slab managing a memory region, owned by a slab allocator.
 pub struct Slab<T> {
     total: usize,
     data: Mutex<SlabData>,
@@ -86,6 +83,8 @@ pub struct Slab<T> {
 }
 
 impl<T> Slab<T> {
+    /// Creates a slab that manages the region in `phys`. The slab will be mapped at `virt`.
+    ///
     /// # Panic
     /// Will panic if `virt` and `phys` doesn't have the same size.
     pub fn new(virt: PageAlloc, phys: FrameAlloc) -> Self {
@@ -113,6 +112,7 @@ impl<T> Slab<T> {
         }
     }
 
+    /// Create a [`SlabBox<T>`] that owns a single slot of `T` within this slab.
     pub fn alloc(&self) -> Option<SlabBox<T>> {
         let mut data = self.data.lock();
 
@@ -137,6 +137,8 @@ impl<T> Slab<T> {
         None
     }
 
+    /// Frees the `T` slot owned by the given [`SlabBox<T>`].
+    ///
     /// # Safety
     /// `handle` must be a box allocated from this slab.
     pub unsafe fn dealloc(&self, handle: &mut SlabBox<T>) {
@@ -150,8 +152,9 @@ impl<T> Slab<T> {
         data.free += 1;
     }
 
+    /// Returns `true` if the slot owned by `handle` is inside of this slab.
     pub fn contains(&self, handle: &SlabBox<T>) -> bool {
-        let addr = handle.as_ptr() as usize;
+        let addr = handle.ptr.addr().get();
         self.base.addr() <= addr && addr < self.base.addr() + self.total * size_of::<T>()
     }
 
@@ -164,22 +167,26 @@ impl<T> Slab<T> {
     }
 }
 
+/// A slab allocator that manages multiple slab memory regions. This allocator is responsible of
+/// handing out `Box`-style allocations that is specifically typed `T` (see [`SlabBox<T>`]).
 pub struct SlabAllocator<const PAGE_COUNT: usize, T: 'static> {
     slabs: RwLock<LinkedList<&'static mut Slab<T>>>,
 }
 
 impl<const PAGE_COUNT: usize, T> SlabAllocator<PAGE_COUNT, T> {
+    /// Creates an empty allocator.
     pub const fn new() -> Self {
         Self {
             slabs: RwLock::new(LinkedList::new()),
         }
     }
 
+    /// Creates a [`SlabBox<T>`] containing a uniquely owned `T`, or [`None`] if allocation fails.
     pub fn alloc(&self, val: T) -> Option<SlabBox<T>> {
         for slab in self.slabs.read().iter() {
             if let Some(handle) = slab.alloc() {
                 // Safety: handle is an allocated block for T
-                unsafe { handle.as_ptr().write(val) };
+                unsafe { handle.ptr.write(val) };
                 return Some(handle);
             }
         }
@@ -194,7 +201,7 @@ impl<const PAGE_COUNT: usize, T> SlabAllocator<PAGE_COUNT, T> {
 
         let handle = handle?;
         // Safety: handle is an allocated block for T
-        unsafe { handle.as_ptr().write(val) };
+        unsafe { handle.ptr.write(val) };
         Some(handle)
     }
 }

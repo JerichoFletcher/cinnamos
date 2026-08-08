@@ -6,6 +6,8 @@ use crate::{
     mem::{MemoryRegion, RegionSubtract, SizedMemoryRegion},
 };
 
+/// Finds the first node with a `compatible` property that intersects with the given string slice,
+/// along with its memory region, or [`None`] if no such node is found.
 pub fn find_compatible<'b, 'a: 'b>(
     fdt: &'a Fdt,
     compat: &'a [&str],
@@ -18,6 +20,7 @@ pub fn find_compatible<'b, 'a: 'b>(
     ))
 }
 
+/// Finds all nodes that has an `interrupts` property and has the given interrupt parent.
 pub fn all_with_interrupts<'b, 'a: 'b>(
     fdt: &'b Fdt<'a>,
     interrupt_parent: &FdtNode<'b, 'a>,
@@ -38,6 +41,10 @@ pub fn all_with_interrupts<'b, 'a: 'b>(
     )
 }
 
+/// Collects all usable and reserved region slices defined in the devicetree.
+/// The caller can provide a slice of additional reserved regions for the purpose of usable region slicing.
+///
+/// All returned usable regions are guaranteed to be disjoint (i.e. no intersections between any two regions).
 pub fn get_region_slices<const N: usize>(
     fdt: &Fdt,
     add_rsv: [SizedMemoryRegion; N],
@@ -87,7 +94,7 @@ fn slice_usable_region(
 
     let mut reg = reg;
     for rsv in rsv {
-        if reg.overlaps(rsv) {
+        if reg.intersects(rsv) {
             match reg.subtract(rsv) {
                 RegionSubtract::None => return,
                 RegionSubtract::Left(reg_l) => {

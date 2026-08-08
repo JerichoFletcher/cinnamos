@@ -58,8 +58,8 @@ impl HartLocal {
 
     /// Saves a task into the storage.
     #[inline]
-    pub fn set_curr_task(&mut self, task: SlabBox<Task>) {
-        self.curr_task_ptr = task.as_ptr();
+    pub fn set_curr_task(&mut self, mut task: SlabBox<Task>) {
+        self.curr_task_ptr = task.as_mut() as *mut _;
         self.curr_task = Some(task);
     }
 }

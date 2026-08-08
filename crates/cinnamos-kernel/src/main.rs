@@ -82,7 +82,7 @@ unsafe fn relocate_jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *cons
 /// - `dtb_ptr` must point to the virtual location of a devicetree blob.
 unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     // Safety: Bump space is mapped into kernel space
-    unsafe { mem::heap::shift_bump(&mem::vms::phys_to_kernel) };
+    unsafe { mem::heap::shift_bump(mem::vms::phys_to_kernel) };
 
     // Safety: dtb_ptr points to a devicetree blob
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("invalid devicetree blob") };
@@ -129,7 +129,8 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
         bump_next.align_to_next_page(),
         bump_end.align_to_next_page(),
     ) {
-        mem::physalloc::add_region(&reg);
+        // Safety: Bump region was excluded from the physalloc init usable regions
+        unsafe { mem::physalloc::add_region(&reg) };
     }
 
     // Safety: idle is a callable function

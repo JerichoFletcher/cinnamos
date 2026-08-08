@@ -161,7 +161,7 @@ impl SizedMemoryRegion {
 
     /// Returns `true` if this region intersects with `other`.
     #[inline]
-    pub fn overlaps(&self, other: &Self) -> bool {
+    pub fn intersects(&self, other: &Self) -> bool {
         (self.base < other.end() && other.base < self.end())
             || (other.base < self.end() && self.base < other.end())
     }

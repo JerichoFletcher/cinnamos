@@ -29,6 +29,7 @@ struct FreeBlock {
     next: *mut FreeBlock,
 }
 
+/// An implementation of heap allocator that uses segregated Treiber stacks as free lists.
 pub struct FreeListHeap {
     next_va: AtomicUsize,
     pool_heads_lo: [AtomicPtr<FreeBlock>; SIZES_LO.len()],
@@ -36,9 +37,13 @@ pub struct FreeListHeap {
     pool_heads_hi: [AtomicPtr<FreeBlock>; SIZES_HI.len()],
 }
 
+// Safety: Treiber stack mutations are synchronized through atomic operations
 unsafe impl Sync for FreeListHeap {}
 
 impl FreeListHeap {
+    /// Creates a heap allocator with the starting base address.
+    ///
+    /// Heap memory will grow upwards from this address as more memory is allocated for each bin.
     pub const fn new(base: VAddr) -> Self {
         Self {
             next_va: AtomicUsize::new(base.addr()),
@@ -48,18 +53,31 @@ impl FreeListHeap {
         }
     }
 
-    pub fn alloc(&self, layout: Layout) -> *mut u8 {
+    /// Allocate a block of heap memory with the given layout.
+    ///
+    /// The allocated block is guaranteed to have a size greater than or equal to the layout size
+    /// and have an alignment that is a multiple of the layout alignment.
+    ///
+    /// # Safety
+    /// `layout` must be a non-zero-sized layout.
+    pub unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let layout = layout.pad_to_align();
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);
         self.alloc_block(block_size)
     }
 
-    pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    /// Deallocate a previously allocated block of heap memory.
+    ///
+    /// # Safety
+    /// `layout` must be the same layout used to allocate `ptr`.
+    pub unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let layout = layout.pad_to_align();
         let block_size = layout.size().next_power_of_two().max(MIN_ALLOC_SIZE);
         self.dealloc_block(ptr, block_size);
     }
 
+    /// Allocates a block of the given size.
+    /// Also attempts to grow the heap if the corresponding pool is full.
     fn alloc_block(&self, size: usize) -> *mut u8 {
         let (pool, heap_grow_frames) = match Self::lookup_block_size(size) {
             BlockSizeLookup::Lo(i) => (&self.pool_heads_lo[i], LO_HEAP_FRAMES),
@@ -88,7 +106,7 @@ impl FreeListHeap {
                 let base_va = VAddr::new(next_va);
                 let end_va = base_va + alloc_size;
 
-                match vms::map_raw(base_va, alloc.start_addr(), alloc_size, PTEFlags::GRW) {
+                match vms::map_raw_relaxed(base_va, alloc.start_addr(), alloc_size, PTEFlags::GRW) {
                     Ok(()) => {
                         let mut next_va = VAddr::NULL;
                         let mut prev_va = end_va - size;
@@ -135,6 +153,7 @@ impl FreeListHeap {
         }
     }
 
+    /// Deallocates a block from the pool corresponding to the given size.
     fn dealloc_block(&self, ptr: *mut u8, size: usize) {
         let pool = match Self::lookup_block_size(size) {
             BlockSizeLookup::Lo(i) => &self.pool_heads_lo[i],
@@ -154,6 +173,7 @@ impl FreeListHeap {
         }
     }
 
+    /// Maps a block size to its pool index.
     fn lookup_block_size(size: usize) -> BlockSizeLookup {
         if size <= SIZES_LO[4] {
             for (i, s) in SIZES_LO.iter().enumerate() {

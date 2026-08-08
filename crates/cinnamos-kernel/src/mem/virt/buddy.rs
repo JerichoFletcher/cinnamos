@@ -5,6 +5,7 @@ use structs::buddy::{AllocMap, BlockIndex, BuddyAllocator, order_of};
 
 use crate::{arch::VAddr, mem::PAGE_SIZE};
 
+/// A virtual page allocation from a buddy allocator.
 #[derive(Debug)]
 pub struct BuddyPageAlloc {
     order: usize,
@@ -14,19 +15,28 @@ pub struct BuddyPageAlloc {
 }
 
 impl super::VirtAlloc for BuddyPageAlloc {
+    #[inline]
     fn start_addr(&self) -> VAddr {
         self.base
     }
 
+    #[inline]
     fn end_addr(&self) -> VAddr {
         self.base + self.page_count.get() * PAGE_SIZE
     }
 
-    fn page_count(&self) -> usize {
-        self.page_count.get()
+    #[inline]
+    fn page_count(&self) -> NonZero<usize> {
+        self.page_count
+    }
+
+    #[inline]
+    fn size(&self) -> usize {
+        self.page_count.get() * PAGE_SIZE
     }
 }
 
+/// A page allocator using a buddy tree to enable allocations of various orders.
 #[derive(Debug)]
 pub struct BuddyVirtAllocator {
     base: VAddr,
@@ -34,6 +44,8 @@ pub struct BuddyVirtAllocator {
 }
 
 impl BuddyVirtAllocator {
+    /// Creates a page allocator managing a given virtual region.
+    ///
     /// # Panic
     /// This function will panic if `start` > `end`, or `start` is not at least aligned to the order of the region size.
     pub fn new(start: VAddr, end: VAddr) -> Self {
@@ -51,14 +63,14 @@ impl BuddyVirtAllocator {
         }
     }
 
-    pub const fn order_of_size(size: usize) -> usize {
+    const fn order_of_size(size: usize) -> usize {
         if size == 0 {
             return 0;
         }
         order_of((size / PAGE_SIZE) as _)
     }
 
-    pub const fn max_align_order_of(va: VAddr) -> usize {
+    const fn max_align_order_of(va: VAddr) -> usize {
         va.vpn_all().trailing_zeros() as usize
     }
 }

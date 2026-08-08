@@ -38,29 +38,25 @@ pub trait BackingBuffer {
     fn set_bitmap(&mut self, index: &BlockIndex, value: u64);
 }
 
-pub struct FlatArray {
-    next: *mut [BlockIndex],
-    bitmap: *mut [u64],
+pub struct FlatArray<'a> {
+    next: &'a mut [BlockIndex],
+    bitmap: &'a mut [u64],
 }
-impl BackingBuffer for FlatArray {
+impl BackingBuffer for FlatArray<'_> {
     fn get_next(&self, index: &BlockIndex) -> BlockIndex {
-        // Safety: self.next is valid and exclusive to the backing buffer
-        unsafe { (*self.next)[*index as usize] }
+        self.next[*index as usize]
     }
 
     fn get_bitmap(&self, index: &BlockIndex) -> u64 {
-        // Safety: self.bitmap is valid and exclusive to the backing buffer
-        unsafe { (*self.bitmap)[*index as usize] }
+        self.bitmap[*index as usize]
     }
 
     fn set_next(&mut self, index: &BlockIndex, value: BlockIndex) {
-        // Safety: self.next is valid and exclusive to the backing buffer
-        unsafe { (*self.next)[*index as usize] = value };
+        self.next[*index as usize] = value;
     }
 
     fn set_bitmap(&mut self, index: &BlockIndex, value: u64) {
-        // Safety: self.bitmap is valid and exclusive to the backing buffer
-        unsafe { (*self.bitmap)[*index as usize] = value };
+        self.bitmap[*index as usize] = value;
     }
 }
 
@@ -102,11 +98,11 @@ pub struct BuddyAllocator<B: BackingBuffer> {
     free: usize,
 }
 
-impl BuddyAllocator<FlatArray> {
+impl<'a> BuddyAllocator<FlatArray<'a>> {
     /// # Safety
     /// - `next` must point to an aligned buffer of [BlockIndex](BlockIndex) with at least [next_buf_size(order)](Self::next_buf_size) items of capacity.
     /// - `bitmap` must point to an aligned buffer of [u64](u64) with at least [bitmap_buf_size(order)](Self::bitmap_buf_size) items of capacity.
-    pub unsafe fn new(order: usize, next: *mut [BlockIndex], bitmap: *mut [u64]) -> Self {
+    pub unsafe fn new(order: usize, next: &'a mut [BlockIndex], bitmap: &'a mut [u64]) -> Self {
         let next_size = next_buf_size(order);
         let bitmap_size = bitmap_buf_size(order);
         assert!(order < MAX_ORDER, "Invalid order: {}", order);
@@ -123,10 +119,8 @@ impl BuddyAllocator<FlatArray> {
             bitmap_size
         );
 
-        // Safety: next is valid and is only accessed from this allocator
-        unsafe { (*next).fill(BlockIndex::MAX) };
-        // Safety: bitmap is valid and is only accessed from this allocator
-        unsafe { (*bitmap).fill(0) };
+        next.fill(BlockIndex::MAX);
+        bitmap.fill(0);
 
         Self {
             order,

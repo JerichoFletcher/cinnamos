@@ -38,9 +38,9 @@ pub fn register_irq_handler(source: NonZero<u16>, handler: fn()) -> Result<(), I
 ///
 /// # Errors
 /// - If the given `irq` is an invalid interrupt source, this function returns
-/// [`InvalidInterruptSource`](InterruptError::InvalidInterruptSource).
+///   [`InvalidInterruptSource`](InterruptError::InvalidInterruptSource).
 /// - If no handler is registered for `irq`, this function returns
-/// [`InterruptUnhandled`](InterruptError::InterruptUnhandled).
+///   [`InterruptUnhandled`](InterruptError::InterruptUnhandled).
 pub fn dispatch_irq(irq: NonZero<u16>) -> Result<(), InterruptError> {
     let irq = irq.get();
     if (1..INTERRUPT_COUNT as u16).contains(&irq) {
@@ -70,6 +70,10 @@ pub fn enable_interrupts() {
 }
 
 /// Executes a closure with interrupts disabled for the current hart.
+///
+/// This effectively runs `f` as a single-hart critical section, in that execution will not be
+/// preempted by interrupts. This does not prevent other harts from entering the same section; other
+/// synchronization strategies (such as mutexes) should be used in that case.
 #[inline]
 pub fn interrupt_free<T>(f: impl FnOnce() -> T) -> T {
     let irq = IrqState::save_disable();
