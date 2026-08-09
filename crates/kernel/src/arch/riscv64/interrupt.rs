@@ -1,12 +1,14 @@
 use core::{
     marker::PhantomData,
-    num::NonZero,
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
 
 use riscv::{interrupt::Interrupt, register::sstatus};
 
-use crate::{arch::device::plic::INTERRUPT_COUNT, hloc::get_critical_nesting};
+use crate::{
+    arch::ic::{InterruptSource, plic::INTERRUPT_COUNT},
+    hloc::get_critical_nesting,
+};
 
 /// Represents possible errors that may occur when handling an IRQ.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,18 +19,17 @@ pub enum InterruptError {
     InterruptUnhandled,
 }
 
-static INTERRUPT_HANDLERS: [AtomicPtr<()>; INTERRUPT_COUNT] =
-    [const { AtomicPtr::null() }; INTERRUPT_COUNT];
+static INTERRUPT_HANDLERS: [AtomicPtr<()>; INTERRUPT_COUNT.get()] =
+    [const { AtomicPtr::null() }; INTERRUPT_COUNT.get()];
 
 /// Registers a function to be called to handle interrupts from a source.
 ///
 /// # Errors
 /// If the given `source` is an invalid interrupt source, this function returns
 /// [`InvalidInterruptSource`](InterruptError::InvalidInterruptSource).
-pub fn register_irq_handler(source: NonZero<u16>, handler: fn()) -> Result<(), InterruptError> {
-    let source = source.get();
-    if (1..INTERRUPT_COUNT as u16).contains(&source) {
-        INTERRUPT_HANDLERS[source as usize].store(handler as *mut (), Ordering::Release);
+pub fn register_irq_handler(source: InterruptSource, handler: fn()) -> Result<(), InterruptError> {
+    if (1..INTERRUPT_COUNT.get()).contains(&source.get()) {
+        INTERRUPT_HANDLERS[source.get()].store(handler as *mut (), Ordering::Release);
         Ok(())
     } else {
         Err(InterruptError::InvalidInterruptSource)
@@ -42,10 +43,9 @@ pub fn register_irq_handler(source: NonZero<u16>, handler: fn()) -> Result<(), I
 ///   [`InvalidInterruptSource`](InterruptError::InvalidInterruptSource).
 /// - If no handler is registered for `irq`, this function returns
 ///   [`InterruptUnhandled`](InterruptError::InterruptUnhandled).
-pub fn dispatch_irq(irq: NonZero<u16>) -> Result<(), InterruptError> {
-    let irq = irq.get();
-    if (1..INTERRUPT_COUNT as u16).contains(&irq) {
-        let ptr = INTERRUPT_HANDLERS[irq as usize].load(Ordering::Acquire);
+pub fn dispatch_irq(irq: InterruptSource) -> Result<(), InterruptError> {
+    if (1..INTERRUPT_COUNT.get()).contains(&irq.get()) {
+        let ptr = INTERRUPT_HANDLERS[irq.get()].load(Ordering::Acquire);
         if !ptr.is_null() {
             // Safety: ptr was cast from an fn()
             let handler: fn() = unsafe { core::mem::transmute(ptr) };

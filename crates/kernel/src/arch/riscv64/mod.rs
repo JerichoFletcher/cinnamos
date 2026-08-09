@@ -1,15 +1,24 @@
 use core::{arch::asm, ptr::NonNull};
 
+use alloc::boxed::Box;
 use elf::dynamic::Elf64_Dyn;
 use fdt::Fdt;
 
-use crate::{devicetree, mem};
+use crate::{
+    arch::{
+        self,
+        InterruptPriorityThreshold,
+        ic::{InterruptController, InterruptPriority}
+    },
+    devicetree,
+    mem,
+};
 
 mod asm;
 
 pub mod console;
 pub mod context;
-pub mod device;
+pub mod ic;
 pub mod hloc;
 pub mod interrupt;
 pub mod paddr;
@@ -93,16 +102,18 @@ pub unsafe fn init_interrupts(hid: usize, fdt: &Fdt) {
 
         let plic_ptr = NonNull::new(mem::vms::phys_to_virt(pa).as_mut()).expect("plic is null");
         // Safety: plic_ptr is direct-mapped to PLIC region
-        unsafe { device::plic::init(plic_ptr) };
-        let mut plic = device::plic::get_plic_mut();
-        for (node, ints) in devicetree::all_with_interrupts(fdt, &plic_node) {
-            for int in ints {
-                log::debug!("enabling interrupt {}: {}", int, node.name);
-                plic.set_priority(int as u16, 1);
-                plic.set_enabled(int as u16, hid, true);
+        let mut plic = unsafe { ic::plic::Plic::new(plic_ptr) };
+        arch::interrupt_free(|ms| {
+            for (node, ints) in devicetree::all_with_interrupts(fdt, &plic_node) {
+                for int in ints {
+                    log::debug!("enabling interrupt {}: {}", int, node.name);
+                    plic.set_priority(ms, int, InterruptPriority::Low);
+                    plic.set_enabled(ms, int, true);
+                }
             }
-        }
-        plic.set_threshold(hid, 0);
+            plic.set_threshold(ms, InterruptPriorityThreshold::All);
+            ic::set_controller(ms, Box::new(plic));
+        });
     }
     init_timer(hid, fdt);
     interrupt::enable_interrupts();

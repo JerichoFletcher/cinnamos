@@ -46,6 +46,7 @@ cfg_select! {
             switch_address_space,
             flush_address_space,
             flush_address_space_at,
+            translate_virt,
             MapError,
             UnmapError,
         };
@@ -61,10 +62,13 @@ cfg_select! {
             register_irq_handler,
             interrupt_free,
         };
+        pub use riscv64::ic::{
+            InterruptController,
+            InterruptSource,
+            InterruptPriority,
+            InterruptPriorityThreshold,
+        };
         pub use riscv64::task::Task;
         pub use riscv64::console::get_fallback_console;
-
-        #[cfg(debug_assertions)]
-        pub use riscv64::sv48::translate_virt;
     }
 }

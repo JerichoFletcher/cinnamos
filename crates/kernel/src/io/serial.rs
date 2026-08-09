@@ -1,11 +1,11 @@
-use core::{fmt, num::NonZero, ptr::NonNull};
+use core::{fmt, ptr::NonNull};
 
 use cinnamos_structs::queue::BoundedQueue;
 use uart::*;
 
 use super::{Read, Write};
 use crate::{
-    arch,
+    arch::{self, InterruptSource},
     console::ConsoleWrite,
     device::uart::{UartReceiveRead, UartTransmitWrite},
     sync::mutex_irq::MutexIrq,
@@ -80,7 +80,7 @@ static IO_UART: MutexIrq<Option<SendUart>> = MutexIrq::new(None);
 ///
 /// # Safety
 /// `base_addr` must be the base address of a memory-mapped UART region.
-pub unsafe fn init(base_addr: NonNull<u8>, irq_id: u16) {
+pub unsafe fn init(base_addr: NonNull<u8>, irq_id: Option<InterruptSource>) {
     let mut drv = unsafe { <Uart<_, Data>>::new(address::MmioAddress::new(base_addr, 1)) };
     drv.write_fifo_control(
         FifoControl::ENABLE
@@ -89,7 +89,7 @@ pub unsafe fn init(base_addr: NonNull<u8>, irq_id: u16) {
             | FifoControl::CLEAR_RX,
     );
 
-    if let Some(irq_id) = NonZero::new(irq_id)
+    if let Some(irq_id) = irq_id
         && arch::register_irq_handler(irq_id, handle_uart_irq).is_ok()
     {
         drv.write_interrupt_enable(InterruptEnable::RECEIVED_DATA);

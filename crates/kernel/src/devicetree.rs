@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use fdt::{Fdt, node::FdtNode};
 
 use crate::{
-    arch::PAddr,
+    arch::{InterruptSource, PAddr},
     mem::{MemoryRegion, RegionSubtract, SizedMemoryRegion},
 };
 
@@ -24,16 +24,18 @@ pub fn find_compatible<'b, 'a: 'b>(
 pub fn all_with_interrupts<'b, 'a: 'b>(
     fdt: &'b Fdt<'a>,
     interrupt_parent: &FdtNode<'b, 'a>,
-) -> impl Iterator<Item = (FdtNode<'b, 'a>, Vec<usize>)> {
+) -> impl Iterator<Item = (FdtNode<'b, 'a>, Vec<InterruptSource>)> {
     core::iter::from_coroutine(
         #[coroutine]
         || {
             for n in fdt.all_nodes() {
                 if let Some(intp) = n.interrupt_parent()
                     && intp.name == interrupt_parent.name
-                    && let Some(ints) = n.interrupts()
+                    && let Some(ints) = n
+                        .interrupts()
+                        .map(|ints| ints.filter_map(InterruptSource::new))
                 {
-                    let ints: Vec<usize> = ints.collect();
+                    let ints = ints.collect::<Vec<_>>();
                     yield (n, ints)
                 }
             }

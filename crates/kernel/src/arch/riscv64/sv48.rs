@@ -265,34 +265,33 @@ pub enum UnmapError {
 
 /// Performs a virtual address translation by walking the page tables starting from the given root table.
 ///
-/// Returns a [`Some`] containing the physical address, or [`None`] if:
+/// Returns a [`Some`] containing the physical address and the mapped page level, or [`None`] if:
 /// - The virtual address is not mapped by any valid entry.
 /// - The virtual address corresponds to a valid, but not a leaf entry.
 /// - The virtual address is mapped, but the physical address is invalid at its level.
-#[cfg(debug_assertions)]
 pub fn translate_virt(
     root_pt: *mut PageTable,
     va: VAddr,
     p2v: impl Fn(PAddr) -> VAddr,
-) -> Option<PAddr> {
+) -> Option<(PAddr, PageLevel)> {
     let vpn = va.vpn();
     let mut table = root_pt;
 
-    for curr_size in PageLevel::ALL.iter().rev() {
-        let pte = unsafe { &mut (*table).entries[vpn[curr_size.level()]] };
+    for curr_level in PageLevel::ALL.iter().rev() {
+        let pte = unsafe { &mut (*table).entries[vpn[curr_level.level()]] };
         let flags = pte.flags();
 
         if !pte.is_valid() || (!flags.contains(PTEFlags::READ) && flags.contains(PTEFlags::WRITE)) {
             return None;
         } else if flags.intersects(PTEFlags::RX) {
             let pa = pte.phys_addr();
-            let off_mask = (1usize << (12 + curr_size.level() * 9)) - 1;
+            let off_mask = (1usize << (12 + curr_level.level() * 9)) - 1;
 
             if pa.addr() & off_mask != 0 {
                 return None;
             } else {
                 let pa = pa + (va.addr() & off_mask);
-                return Some(pa);
+                return Some((pa, *curr_level));
             }
         } else {
             let next_pa = pte.phys_addr();

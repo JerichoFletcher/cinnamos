@@ -169,10 +169,11 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
                 let mut hloc = hloc::borrow(ms);
                 if let Some(curr) = hloc.curr_task() {
                     let t = curr.tcb().time_quantum;
-                    if t == 0 {
-                        sched::schedule();
-                    } else {
+                    if t > 0 {
                         curr.tcb_mut().time_quantum -= 1;
+                    }
+                    if t == 0 {
+                        sched::schedule(ms);
                     }
                 }
             });
@@ -216,7 +217,7 @@ unsafe fn dispatch_syscall(frame: &mut TrapFrame) {
             }
         }
         Err(e) => {
-            log::warn!("syscall ERR sys={} unknown", e.number);
+            log::trace!("syscall ERR sys={} unknown", e.number);
             frame.regs[TrapFrame::REG_A0] = SyscallError::UnknownSyscall.into();
         }
     }
@@ -226,18 +227,20 @@ unsafe fn dispatch_syscall(frame: &mut TrapFrame) {
 /// no enabled IRQs are pending, in which case this function will do nothing.
 fn handle_external_interrupt() {
     let hid = hloc::get_hid();
-    // Safety: The ID is read from the current hart-local
-    if let Some(claim) = unsafe { arch::device::plic::claim_irq(hid) } {
-        let irq = claim.irq_id();
-        if let Err(e) = interrupt::dispatch_irq(irq) {
-            log::warn!(
-                "failed to handle claimed interrupt hid={} irq={}: {:?}",
-                hid,
-                irq,
-                e
-            );
-        }
-    }
+
+    // Safety: IRQ is disabled here
+    unsafe {
+        arch::ic::with_claim(|irq_id| {
+            if let Err(e) = interrupt::dispatch_irq(irq_id) {
+                log::warn!(
+                    "failed to handle claimed interrupt hid={} irq={}: {:?}",
+                    hid,
+                    irq_id,
+                    e
+                );
+            }
+        })
+    };
 }
 
 /// Installs the trap vector and loads the hart-local pointer onto `sscratch`.

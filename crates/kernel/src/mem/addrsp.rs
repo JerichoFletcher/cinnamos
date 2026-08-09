@@ -239,6 +239,11 @@ impl<'a> AddressSpace<'a> {
         }
         Ok(())
     }
+
+    #[inline]
+    pub fn translate_virt(&self, va: VAddr) -> Option<(PAddr, PageLevel)> {
+        arch::translate_virt(self.root_ptr, va, self.p2v)
+    }
 }
 
 // Safety:

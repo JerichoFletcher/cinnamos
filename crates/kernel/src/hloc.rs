@@ -8,10 +8,10 @@ use crate::{
 };
 
 /// Allows access to the hart-local storage within a critical section.
-pub struct HartLocalGuard<'cs> {
+pub struct HartLocalGuard<'ms> {
     /// Invariant: This pointer is not null and points to an initialized [`HartLocal`] in memory.
     ptr: *mut HartLocal,
-    _ms: IrqDisabledSection<'cs>,
+    _ms: IrqDisabledSection<'ms>,
 }
 
 impl HartLocalGuard<'_> {

@@ -337,14 +337,17 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                 let pa_trns = arch::translate_virt(root_ptr, va, VAddr::identity);
                 let va_addr = va.addr();
                 let pa_orig_addr = pa_orig.addr();
-                let pa_trns_addr = pa_trns.unwrap_or(PAddr::new(0)).addr();
-                debug_assert_eq!(
-                    pa_trns,
-                    Some(pa_orig),
-                    "Phys-to-kernel translation failed 0x{va_addr:016x} -> 0x{pa_trns_addr:016x} vs. 0x{pa_orig_addr:016x}"
-                );
-
-                pa_orig = pa_orig + PAGE_SIZE;
+                match pa_trns {
+                    Some((pa_trns, level_trns)) if pa_trns == pa_orig => {
+                        pa_orig = pa_orig + level_trns.size();
+                    }
+                    Some((pa_trns, _)) => panic!(
+                        "Phys-to-kernel translation failed 0x{va_addr:016x} -> 0x{pa_trns:016x} vs. 0x{pa_orig_addr:016x}"
+                    ),
+                    _ => panic!(
+                        "Phys-to-kernel translation failed 0x{va_addr:016x} -> unmapped vs. 0x{pa_orig_addr:016x}"
+                    ),
+                }
             }
             log::debug!("phys-to-kernel translation success");
 
@@ -355,14 +358,17 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                     let pa_trns = arch::translate_virt(root_ptr, va, VAddr::identity);
                     let va_addr = va.addr();
                     let pa_orig_addr = pa_orig.addr();
-                    let pa_trns_addr = pa_trns.unwrap_or(PAddr::new(0)).addr();
-                    debug_assert_eq!(
-                        pa_trns,
-                        Some(pa_orig),
-                        "Phys-to-direct translation failed 0x{va_addr:016x} -> 0x{pa_trns_addr:016x} vs. 0x{pa_orig_addr:016x}"
-                    );
-
-                    pa_orig = pa_orig + PAGE_SIZE;
+                    match pa_trns {
+                        Some((pa_trns, level_trns)) if pa_trns == pa_orig => {
+                            pa_orig = pa_orig + level_trns.size();
+                        }
+                        Some((pa_trns, _)) => panic!(
+                            "Phys-to-kernel translation failed 0x{va_addr:016x} -> 0x{pa_trns:016x} vs. 0x{pa_orig_addr:016x}"
+                        ),
+                        _ => panic!(
+                            "Phys-to-kernel translation failed 0x{va_addr:016x} -> unmapped vs. 0x{pa_orig_addr:016x}"
+                        ),
+                    }
                 }
             }
             log::debug!("phys-to-direct translation success");
@@ -373,14 +379,17 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                 let pa_trns = arch::translate_virt(root_ptr, va, VAddr::identity);
                 let va_addr = va.addr();
                 let pa_orig_addr = pa_orig.addr();
-                let pa_trns_addr = pa_trns.unwrap_or(PAddr::new(0)).addr();
-                debug_assert_eq!(
-                    pa_trns,
-                    Some(pa_orig),
-                    "Identity-vtmap translation failed 0x{va_addr:016x} -> 0x{pa_trns_addr:016x} vs. 0x{pa_orig_addr:016x}"
-                );
-
-                pa_orig = pa_orig + PAGE_SIZE;
+                match pa_trns {
+                    Some((pa_trns, level_trns)) if pa_trns == pa_orig => {
+                        pa_orig = pa_orig + level_trns.size();
+                    }
+                    Some((pa_trns, _)) => panic!(
+                        "Phys-to-kernel translation failed 0x{va_addr:016x} -> 0x{pa_trns:016x} vs. 0x{pa_orig_addr:016x}"
+                    ),
+                    _ => panic!(
+                        "Phys-to-kernel translation failed 0x{va_addr:016x} -> unmapped vs. 0x{pa_orig_addr:016x}"
+                    ),
+                }
             }
             log::debug!("identity-vtmap translation success");
         }
@@ -481,4 +490,10 @@ pub fn map_raw_relaxed(
         arch::flush_address_space_at(&root_addrsp.0, va);
     }
     result
+}
+
+pub fn translate_virt(va: VAddr) -> Option<(PAddr, PageLevel)> {
+    let g = ROOT_ADDRSP.read();
+    let root_addrsp = g.as_ref()?;
+    root_addrsp.0.translate_virt(va)
 }

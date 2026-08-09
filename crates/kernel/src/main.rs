@@ -40,6 +40,9 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8) -> ! {
     // Safety: dtb_ptr points to a devicetree blob
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("invalid devicetree blob") };
     mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("failed to initialize VMS");
+
+    // Safety: PHYS_TO_KERNEL_SLIDE is the kernel space's slide amount
+    unsafe { rel::shift_relocation(mem::vms::PHYS_TO_KERNEL_SLIDE) };
     unsafe { relocate_jump_higher_half(entry_virt as *const (), hid, dtb_ptr) };
 }
 
@@ -55,8 +58,6 @@ unsafe fn relocate_jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *cons
     let vdtb = mem::vms::phys_to_virt(PAddr::from_ptr(dtb_ptr));
     let vsp = mem::vms::phys_to_kernel(stack_end_p());
 
-    // Safety: PHYS_TO_KERNEL_SLIDE is the kernel space's slide amount
-    unsafe { rel::shift_relocation(mem::vms::PHYS_TO_KERNEL_SLIDE) };
     // Safety: Safety conditions are fulfilled in parameters
     unsafe { arch::jump_higher_half(ventry.as_ptr(), hid, vdtb, vsp) };
 }
@@ -81,7 +82,7 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
         unsafe {
             io::serial::init(
                 NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()),
-                irq_id as u16,
+                arch::InterruptSource::new(irq_id),
             )
         };
     }
@@ -119,7 +120,7 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     // Safety: idle is a callable function
     let task = unsafe { task::new_kernel_task(idle as _).expect("failed to create idle task") };
     // Safety: task already has a context
-    unsafe { sched::enqueue(task) };
+    arch::interrupt_free(|ms| unsafe { sched::enqueue(ms, task) });
     // Safety: hid is the current hart ID
     unsafe { arch::init_interrupts(hid, &fdt) };
 
