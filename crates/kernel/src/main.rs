@@ -13,6 +13,15 @@ use cinnamos_kernel::{
 };
 use fdt::Fdt;
 
+unsafe extern "C" {
+    /// Entry point of SMP harts.
+    ///
+    /// # Safety
+    /// - `hid` must be equal to the ID of the executing hart.
+    /// - `stack_pa` must point to the top of a valid stack.
+    fn _kernel_smp_start(hid: usize, stack_pa: PAddr);
+}
+
 /// Fills in the global offset table for dynamic symbol relocations and calls the kernel entry function.
 ///
 /// # Safety
@@ -36,14 +45,36 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8) -> ! {
     unsafe { hloc::load_init(hid, tsp) };
     arch::init();
     klog::init();
+    log::info!("boot hart pentry hid={}", hid);
 
     // Safety: dtb_ptr points to a devicetree blob
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("invalid devicetree blob") };
-    mem::vms::init(&fdt, PAddr::from_ptr(dtb_ptr)).expect("failed to initialize VMS");
+    let hart_count = fdt.cpus().count();
+    unsafe { hart::set_hart_count(hart_count) };
 
+    mem::vms::init(fdt, PAddr::from_ptr(dtb_ptr)).expect("failed to initialize VMS");
+    let (smp_entry_pa, _) =
+        mem::vms::translate_virt(VAddr::from_ptr(_kernel_smp_start as *const ()))
+            .expect("failed to get physical address for SMP entry");
+    log::info!(
+        "starting sibling harts on SMP entry at {:#016x}",
+        smp_entry_pa
+    );
+    for id in 0..hart_count {
+        if id != hid {
+            let stack = mem::physalloc::alloc(4).expect("failed to allocate SMP stack");
+            let r = unsafe { arch::start_hart(id, _kernel_smp_start as _, stack) };
+            log::info!("start hid={} status={:?}", id, r);
+        }
+    }
+    hart::wait_all_harts(); // Until all SMP harts are started
+
+    // TODO: This should instead be done as a finalizer to the previous barrier
     // Safety: PHYS_TO_KERNEL_SLIDE is the kernel space's slide amount
     unsafe { rel::shift_relocation(mem::vms::PHYS_TO_KERNEL_SLIDE) };
-    unsafe { relocate_jump_higher_half(entry_virt as *const (), hid, dtb_ptr) };
+    hart::wait_all_harts(); // Publish relocated symbols to other harts
+
+    unsafe { jump_higher_half(entry_virt as *const (), hid, dtb_ptr, stack_end_p()) };
 }
 
 /// Shifts all relocations to virtual space and jumps to `entry`.
@@ -53,10 +84,10 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8) -> ! {
 /// - `entry` must point to the physical address of a function, which is mapped in kernel space.
 /// - `hid` must be equal to the executing hart ID.
 /// - `dtb_ptr` must point to the physical location of a devicetree blob, which is mapped in direct map space.
-unsafe fn relocate_jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *const u8) -> ! {
+unsafe fn jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *const u8, sp: PAddr) -> ! {
     let ventry = mem::vms::phys_to_kernel(PAddr::from_ptr(entry));
     let vdtb = mem::vms::phys_to_virt(PAddr::from_ptr(dtb_ptr));
-    let vsp = mem::vms::phys_to_kernel(stack_end_p());
+    let vsp = mem::vms::phys_to_kernel(sp);
 
     // Safety: Safety conditions are fulfilled in parameters
     unsafe { arch::jump_higher_half(ventry.as_ptr(), hid, vdtb, vsp) };
@@ -86,7 +117,7 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
             )
         };
     }
-    log::info!("higher-half entry");
+    log::info!("boot hart ventry hid={}", hid);
 
     let trap_stack = mem::physalloc::alloc(4).expect("failed to allocate trap stack");
     let tsp = mem::vms::phys_to_kernel(trap_stack.end_addr());
@@ -98,7 +129,6 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));
     mem::vms::remap_tables().expect("failed to remap to higher-half");
     mem::heap::init_heap();
-    mem::vms::uninit_identity_map().expect("failed to uninitialize identity map");
 
     let (bump_start, bump_next, bump_end) = mem::alloc::bump::get_bump_area();
     log::info!(
@@ -124,8 +154,48 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     // Safety: hid is the current hart ID
     unsafe { arch::init_interrupts(hid, &fdt) };
 
+    hart::wait_all_harts(); // Until all harts enter higher-half space
+    mem::vms::uninit_identity_map().expect("failed to uninitialize identity map");
+
     log::info!("starting scheduler");
     sched::start();
+}
+
+/// # Safety
+/// `hid` must be equal to the executing hart ID.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn smp_entry(hid: usize, sp: PAddr) -> ! {
+    let trap_stack = mem::physalloc::alloc(2).expect("failed to allocate trap stack");
+    let tsp = VAddr::identity(trap_stack.end_addr());
+    core::mem::forget(trap_stack);
+    // Safety: tsp points to the top of trap_stack, which is mapped in bump space
+    unsafe { hloc::load_init(hid, tsp) };
+    arch::init();
+    log::info!("SMP hart pentry hid={}", hid);
+
+    mem::vms::smp_enable_initialized().expect("failed to load initialized address space");
+    hart::wait_all_harts(); // Until all SMP harts are started
+    hart::wait_all_harts(); // Until the boot hart relocates symbols
+
+    // Safety: The dtb_ptr argument is not used by the virtual entry
+    unsafe { jump_higher_half(smp_entry_virt as *const (), hid, core::ptr::null(), sp) }
+}
+
+unsafe fn smp_entry_virt(hid: usize) -> ! {
+    log::info!("SMP hart ventry hid={}", hid);
+
+    let trap_stack = mem::physalloc::alloc(4).expect("failed to allocate trap stack");
+    let tsp = mem::vms::phys_to_kernel(trap_stack.end_addr());
+    core::mem::forget(trap_stack);
+    // Safety: tsp points to the top of trap_stack, which is mapped in bump space
+    unsafe { hloc::load_init(hid, tsp) };
+    arch::init_higher_half();
+
+    log::info!("SMP hart finished initialization hid={}", hid);
+    hart::wait_all_harts(); // Until all harts enter higher-half space
+    loop {
+        arch::wait_for_interrupt();
+    }
 }
 
 /// An idle task that simply yields. Required to make sure the scheduler run queue is never empty.

@@ -46,9 +46,9 @@ impl InterruptPriorityThreshold {
     pub const fn mask_from(priority: InterruptPriority) -> Self {
         match priority {
             InterruptPriority::Disabled => Self::All,
-            InterruptPriority::Low      => Self::Medium,
-            InterruptPriority::Medium   => Self::High,
-            InterruptPriority::High     => Self::Disabled,
+            InterruptPriority::Low => Self::Medium,
+            InterruptPriority::Medium => Self::High,
+            InterruptPriority::High => Self::Disabled,
         }
     }
 }
@@ -62,7 +62,12 @@ pub trait InterruptController: Send + Sync {
     ///
     /// Since this mutates a global interrupt configuration, this function requires exclusive
     /// access to the controller to prevent races by other harts.
-    fn set_priority(&mut self, ms: IrqDisabledSection<'_>, source: InterruptSource, priority: InterruptPriority);
+    fn set_priority(
+        &mut self,
+        ms: IrqDisabledSection<'_>,
+        source: InterruptSource,
+        priority: InterruptPriority,
+    );
 
     /// Gets the priority threshold for interrupts that can be taken for this hart.
     fn get_threshold(&self) -> InterruptPriorityThreshold;
@@ -93,13 +98,17 @@ static INTERRUPT_CONTROLLER: RwLock<Option<Box<dyn InterruptController>>> = RwLo
 
 /// Acquires a shared read lock on the current [`InterruptController`].
 #[expect(unused)]
-pub fn get_controller_read<'ms>(_ms: IrqDisabledSection<'ms>) -> RwLockReadGuard<'ms, Option<Box<dyn InterruptController>>> {
+pub fn get_controller_read<'ms>(
+    _ms: IrqDisabledSection<'ms>,
+) -> RwLockReadGuard<'ms, Option<Box<dyn InterruptController>>> {
     INTERRUPT_CONTROLLER.read()
 }
 
 /// Acquires an exclusive write lock on the current [`InterruptController`].
 #[expect(unused)]
-pub fn get_controller_write<'ms>(_ms: IrqDisabledSection<'ms>) -> RwLockWriteGuard<'ms, Option<Box<dyn InterruptController>>> {
+pub fn get_controller_write<'ms>(
+    _ms: IrqDisabledSection<'ms>,
+) -> RwLockWriteGuard<'ms, Option<Box<dyn InterruptController>>> {
     INTERRUPT_CONTROLLER.write()
 }
 
@@ -107,7 +116,10 @@ pub fn get_controller_write<'ms>(_ms: IrqDisabledSection<'ms>) -> RwLockWriteGua
 ///
 /// Returns the previously installed driver, if any.
 #[inline]
-pub fn set_controller(_ms: IrqDisabledSection<'_>, ic: Box<dyn InterruptController>) -> Option<Box<dyn InterruptController>> {
+pub fn set_controller(
+    _ms: IrqDisabledSection<'_>,
+    ic: Box<dyn InterruptController>,
+) -> Option<Box<dyn InterruptController>> {
     let mut g = INTERRUPT_CONTROLLER.write();
     g.replace(ic)
 }

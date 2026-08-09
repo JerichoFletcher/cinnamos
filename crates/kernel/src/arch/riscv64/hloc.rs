@@ -1,7 +1,8 @@
 use core::{mem::offset_of, sync::atomic::AtomicUsize};
 
 use crate::{
-    arch::{Task, VAddr}, mem::alloc::slab::SlabBox,
+    arch::{Task, VAddr},
+    mem::alloc::slab::SlabBox,
 };
 
 const _: () = debug_assert!(offset_of!(HartLocal, scratch) == 8);

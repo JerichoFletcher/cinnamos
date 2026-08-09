@@ -20,12 +20,12 @@ impl Task {
     /// # Safety
     /// `context_sp` and `kernel_sp` must point to writable, mapped stack memory.
     #[inline]
-    pub const unsafe fn new(
-        context_sp: VAddr,
-        kernel_sp: VAddr,
-        tcb: TaskControlBlock,
-    ) -> Self {
-        Self { context_sp, kernel_sp, tcb }
+    pub const unsafe fn new(context_sp: VAddr, kernel_sp: VAddr, tcb: TaskControlBlock) -> Self {
+        Self {
+            context_sp,
+            kernel_sp,
+            tcb,
+        }
     }
 
     /// Creates a [`TaskStackBuilder`] on the task's working stack.
@@ -62,7 +62,9 @@ impl TaskStackBuilder<'_> {
     /// There must be enough space within the task stack, below the current pointer,
     /// to fit an aligned instance of `T`.
     pub unsafe fn push<T>(&mut self, val: T) -> &mut Self {
-        unsafe { self.stack.push(val); }
+        unsafe {
+            self.stack.push(val);
+        }
         self.task.context_sp = self.stack.get();
         self
     }

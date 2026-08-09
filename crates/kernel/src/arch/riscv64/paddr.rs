@@ -3,7 +3,12 @@ use core::{
     ops::{Add, Sub},
 };
 
-use crate::{arch::{PageLevel, VAddr, sv48::PT_MAX_ENTRIES}, mem::PAGE_SIZE};
+use sbi::PhysicalAddress;
+
+use crate::{
+    arch::{PageLevel, VAddr, sv48::PT_MAX_ENTRIES},
+    mem::PAGE_SIZE,
+};
 
 /// Represents a physical address. A pointer should not be safely derived from this address directly
 /// unless it has been made sure that the resulting pointer is properly mapped.
@@ -105,11 +110,11 @@ impl PAddr {
         let [ppn0, ppn1, ppn2, ppn3] = self.ppn();
         let [vpn0, vpn1, vpn2, vpn3] = va.vpn();
         let ppns = match level {
-            None                            => [ppn0, ppn1, ppn2, ppn3],
-            Some(PageLevel::Page4K)         => [vpn0, ppn1, ppn2, ppn3],
-            Some(PageLevel::Megapage2M)     => [vpn0, vpn1, ppn2, ppn3],
-            Some(PageLevel::Gigapage1G)     => [vpn0, vpn1, vpn2, ppn3],
-            Some(PageLevel::Terapage512G)   => [vpn0, vpn1, vpn2, vpn3],
+            None => [ppn0, ppn1, ppn2, ppn3],
+            Some(PageLevel::Page4K) => [vpn0, ppn1, ppn2, ppn3],
+            Some(PageLevel::Megapage2M) => [vpn0, vpn1, ppn2, ppn3],
+            Some(PageLevel::Gigapage1G) => [vpn0, vpn1, vpn2, ppn3],
+            Some(PageLevel::Terapage512G) => [vpn0, vpn1, vpn2, vpn3],
         };
         Self::from_parts(ppns, offset)
     }
@@ -148,5 +153,11 @@ impl LowerHex for PAddr {
 impl Debug for PAddr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "PAddr({:#016x})", self.0)
+    }
+}
+
+impl<T> From<PAddr> for PhysicalAddress<T> {
+    fn from(value: PAddr) -> Self {
+        Self::new(value.0)
     }
 }

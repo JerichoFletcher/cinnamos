@@ -1,5 +1,5 @@
 OUTPUT_ARCH("riscv")
-ENTRY(_start)
+ENTRY(_kernel_start)
 
 PHDRS {
     text    PT_LOAD     FLAGS(5);

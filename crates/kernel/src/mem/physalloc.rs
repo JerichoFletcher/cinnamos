@@ -1,5 +1,6 @@
 use core::{cmp::Reverse, num::NonZero};
 
+use alloc::boxed::Box;
 use fdt::Fdt;
 use spin::RwLock;
 
@@ -64,7 +65,7 @@ impl PhysFrameAlloc for FrameAlloc {
 
 enum SendAllocator {
     Bump,
-    Buddy(BuddyFrameAllocator<'static>),
+    Buddy(Box<BuddyFrameAllocator<'static>>),
 }
 
 impl SendAllocator {
@@ -121,7 +122,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) {
             unsafe { alloc.add_region(r) };
         }
 
-        *g = SendAllocator::Buddy(alloc);
+        *g = SendAllocator::Buddy(Box::new(alloc));
     }
 }
 

@@ -1,6 +1,5 @@
 use core::num::NonZero;
 
-use alloc::collections::linked_list::LinkedList;
 use cinnamos_structs::buddy::{
     BlockIndex, BuddyAllocator, FlatArray, bitmap_buf_size, next_buf_size, order_of,
 };
@@ -9,7 +8,6 @@ use spin::RwLock;
 use crate::{
     arch::PAddr,
     mem::{PAGE_SIZE, SizedMemoryRegion, vms::phys_to_virt},
-    *,
 };
 
 /// A physical frame allocation from a buddy allocator.
@@ -166,17 +164,21 @@ impl<'a> BuddyRegion<'a> {
     }
 }
 
+const MAX_REGION_COUNT: usize = 32;
+
 /// A frame allocator using a buddy tree to enable allocations of various orders.
 #[derive(Debug)]
 pub struct BuddyFrameAllocator<'a> {
-    regions: LinkedList<BuddyRegion<'a>>,
+    region_count: usize,
+    regions: [Option<BuddyRegion<'a>>; MAX_REGION_COUNT],
 }
 
 impl<'a> BuddyFrameAllocator<'a> {
     /// Creates a frame allocator with no regions.
     pub const fn new() -> Self {
         Self {
-            regions: LinkedList::new(),
+            region_count: 0,
+            regions: [const { None }; MAX_REGION_COUNT],
         }
     }
 
@@ -185,9 +187,11 @@ impl<'a> BuddyFrameAllocator<'a> {
     /// # Safety
     /// The added region must not intersect with all regions managed by the allocator.
     pub unsafe fn add_region(&mut self, reg: &SizedMemoryRegion) {
+        assert!(self.region_count < MAX_REGION_COUNT);
+
         #[cfg(debug_assertions)]
         {
-            if let Some(r) = self.regions.iter().find(|r| r.region.intersects(reg)) {
+            if let Some(r) = self.regions().find(|r| r.region.intersects(reg)) {
                 panic!(
                     "region {:#016x} .. {:#016x} intersects with existing region {:#016x} .. {:#016x}",
                     reg.base,
@@ -269,7 +273,7 @@ impl<'a> BuddyFrameAllocator<'a> {
                     )
                 };
                 l_alloc.add_range(l_start, r_base);
-                self.regions.push_back(l_alloc);
+                self.push_region(l_alloc);
             }
 
             if r_size != 0 {
@@ -303,7 +307,7 @@ impl<'a> BuddyFrameAllocator<'a> {
                     )
                 };
                 r_alloc.add_range(r_start, reg.end());
-                self.regions.push_back(r_alloc);
+                self.push_region(r_alloc);
             }
         } else {
             // Carve out memory for L and R metadata buffer (excluded from managed region)
@@ -343,14 +347,34 @@ impl<'a> BuddyFrameAllocator<'a> {
                 size_order,
             );
             alloc.add_range(start, reg.end());
-            self.regions.push_back(alloc);
+            self.push_region(alloc);
         }
+    }
+
+    #[inline]
+    fn regions<'b>(&self) -> impl Iterator<Item = &BuddyRegion<'a>>
+    where
+        'a: 'b,
+    {
+        self.regions[..self.region_count]
+            .iter()
+            .map(|v| v.as_ref().unwrap())
+    }
+
+    #[inline]
+    fn push_region<'b>(&mut self, reg: BuddyRegion<'a>)
+    where
+        'a: 'b,
+    {
+        assert!(self.region_count < MAX_REGION_COUNT);
+        self.regions[self.region_count] = Some(reg);
+        self.region_count += 1;
     }
 }
 
 impl super::PhysFrameAllocator<BuddyFrameAlloc> for BuddyFrameAllocator<'_> {
     fn alloc(&self, frame_count: usize) -> Option<BuddyFrameAlloc> {
-        for reg in self.regions.iter() {
+        for reg in self.regions() {
             if reg.free_count() >= frame_count {
                 return reg.alloc(frame_count);
             }
@@ -359,7 +383,7 @@ impl super::PhysFrameAllocator<BuddyFrameAlloc> for BuddyFrameAllocator<'_> {
     }
 
     fn dealloc(&self, handle: &mut BuddyFrameAlloc) {
-        for reg in self.regions.iter() {
+        for reg in self.regions() {
             if reg.id == handle.id {
                 reg.dealloc(handle);
                 break;

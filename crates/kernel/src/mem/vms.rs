@@ -77,7 +77,7 @@ pub fn virt_to_phys(va: VAddr) -> PAddr {
 /// Initializes the kernel address space and creates the higher-half virtual map.
 ///
 /// Should only be called once in early phase.
-pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
+pub fn init(fdt: Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
     if ROOT_ADDRSP.read().is_none() {
         let root_alloc = mem::physalloc::alloc(1).ok_or(VmsError::FrameAllocFailed)?;
         let root_ptr = VAddr::identity(root_alloc.start_addr()).as_mut::<MaybeUninit<_>>();
@@ -249,7 +249,7 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             .map_err(VmsError::AddressSpace)?;
 
         let (mut usable_regs, _) = devicetree::get_region_slices(
-            fdt,
+            &fdt,
             [
                 // Safety: Used symbols are defined in the linker script
                 unsafe {
@@ -406,6 +406,26 @@ pub fn init(fdt: &Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
         }
     } else {
         Err(VmsError::RootTableAlreadyInitialized)
+    }
+}
+
+/// Enable the initialized address space for an SMP hart.
+#[inline]
+pub fn smp_enable_initialized() -> Result<VirtualMemoryInfo, VmsError> {
+    let g = ROOT_ADDRSP.read();
+    match g.as_ref() {
+        Some(root_addrsp) => {
+            log::trace!(
+                "SMP load initialized root={:#016x}",
+                root_addrsp.0.root_pa()
+            );
+
+            let max_asid = arch::get_max_asid();
+            arch::switch_address_space(&root_addrsp.0);
+            arch::flush_address_space(&root_addrsp.0);
+            Ok(VirtualMemoryInfo { max_asid })
+        }
+        None => Err(VmsError::RootTableUninitialized),
     }
 }
 

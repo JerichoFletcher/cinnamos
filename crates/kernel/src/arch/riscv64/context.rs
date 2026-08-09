@@ -28,6 +28,9 @@ impl Context {
 
     /// Creates an empty context with the given return address.
     pub const fn new(ret: VAddr) -> Self {
-        Self { ra: ret, saved: [0; 12] }
+        Self {
+            ra: ret,
+            saved: [0; 12],
+        }
     }
 }

@@ -82,10 +82,12 @@ pub fn interrupt_free<'ms, T>(f: impl FnOnce(IrqDisabledSection<'ms>) -> T) -> T
             }
         }
     }
-    
+
     let sstatus = sstatus::read();
     riscv::interrupt::disable();
-    let _g = State { enabled: sstatus.sie() };
+    let _g = State {
+        enabled: sstatus.sie(),
+    };
     f(IrqDisabledSection::new())
 }
 
@@ -99,7 +101,10 @@ pub struct IrqDisabledSection<'ms> {
 impl<'ms> IrqDisabledSection<'ms> {
     #[inline]
     const fn new() -> Self {
-        Self { _life: PhantomData, _no_send_sync: PhantomData }
+        Self {
+            _life: PhantomData,
+            _no_send_sync: PhantomData,
+        }
     }
 }
 
@@ -131,16 +136,13 @@ unsafe impl critical_section::Impl for Critical {
         let nesting = get_critical_nesting();
         if nesting.load(Ordering::Relaxed) == 0 {
             loop {
-                if CRITICAL_MUTEX.compare_exchange_weak(
-                    false,
-                    true,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
-                .is_ok() {
+                if CRITICAL_MUTEX
+                    .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+                    .is_ok()
+                {
                     break;
                 }
-    
+
                 while CRITICAL_MUTEX.load(Ordering::Relaxed) {
                     core::hint::spin_loop();
                 }

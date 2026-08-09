@@ -159,7 +159,10 @@ impl PTE {
 
     /// Creates a [`PTE`] that points to the given physical address.
     pub fn new(page_addr: PAddr, flags: PTEFlags) -> Self {
-        debug_assert!(page_addr.addr().is_multiple_of(PAGE_SIZE), "Address misaligned");
+        debug_assert!(
+            page_addr.addr().is_multiple_of(PAGE_SIZE),
+            "Address misaligned"
+        );
         let flags = flags.bits() as usize & 0xff;
         let paddr = page_addr.ppn_all() << 10;
         Self(paddr | flags)
@@ -186,10 +189,7 @@ impl PTE {
     /// - The entry is valid (i.e. [`PTEFlags::VALID`]).
     /// - Either [`PTEFlags::READ`], [`PTEFlags::WRITE`], or [`PTEFlags::EXECUTE`] is set.
     pub fn is_leaf(&self) -> bool {
-        self.is_valid()
-            && self
-                .flags()
-                .intersects(PTEFlags::RWX)
+        self.is_valid() && self.flags().intersects(PTEFlags::RWX)
     }
 
     /// Sets the entry as a non-leaf entry pointing to another [`PageTable`].

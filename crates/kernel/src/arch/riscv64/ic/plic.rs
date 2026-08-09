@@ -1,6 +1,9 @@
 use core::ptr::NonNull;
 
-use crate::{arch::{self, IrqDisabledSection}, hloc};
+use crate::{
+    arch::{self, IrqDisabledSection},
+    hloc,
+};
 
 use super::*;
 
@@ -16,10 +19,10 @@ pub const INTERRUPT_COUNT: InterruptSource = NonZero::new(1024).unwrap();
 /// The maximum number of PLIC contexts supported by the PLIC specification.
 pub const MAX_PLIC_CONTEXT: usize = 15872;
 
-const OFFSET_INTERRUPT_PRIORITY: usize  = 0x000000;
-const OFFSET_INTERRUPT_ENABLE: usize    = 0x002000;
-const OFFSET_INTERRUPT_CONTEXT: usize   = 0x200000;
-const STRIDE_INTERRUPT_CONTEXT: usize   = 0x001000;
+const OFFSET_INTERRUPT_PRIORITY: usize = 0x000000;
+const OFFSET_INTERRUPT_ENABLE: usize = 0x002000;
+const OFFSET_INTERRUPT_CONTEXT: usize = 0x200000;
+const STRIDE_INTERRUPT_CONTEXT: usize = 0x001000;
 
 /// A memory-mapped PLIC driver.
 #[derive(Debug)]
@@ -71,9 +74,9 @@ impl Plic {
     const fn to_priority_num(&self, priority: InterruptPriority) -> u32 {
         match priority {
             InterruptPriority::Disabled => 0,
-            InterruptPriority::Low      => 1,
-            InterruptPriority::Medium   => self.max_priority_num.div_ceil(2),
-            InterruptPriority::High     => self.max_priority_num,
+            InterruptPriority::Low => 1,
+            InterruptPriority::Medium => self.max_priority_num.div_ceil(2),
+            InterruptPriority::High => self.max_priority_num,
         }
     }
 
@@ -98,10 +101,10 @@ impl Plic {
     #[inline]
     const fn to_threshold_num(&self, threshold: InterruptPriorityThreshold) -> u32 {
         match threshold {
-            InterruptPriorityThreshold::All         => 0,
-            InterruptPriorityThreshold::Medium      => self.to_priority_num(InterruptPriority::Low),
-            InterruptPriorityThreshold::High        => self.to_priority_num(InterruptPriority::Medium),
-            InterruptPriorityThreshold::Disabled    => self.to_priority_num(InterruptPriority::High),
+            InterruptPriorityThreshold::All => 0,
+            InterruptPriorityThreshold::Medium => self.to_priority_num(InterruptPriority::Low),
+            InterruptPriorityThreshold::High => self.to_priority_num(InterruptPriority::Medium),
+            InterruptPriorityThreshold::Disabled => self.to_priority_num(InterruptPriority::High),
         }
     }
 
@@ -123,26 +126,27 @@ impl InterruptController for Plic {
     fn get_priority(&self, source: InterruptSource) -> InterruptPriority {
         debug_assert!((1..INTERRUPT_COUNT.get()).contains(&source.get()));
         let ptr = unsafe {
-            self
-                .base_addr
+            self.base_addr
                 .add(OFFSET_INTERRUPT_PRIORITY)
                 .cast::<u32>()
                 .add(source.get())
         };
         let num = unsafe { ptr.read_volatile() };
-        self.priority_from_num(num).expect("invalid priority number")
+        self.priority_from_num(num)
+            .expect("invalid priority number")
     }
 
-    fn set_priority(&mut self, _ms: IrqDisabledSection<'_>, source: InterruptSource, priority: InterruptPriority) {
+    fn set_priority(
+        &mut self,
+        _ms: IrqDisabledSection<'_>,
+        source: InterruptSource,
+        priority: InterruptPriority,
+    ) {
         debug_assert!((1..INTERRUPT_COUNT.get()).contains(&source.get()));
-        let priority = Ord::min(
-            self.to_priority_num(priority),
-            self.max_priority_num,
-        );
+        let priority = Ord::min(self.to_priority_num(priority), self.max_priority_num);
 
         let ptr = unsafe {
-            self
-                .base_addr
+            self.base_addr
                 .add(OFFSET_INTERRUPT_PRIORITY)
                 .cast::<u32>()
                 .add(source.get())
@@ -155,7 +159,8 @@ impl InterruptController for Plic {
 
         // Safety: This context is exclusively owned by the current hart
         let ctx = unsafe { self.plic_ctx(hid).as_mut() };
-        self.threshold_from_num(ctx.priority_threshold).expect("invalid threshold number")
+        self.threshold_from_num(ctx.priority_threshold)
+            .expect("invalid threshold number")
     }
 
     fn set_threshold(&self, ms: IrqDisabledSection<'_>, threshold: InterruptPriorityThreshold) {
@@ -174,8 +179,7 @@ impl InterruptController for Plic {
 
         const CTX_WIDTH: usize = INTERRUPT_COUNT.get() / 8;
         let ptr = unsafe {
-            self
-                .base_addr
+            self.base_addr
                 .add(OFFSET_INTERRUPT_ENABLE + Self::plic_ctx_id(hid) * CTX_WIDTH)
                 .cast::<u32>()
                 .add(source.get() / 32)
@@ -193,8 +197,7 @@ impl InterruptController for Plic {
 
         const CTX_WIDTH: usize = INTERRUPT_COUNT.get() / 8;
         let ptr = unsafe {
-            self
-                .base_addr
+            self.base_addr
                 .add(OFFSET_INTERRUPT_ENABLE + Self::plic_ctx_id(hid) * CTX_WIDTH)
                 .cast::<u32>()
                 .add(source.get() / 32)
@@ -218,16 +221,15 @@ impl InterruptController for Plic {
             // Safety: This context is exclusively owned by the current hart
             let irq_claim_ptr = unsafe { (&raw const (*ctx).irq_claim_complete) };
             let prev_threshold = self.get_threshold();
-            InterruptSource::new(unsafe { irq_claim_ptr.read_volatile() } as _)
-                .map(|irq_id| {
-                    arch::interrupt_free(|ms| {
-                        self.set_threshold(
-                            ms,
-                            InterruptPriorityThreshold::mask_from(self.get_priority(irq_id)),
-                        );
-                    });
-                    (irq_id, prev_threshold)
-                })
+            InterruptSource::new(unsafe { irq_claim_ptr.read_volatile() } as _).map(|irq_id| {
+                arch::interrupt_free(|ms| {
+                    self.set_threshold(
+                        ms,
+                        InterruptPriorityThreshold::mask_from(self.get_priority(irq_id)),
+                    );
+                });
+                (irq_id, prev_threshold)
+            })
         });
 
         if let Some((irq_id, prev_threshold)) = claim {
@@ -238,7 +240,7 @@ impl InterruptController for Plic {
                 let hloc = hloc::borrow(ms);
                 let hid = hloc.hid();
                 let ctx = self.plic_ctx(hid).as_ptr();
-    
+
                 // Safety: Thisc context is exclusively owned by the current hart
                 let irq_complete_ptr = unsafe { (&raw mut (*ctx).irq_claim_complete) };
                 unsafe { irq_complete_ptr.write_volatile(irq_id.get() as _) };

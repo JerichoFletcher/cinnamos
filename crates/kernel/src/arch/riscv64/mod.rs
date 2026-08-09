@@ -6,20 +6,19 @@ use fdt::Fdt;
 
 use crate::{
     arch::{
-        self,
-        InterruptPriorityThreshold,
-        ic::{InterruptController, InterruptPriority}
+        self, InterruptPriorityThreshold,
+        ic::{InterruptController, InterruptPriority},
     },
-    devicetree,
-    mem,
+    devicetree, mem,
 };
 
 mod asm;
 
 pub mod console;
 pub mod context;
-pub mod ic;
+pub mod hart;
 pub mod hloc;
+pub mod ic;
 pub mod interrupt;
 pub mod paddr;
 pub mod sv48;
@@ -70,12 +69,7 @@ pub fn init_higher_half() {
 /// # Safety
 /// - `target`, `dtb_ptr`, `dyn_ptr`, and `new_sp` must be within the initialized higher-half virtual map.
 /// - `hid` must be equal to the executing hart ID.
-pub unsafe fn jump_higher_half(
-    target: *const (),
-    hid: usize,
-    dtb_ptr: VAddr,
-    new_sp: VAddr,
-) -> ! {
+pub unsafe fn jump_higher_half(target: *const (), hid: usize, dtb_ptr: VAddr, new_sp: VAddr) -> ! {
     unsafe {
         asm!(
             "mv sp, {sp}",

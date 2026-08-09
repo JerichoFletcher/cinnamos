@@ -8,6 +8,7 @@ mod panic;
 
 pub mod arch;
 pub mod device;
+pub mod hart;
 pub mod hloc;
 pub mod mem;
 pub mod rel;

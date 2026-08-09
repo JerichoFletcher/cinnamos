@@ -1,11 +1,11 @@
-use spin::{Mutex, MutexGuard};
+use spin::{MutexGuard, RelaxStrategy, Spin, mutex::Mutex};
 
 use crate::arch::IrqDisabledSection;
 
 /// A variation of spin mutex that can only be acquired from an IRQ-free section.
 #[derive(Debug)]
-pub struct MutexIrq<T: ?Sized> {
-    inner: Mutex<T>,
+pub struct MutexIrq<T: ?Sized, R: RelaxStrategy = Spin> {
+    inner: Mutex<T, R>,
 }
 
 impl<T> MutexIrq<T> {

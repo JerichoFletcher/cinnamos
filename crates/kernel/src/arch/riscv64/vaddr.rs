@@ -141,7 +141,9 @@ impl VAddr {
     /// The address must be writable and aligned to `T` (see [`ptr::write`](core::ptr::write)).
     #[inline]
     pub unsafe fn write<T>(&self, val: T) {
-        unsafe { self.as_mut::<T>().write(val); }
+        unsafe {
+            self.as_mut::<T>().write(val);
+        }
     }
 }
 

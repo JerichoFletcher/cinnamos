@@ -1,6 +1,6 @@
 .section .text.init
-.global _start
-_start:
+.global _kernel_start
+_kernel_start:
     lla     t0, _bss_start
     lla     t1, _bss_end
     bgeu    t0, t1, 2f
@@ -12,4 +12,11 @@ _start:
 
 2:
     lla     sp, _stack_end
+    mv      tp, zero
     tail    kernel_relocate
+
+.global _kernel_smp_start
+_kernel_smp_start:
+    mv      sp, a1
+    mv      tp, zero
+    tail    smp_entry
