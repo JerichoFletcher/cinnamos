@@ -34,7 +34,15 @@ pub unsafe fn start_hart(
         return Err(HartStartError::UnmappedEntry);
     };
     unsafe { sbi::hsm::hart_start(hid, entry_pa.into(), stack.end_addr().addr()) }
-        .map(|_| core::mem::forget(stack))
+        .map(|_| {
+            log::info!(
+                "starting hart hid={} entry={:#016x} sp={:#016x}",
+                hid,
+                entry_pa,
+                stack.end_addr()
+            );
+            core::mem::forget(stack);
+        })
         .map_err(|e| match e {
             SbiError::INVALID_ADDRESS => HartStartError::InvalidAddress,
             SbiError::INVALID_PARAMETER => HartStartError::InvalidHartId,

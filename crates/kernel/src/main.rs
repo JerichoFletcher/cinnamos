@@ -62,17 +62,22 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8) -> ! {
     );
     for id in 0..hart_count {
         if id != hid {
-            let stack = mem::physalloc::alloc(4).expect("failed to allocate SMP stack");
+            let stack = mem::physalloc::alloc(16).expect("failed to allocate SMP stack");
             let r = unsafe { arch::start_hart(id, _kernel_smp_start as _, stack) };
             log::info!("start hid={} status={:?}", id, r);
         }
     }
-    hart::wait_all_harts(); // Until all SMP harts are started
 
-    // TODO: This should instead be done as a finalizer to the previous barrier
-    // Safety: PHYS_TO_KERNEL_SLIDE is the kernel space's slide amount
-    unsafe { rel::shift_relocation(mem::vms::PHYS_TO_KERNEL_SLIDE) };
-    hart::wait_all_harts(); // Publish relocated symbols to other harts
+    // Barrier block until all SMP harts are started
+    if hart::wait_all_harts_finalize(|| {
+        log::trace!("synchronized relocation");
+        // Safety: PHYS_TO_KERNEL_SLIDE is the kernel space's slide amount
+        unsafe { rel::shift_relocation(mem::vms::PHYS_TO_KERNEL_SLIDE) };
+    })
+    .is_err()
+    {
+        panic!("multiple finalizers for relocation barrier");
+    }
 
     unsafe { jump_higher_half(entry_virt as *const (), hid, dtb_ptr, stack_end_p()) };
 }
@@ -97,6 +102,8 @@ unsafe fn jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *const u8, sp:
 /// - `hid` must be equal to the executing hart ID.
 /// - `dtb_ptr` must point to the virtual location of a devicetree blob.
 unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
+    log::info!("boot hart ventry hid={}", hid);
+
     // Safety: Bump space is mapped into kernel space
     unsafe { mem::heap::shift_bump(mem::vms::phys_to_kernel) };
 
@@ -117,7 +124,6 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
             )
         };
     }
-    log::info!("boot hart ventry hid={}", hid);
 
     let trap_stack = mem::physalloc::alloc(4).expect("failed to allocate trap stack");
     let tsp = mem::vms::phys_to_kernel(trap_stack.end_addr());
@@ -154,8 +160,15 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     // Safety: hid is the current hart ID
     unsafe { arch::init_interrupts(hid, &fdt) };
 
-    hart::wait_all_harts(); // Until all harts enter higher-half space
-    mem::vms::uninit_identity_map().expect("failed to uninitialize identity map");
+    // Set barrier until all harts enter higher-half space
+    if hart::wait_all_harts_finalize(|| {
+        log::trace!("synchronized id-unmap");
+        mem::vms::uninit_identity_map().expect("failed to uninitialize identity map");
+    })
+    .is_err()
+    {
+        panic!("multiple finalizers for id-unmap barrier");
+    }
 
     log::info!("starting scheduler");
     sched::start();
@@ -165,17 +178,17 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
 /// `hid` must be equal to the executing hart ID.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn smp_entry(hid: usize, sp: PAddr) -> ! {
+    log::info!("SMP hart pentry hid={}", hid);
+
     let trap_stack = mem::physalloc::alloc(2).expect("failed to allocate trap stack");
     let tsp = VAddr::identity(trap_stack.end_addr());
     core::mem::forget(trap_stack);
     // Safety: tsp points to the top of trap_stack, which is mapped in bump space
     unsafe { hloc::load_init(hid, tsp) };
     arch::init();
-    log::info!("SMP hart pentry hid={}", hid);
 
     mem::vms::smp_enable_initialized().expect("failed to load initialized address space");
     hart::wait_all_harts(); // Until all SMP harts are started
-    hart::wait_all_harts(); // Until the boot hart relocates symbols
 
     // Safety: The dtb_ptr argument is not used by the virtual entry
     unsafe { jump_higher_half(smp_entry_virt as *const (), hid, core::ptr::null(), sp) }
@@ -191,8 +204,10 @@ unsafe fn smp_entry_virt(hid: usize) -> ! {
     unsafe { hloc::load_init(hid, tsp) };
     arch::init_higher_half();
 
-    log::info!("SMP hart finished initialization hid={}", hid);
+    log::info!("SMP hart finished init hid={}", hid);
     hart::wait_all_harts(); // Until all harts enter higher-half space
+
+    log::info!("SMP hart parked hid={}", hid);
     loop {
         arch::wait_for_interrupt();
     }

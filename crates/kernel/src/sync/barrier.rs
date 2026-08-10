@@ -82,12 +82,24 @@ impl<R: RelaxStrategy> Barrier<R> {
     pub fn acquire(&self) {
         let mut state = self.state.load(Ordering::Acquire);
         loop {
+            let finalizer = Self::finalizer(state);
             let gen_num = Self::gen_num(state);
             let count = Self::count(state);
 
-            // Barrier is currently open
             if count == 0 {
+                // Barrier is currently open
                 return;
+            }
+            if finalizer != 0 && count == 1 {
+                // A finalizer exists for the current generation
+                // Wait until the finalizer releases the barrier
+                loop {
+                    state = self.state.load(Ordering::Acquire);
+                    if Self::gen_num(state) != gen_num {
+                        return;
+                    }
+                    R::relax();
+                }
             }
 
             let new_count = count - 1;
@@ -105,15 +117,16 @@ impl<R: RelaxStrategy> Barrier<R> {
                         loop {
                             state = self.state.load(Ordering::Acquire);
                             if Self::gen_num(state) != gen_num {
-                                break;
+                                return;
                             }
                             R::relax();
                         }
-                        return;
                     }
                     Err(actual) => state = actual,
                 }
             } else {
+                debug_assert_eq!(finalizer, 0);
+
                 // Claimed the last acquirement: release the barrier
                 let next_gen_num = gen_num.wrapping_add(1);
                 let new_state = Self::to_state(0, next_gen_num, 0);
@@ -130,6 +143,64 @@ impl<R: RelaxStrategy> Barrier<R> {
         }
     }
 
+    /// Attempts to reserve the finalizer for the barrier's current generation.
+    ///
+    /// If reservation succeeds, the hart will wait until only one acquirement remains, at which point `f`
+    /// will be called before releasing the barrier.
+    /// Thus, while a reservation is present, no other hart can claim the final acquirement and release
+    /// the barrier for the current generation.
+    ///
+    /// Returns [`Err`] if the finalizer for the current generation is already reserved.
+    ///
+    /// # Note
+    /// Because the barrier is only released after `f` returns, calling `f` must **NEVER** cause a panic.
+    /// Otherwise, a barrier can be left in a permanently locked state and indefinitely block all acquirers.
+    pub fn try_acquire_finalize<T, F: FnOnce() -> T>(&self, f: F) -> Result<T, F> {
+        let mut state = self.state.load(Ordering::Acquire);
+        let gen_num = loop {
+            let finalizer = Self::finalizer(state);
+            let count = Self::count(state);
+
+            if count == 0 {
+                // Barrier is currently open
+                return Ok(f());
+            }
+            if finalizer != 0 {
+                // The finalizer for this generation has already been reserved
+                return Err(f);
+            }
+
+            let gen_num = Self::gen_num(state);
+            let new_state = Self::to_state(1, gen_num, count);
+            match self.state.compare_exchange_weak(
+                state,
+                new_state,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break gen_num,
+                Err(actual) => state = actual,
+            }
+        };
+
+        loop {
+            state = self.state.load(Ordering::Acquire);
+            debug_assert_eq!(Self::gen_num(state), gen_num);
+
+            if Self::count(state) == 1 {
+                break;
+            }
+            R::relax();
+        }
+
+        let r = f();
+        let next_gen_num = gen_num.wrapping_add(1);
+        let new_state = Self::to_state(0, next_gen_num, 0);
+        self.state.store(new_state, Ordering::Release);
+
+        Ok(r)
+    }
+
     #[inline]
     const fn count(state: usize) -> usize {
         state & Self::COUNT_MASK
@@ -140,7 +211,6 @@ impl<R: RelaxStrategy> Barrier<R> {
         (state >> Self::COUNT_BITS) & Self::GEN_MASK
     }
 
-    /// TODO: Add finalizer logic to allow finalizer function
     #[inline]
     const fn finalizer(state: usize) -> usize {
         (state >> (Self::COUNT_BITS + Self::GEN_BITS)) & 1
