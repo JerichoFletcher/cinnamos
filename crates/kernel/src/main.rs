@@ -6,7 +6,7 @@ extern crate alloc;
 use core::ptr::NonNull;
 
 use cinnamos_kernel::{
-    arch::{PAddr, VAddr},
+    arch::addr::{PAddr, VAddr},
     mem::{PhysFrameAlloc, SizedMemoryRegion},
     sym::*,
     *,
@@ -119,7 +119,7 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
         unsafe {
             io::serial::init(
                 NonNull::new_unchecked(mem::vms::phys_to_virt(pa).as_mut()),
-                arch::InterruptSource::new(irq_id),
+                arch::interrupt::InterruptSource::new(irq_id),
             )
         };
     }
@@ -160,8 +160,8 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     }
 
     // Safety: hid is the current hart ID
-    unsafe { arch::init_interrupt_driver(hid, &fdt) };
-    arch::init_interrupts();
+    unsafe { arch::interrupt::init_driver(hid, &fdt) };
+    arch::interrupt::init();
 
     let task = task::new_kernel_task(idle).expect("failed to create idle task");
     // Safety: task already has a context
@@ -218,7 +218,7 @@ unsafe fn smp_entry_virt(hid: usize) -> ! {
     log::info!("SMP hart finished init hid={}", hid);
     hart::wait_all_harts(); // Until all harts enter higher-half space
     mem::vms::flush_kernel_address_space().expect("failed to flush kernel TLB cache");
-    arch::init_interrupts();
+    arch::interrupt::init();
 
     log::info!("SMP start scheduler hid={}", hid);
     hart::wait_all_harts(); // Wait until all harts are ready to enter the scheduler

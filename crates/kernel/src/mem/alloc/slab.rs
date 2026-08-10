@@ -9,7 +9,7 @@ use alloc::{boxed::Box, collections::linked_list::LinkedList, vec::Vec};
 use spin::{Mutex, RwLock};
 
 use crate::{
-    arch::{PTEFlags, VAddr},
+    arch::{addr::VAddr, virt::PTEFlags},
     mem::{self, PhysFrameAlloc, physalloc::FrameAlloc, virt::VirtAlloc, vmalloc::PageAlloc},
 };
 

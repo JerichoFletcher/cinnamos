@@ -10,7 +10,7 @@ use riscv::{
 };
 
 use crate::{
-    arch::{self, VAddr, interrupt},
+    arch::{self, addr::VAddr},
     *,
 };
 
@@ -127,7 +127,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             arch::timer::schedule_timer();
-            arch::interrupt_free(|ms| {
+            arch::interrupt::interrupt_free(|ms| {
                 let mut hloc = hloc::borrow(ms);
                 if let Some(curr) = hloc.curr_task() {
                     let t = curr.tcb().time_quantum;
@@ -198,7 +198,7 @@ fn handle_external_interrupt() {
     // Safety: IRQ is disabled here
     unsafe {
         arch::ic::with_claim(|irq_id| {
-            if let Err(e) = interrupt::dispatch_irq(irq_id) {
+            if let Err(e) = arch::riscv64::interrupt::dispatch_irq(irq_id) {
                 log::warn!(
                     "failed to handle claimed interrupt hid={} irq={}: {:?}",
                     hid,

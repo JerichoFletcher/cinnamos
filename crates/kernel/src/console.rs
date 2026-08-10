@@ -3,7 +3,7 @@ use core::fmt::{self, Write};
 use spin::MutexGuard;
 
 use crate::{
-    arch::{IrqDisabledSection, get_fallback_console},
+    arch::{get_fallback_console, interrupt::IrqDisabledSection},
     io::serial::SerialOutputWrite,
     sync::mutex_irq::MutexIrq,
 };

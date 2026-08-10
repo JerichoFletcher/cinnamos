@@ -5,7 +5,9 @@ use spin::Mutex;
 
 use crate::{
     arch::{
-        self, MapError, PAGE_TABLE_DEPTH, PAddr, PTEFlags, PageLevel, PageTable, UnmapError, VAddr,
+        self,
+        addr::{PAddr, VAddr},
+        virt::{MapError, PAGE_TABLE_DEPTH, PTEFlags, PageLevel, PageTable, UnmapError},
     },
     mem::{PhysFrameAlloc, physalloc::FrameAlloc, virt::VirtAlloc, vmalloc::PageAlloc},
 };
@@ -170,7 +172,7 @@ impl<'a> AddressSpace<'a> {
             let mut next_lv = PageLevel::select_size(va, pa, pa_end - pa)
                 .ok_or(AddressSpaceError::AddressMisaligned(va, pa))?;
 
-            match arch::map_page(self.root_ptr, va, pa, next_lv, flags, &self.p2v).try_fold(
+            match arch::virt::map_page(self.root_ptr, va, pa, next_lv, flags, &self.p2v).try_fold(
                 (0, [const { None }; PAGE_TABLE_DEPTH]),
                 |(i, mut allocs), v| match v {
                     Ok(a) => {
@@ -233,8 +235,8 @@ impl<'a> AddressSpace<'a> {
         let va_end = va + size_bytes;
 
         while va < va_end {
-            let next_size =
-                arch::unmap_page(self.root_ptr, va, self.p2v).map_err(AddressSpaceError::Unmap)?;
+            let next_size = arch::virt::unmap_page(self.root_ptr, va, self.p2v)
+                .map_err(AddressSpaceError::Unmap)?;
             va = va + next_size.size();
         }
         Ok(())
@@ -242,7 +244,7 @@ impl<'a> AddressSpace<'a> {
 
     #[inline]
     pub fn translate_virt(&self, va: VAddr) -> Option<(PAddr, PageLevel)> {
-        arch::translate_virt(self.root_ptr, va, self.p2v)
+        arch::virt::translate_virt(self.root_ptr, va, self.p2v)
     }
 }
 

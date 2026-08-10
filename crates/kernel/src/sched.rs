@@ -3,7 +3,10 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use alloc::collections::vec_deque::VecDeque;
 
 use crate::{
-    arch::{self, Task},
+    arch::{
+        self, Task,
+        interrupt::{interrupt_free, interrupt_nested},
+    },
     hloc,
     mem::alloc::slab::SlabBox,
     sync::mutex_irq::MutexIrq,
@@ -49,7 +52,7 @@ impl Scheduler {
         tcb.state = TaskState::Ready;
         tcb.time_quantum = 0;
 
-        arch::interrupt_free(|ms| {
+        interrupt_free(|ms| {
             self.run_queue.lock(ms).push_back(task);
         });
     }
@@ -58,7 +61,7 @@ impl Scheduler {
     ///
     /// Will disable interrupts for the hart until the function returns.
     pub fn schedule(&self) {
-        arch::interrupt_free(|ms| {
+        interrupt_free(|ms| {
             let mut hloc = hloc::borrow(ms);
             let mut rq = self.run_queue.lock(ms);
             if rq.is_empty() {
@@ -107,7 +110,7 @@ impl Scheduler {
     /// - If this function is called from an ISR, the interrupt flag must be disabled.
     pub unsafe fn start(&self) -> ! {
         loop {
-            arch::interrupt_free(|ms| {
+            interrupt_free(|ms| {
                 let mut hloc = hloc::borrow(ms);
                 let next = self.run_queue.lock(ms).pop_front();
                 if let Some(mut next) = next {
@@ -135,7 +138,7 @@ impl Scheduler {
     /// Safety: Must not be called within a critical section or ISR.
     unsafe fn wait(&self) {
         unsafe {
-            arch::interrupt_nested(|| {
+            interrupt_nested(|| {
                 arch::wait_for_interrupt();
             })
         }

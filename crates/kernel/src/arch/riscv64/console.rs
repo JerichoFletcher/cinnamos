@@ -1,7 +1,7 @@
 use core::fmt::Write;
 
 use crate::{
-    arch::{PAddr, VAddr},
+    arch::addr::{PAddr, VAddr},
     console::ConsoleWrite,
     mem,
 };

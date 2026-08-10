@@ -6,7 +6,10 @@ mod freelist;
 
 use super::alloc::bump;
 use crate::{
-    arch::{HEAP_MAP_BASE, PAddr, VAddr},
+    arch::{
+        HEAP_MAP_BASE,
+        addr::{PAddr, VAddr},
+    },
     mem::heap::freelist::FreeListHeap,
 };
 

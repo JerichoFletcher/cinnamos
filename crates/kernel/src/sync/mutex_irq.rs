@@ -1,6 +1,6 @@
 use spin::{MutexGuard, RelaxStrategy, Spin, mutex::Mutex};
 
-use crate::arch::IrqDisabledSection;
+use crate::arch::interrupt::IrqDisabledSection;
 
 /// A variation of spin mutex that can only be acquired from an IRQ-free section.
 #[derive(Debug)]

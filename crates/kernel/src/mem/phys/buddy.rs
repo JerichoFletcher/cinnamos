@@ -6,7 +6,7 @@ use cinnamos_structs::buddy::{
 use spin::RwLock;
 
 use crate::{
-    arch::PAddr,
+    arch::addr::PAddr,
     mem::{PAGE_SIZE, SizedMemoryRegion, vms::phys_to_virt},
 };
 

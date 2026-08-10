@@ -4,7 +4,7 @@ use core::{
 };
 
 use crate::{
-    arch::{PTEFlags, VAddr},
+    arch::{addr::VAddr, virt::PTEFlags},
     mem::{PhysFrameAlloc, physalloc, vms},
 };
 

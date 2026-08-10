@@ -1,4 +1,4 @@
-use crate::arch::VAddr;
+use crate::arch::addr::VAddr;
 
 /// A utility for creating an in-memory stack.
 #[derive(Debug)]

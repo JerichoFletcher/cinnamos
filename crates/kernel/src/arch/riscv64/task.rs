@@ -2,7 +2,7 @@ use core::mem::offset_of;
 
 use riscv::register::sstatus::{self, Sstatus};
 
-use crate::{arch::VAddr, task::TaskControlBlock, util::mem::stack::StackBuilder};
+use crate::{arch::addr::VAddr, task::TaskControlBlock, util::mem::stack::StackBuilder};
 
 const _: () = debug_assert!(offset_of!(Task, context_sp) == 0);
 const _: () = debug_assert!(offset_of!(Task, kernel_sp) == 8);

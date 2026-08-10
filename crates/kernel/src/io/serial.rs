@@ -5,7 +5,7 @@ use uart::*;
 
 use super::{Read, Write};
 use crate::{
-    arch::{self, InterruptSource},
+    arch::interrupt::{InterruptSource, interrupt_free, register_irq_handler},
     console::ConsoleWrite,
     device::uart::{UartReceiveRead, UartTransmitWrite},
     sync::mutex_irq::MutexIrq,
@@ -90,18 +90,18 @@ pub unsafe fn init(base_addr: NonNull<u8>, irq_id: Option<InterruptSource>) {
     );
 
     if let Some(irq_id) = irq_id
-        && arch::register_irq_handler(irq_id, handle_uart_irq).is_ok()
+        && register_irq_handler(irq_id, handle_uart_irq).is_ok()
     {
         drv.write_interrupt_enable(InterruptEnable::RECEIVED_DATA);
     }
-    arch::interrupt_free(|ms| {
+    interrupt_free(|ms| {
         *IO_UART.lock(ms) = Some(SendUart(drv));
     });
 }
 
 /// Reads bytes from the UART receive register and inserts them into the input buffer.
 fn handle_uart_irq() {
-    arch::interrupt_free(|ms| {
+    interrupt_free(|ms| {
         let mut g = IO_UART.lock(ms);
         if let Some(drv) = g.as_mut() {
             let mut buf = [0u8; 32];
@@ -121,7 +121,7 @@ pub struct SerialOutputWrite;
 
 impl fmt::Write for SerialOutputWrite {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        arch::interrupt_free(|ms| {
+        interrupt_free(|ms| {
             let mut g = IO_UART.lock(ms);
             match g.as_mut() {
                 Some(drv) => {

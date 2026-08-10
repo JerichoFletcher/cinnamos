@@ -6,8 +6,8 @@ use fdt::Fdt;
 
 use crate::{
     arch::{
-        self, InterruptPriorityThreshold,
         ic::{InterruptController, InterruptPriority},
+        interrupt::{InterruptPriorityThreshold, interrupt_free},
         timer::schedule_timer,
     },
     devicetree, mem,
@@ -98,7 +98,7 @@ pub unsafe fn init_interrupt_driver(hid: usize, fdt: &Fdt) {
         let plic_ptr = NonNull::new(mem::vms::phys_to_virt(pa).as_mut()).expect("plic is null");
         // Safety: plic_ptr is direct-mapped to PLIC region
         let mut plic = unsafe { ic::plic::Plic::new(plic_ptr) };
-        arch::interrupt_free(|ms| {
+        interrupt_free(|ms| {
             for (node, ints) in devicetree::all_with_interrupts(fdt, &plic_node) {
                 for int in ints {
                     log::debug!("enabling interrupt {}: {}", int, node.name);
@@ -113,7 +113,7 @@ pub unsafe fn init_interrupt_driver(hid: usize, fdt: &Fdt) {
 
 /// Initializes and enables interrupts for this hart.
 pub fn init_interrupts() {
-    arch::interrupt_free(|ms| {
+    interrupt_free(|ms| {
         if let Some(ic) = ic::get_controller_read(ms).as_ref() {
             ic.set_threshold(ms, InterruptPriorityThreshold::Low);
             for descriptor in ic.iter_enabled_interrupts(ms) {

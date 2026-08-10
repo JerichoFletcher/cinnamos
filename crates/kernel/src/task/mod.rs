@@ -1,7 +1,7 @@
 use cinnamos_abi::proc::ThreadId;
 
 use crate::{
-    arch::{Context, PTEFlags, Task},
+    arch::{Context, Task, virt::PTEFlags},
     mem::{
         self,
         alloc::slab::{SlabAllocator, SlabBox},

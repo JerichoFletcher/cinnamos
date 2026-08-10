@@ -3,7 +3,7 @@ use core::num::NonZero;
 use cinnamos_structs::buddy::{AllocMap, BlockIndex, BuddyAllocator, order_of};
 use spin::Mutex;
 
-use crate::{arch::VAddr, mem::PAGE_SIZE};
+use crate::{arch::addr::VAddr, mem::PAGE_SIZE};
 
 /// A virtual page allocation from a buddy allocator.
 #[derive(Debug)]

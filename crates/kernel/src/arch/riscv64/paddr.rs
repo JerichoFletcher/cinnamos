@@ -6,7 +6,7 @@ use core::{
 use sbi::PhysicalAddress;
 
 use crate::{
-    arch::{PageLevel, VAddr, sv48::PT_MAX_ENTRIES},
+    arch::{addr::VAddr, sv48::PT_MAX_ENTRIES, virt::PageLevel},
     mem::PAGE_SIZE,
 };
 

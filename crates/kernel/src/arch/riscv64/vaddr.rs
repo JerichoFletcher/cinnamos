@@ -5,7 +5,7 @@ use core::{
 };
 
 use crate::{
-    arch::{PAddr, sv48::PT_MAX_ENTRIES},
+    arch::{addr::PAddr, sv48::PT_MAX_ENTRIES},
     mem::PAGE_SIZE,
 };
 

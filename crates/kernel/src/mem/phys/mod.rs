@@ -2,7 +2,7 @@ pub mod buddy;
 
 use core::num::NonZero;
 
-use crate::arch::PAddr;
+use crate::arch::addr::PAddr;
 
 /// A trait for physical frame allocations.
 pub trait PhysFrameAlloc {

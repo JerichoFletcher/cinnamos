@@ -5,7 +5,7 @@ use fdt::Fdt;
 use spin::RwLock;
 
 use crate::{
-    arch::PAddr,
+    arch::addr::PAddr,
     mem::{
         PAGE_SIZE, PhysFrameAlloc, SizedMemoryRegion,
         alloc::bump::BumpFrameAlloc,

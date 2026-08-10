@@ -3,7 +3,7 @@ use core::num::NonZero;
 use alloc::boxed::Box;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::arch::IrqDisabledSection;
+use crate::arch::interrupt::IrqDisabledSection;
 
 pub mod plic;
 

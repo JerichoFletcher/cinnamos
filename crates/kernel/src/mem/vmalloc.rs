@@ -1,7 +1,7 @@
 use spin::Once;
 
 use crate::{
-    arch::{VAddr, VMALLOC_MAP_BASE, VMALLOC_MAP_END},
+    arch::{VMALLOC_MAP_BASE, VMALLOC_MAP_END, addr::VAddr},
     mem::{
         PAGE_SIZE,
         virt::{

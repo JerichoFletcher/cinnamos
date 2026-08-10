@@ -1,7 +1,7 @@
 use core::{mem::offset_of, sync::atomic::AtomicUsize};
 
 use crate::{
-    arch::{Task, VAddr},
+    arch::{addr::VAddr, task::Task},
     mem::alloc::slab::SlabBox,
 };
 

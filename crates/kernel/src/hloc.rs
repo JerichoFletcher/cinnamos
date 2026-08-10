@@ -3,7 +3,7 @@ use core::sync::atomic::AtomicUsize;
 use alloc::boxed::Box;
 
 use crate::{
-    arch::{self, HartLocal, IrqDisabledSection, Task, VAddr},
+    arch::{self, Task, addr::VAddr, hloc::HartLocal, interrupt::IrqDisabledSection},
     mem::alloc::slab::SlabBox,
 };
 
@@ -67,7 +67,7 @@ impl HartLocalGuard<'_> {
 pub unsafe fn load_init(hid: usize, tsp: VAddr) {
     let ptr = Box::leak(Box::new(HartLocal::new(hid, tsp)));
     log::trace!("init hloc hid={} tsp={:#016x} ptr={:p}", hid, tsp, ptr);
-    arch::load_hart_local(ptr);
+    arch::hloc::load_hart_local(ptr);
 }
 
 /// Gets an access guard for the hart-local storage from an IRQ-free section.
@@ -84,7 +84,7 @@ pub fn borrow<'ms>(ms: IrqDisabledSection<'ms>) -> HartLocalGuard<'ms> {
 /// Returns [`Err`] if the hart-local storage has not been initialized for this hart.
 #[inline]
 pub fn try_borrow<'ms>(ms: IrqDisabledSection<'ms>) -> Option<HartLocalGuard<'ms>> {
-    let ptr = arch::hart_local();
+    let ptr = arch::hloc::hart_local();
     if ptr.is_null() || !ptr.is_aligned() {
         None
     } else {
@@ -106,7 +106,7 @@ pub fn get_hid() -> usize {
 /// Returns [`None`] if the hart-local storage has not been initialized for this hart.
 #[inline]
 pub fn try_get_hid() -> Option<usize> {
-    let ptr = arch::hart_local();
+    let ptr = arch::hloc::hart_local();
     if ptr.is_null() || !ptr.is_aligned() {
         None
     } else {
@@ -129,7 +129,7 @@ pub fn get_critical_nesting<'a>() -> &'a AtomicUsize {
 /// Returns [`None`] if the hart-local storage has not been initialized for this hart.
 #[inline]
 pub fn try_get_critical_nesting<'a>() -> Option<&'a AtomicUsize> {
-    let ptr = arch::hart_local();
+    let ptr = arch::hloc::hart_local();
     if ptr.is_null() || !ptr.is_aligned() {
         None
     } else {
@@ -145,5 +145,5 @@ pub fn try_get_critical_nesting<'a>() -> Option<&'a AtomicUsize> {
 /// consider using [`try_with_critical`] instead.
 #[inline]
 pub fn get_ptr() -> *const HartLocal {
-    arch::hart_local()
+    arch::hloc::hart_local()
 }

@@ -1,7 +1,7 @@
 use core::num::NonZero;
 
-pub use crate::arch::PAGE_SIZE;
-use crate::arch::PAddr;
+use crate::arch::addr::PAddr;
+pub use crate::arch::virt::PAGE_SIZE;
 
 mod phys;
 pub use phys::PhysFrameAlloc;

@@ -1,6 +1,6 @@
 use riscv::register::sstatus;
 
-use crate::arch::{VAddr, task::kernel_task_enter};
+use crate::arch::{addr::VAddr, riscv64::task::kernel_task_enter};
 
 const _: () = debug_assert!(size_of::<Context>() == 21 * size_of::<usize>());
 

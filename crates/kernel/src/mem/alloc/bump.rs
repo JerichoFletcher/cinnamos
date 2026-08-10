@@ -7,7 +7,7 @@ use core::{
 use spin::Once;
 
 use crate::{
-    arch::{PAddr, VAddr},
+    arch::addr::{PAddr, VAddr},
     mem::{PAGE_SIZE, PhysFrameAlloc},
     sym::{bump_heap_end_p, bump_heap_start_p},
 };

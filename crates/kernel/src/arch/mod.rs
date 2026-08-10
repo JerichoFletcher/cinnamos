@@ -1,3 +1,8 @@
+pub mod addr;
+pub mod hloc;
+pub mod interrupt;
+pub mod virt;
+
 cfg_select! {
     target_arch = "riscv64" => {
         mod riscv64;
@@ -19,26 +24,10 @@ cfg_select! {
         pub use riscv64::console::get_fallback_console;
         pub use riscv64::context::Context;
         pub use riscv64::hart::{HartStartError, start_hart};
-        pub use riscv64::hloc::{HartLocal, hart_local, load_hart_local};
-        pub use riscv64::ic::{
-            InterruptController, InterruptPriority, InterruptPriorityThreshold, InterruptSource,
-        };
-        pub use riscv64::interrupt::{
-            InterruptError, IrqDisabledSection, MasksIrq, interrupt_free, interrupt_nested,
-            register_irq_handler,
-        };
-        pub use riscv64::paddr::PAddr;
-        pub use riscv64::sv48::{
-            MapError, PAGE_SIZE, PAGE_TABLE_DEPTH, PTE, PTEFlags, PageLevel, PageTable, UnmapError,
-            flush_address_space, flush_address_space_at, get_max_asid, map_page,
-            switch_address_space, translate_virt, unmap_page,
-        };
         pub use riscv64::task::Task;
         pub use riscv64::trap::TrapFrame;
-        pub use riscv64::vaddr::VAddr;
         pub use riscv64::{
-            ElfDyn, get_dyn, init, init_higher_half, init_interrupt_driver, init_interrupts,
-            jump_higher_half, wait_for_interrupt,
+            ElfDyn, get_dyn, init, init_higher_half, jump_higher_half, wait_for_interrupt,
         };
     }
 }

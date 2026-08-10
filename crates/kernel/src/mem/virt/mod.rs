@@ -2,7 +2,7 @@ pub mod buddy;
 
 use core::num::NonZero;
 
-use crate::arch::VAddr;
+use crate::arch::addr::VAddr;
 
 /// A trait for virtual page allocations.
 pub trait VirtAlloc {

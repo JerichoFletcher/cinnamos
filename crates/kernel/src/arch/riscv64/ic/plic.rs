@@ -1,7 +1,7 @@
 use core::ptr::NonNull;
 
 use crate::{
-    arch::{self, IrqDisabledSection},
+    arch::interrupt::{IrqDisabledSection, interrupt_free},
     hloc,
 };
 
@@ -231,7 +231,7 @@ impl InterruptController for Plic {
     }
 
     unsafe fn try_if_claim(&self, f: &dyn Fn(InterruptSource)) {
-        let claim = arch::interrupt_free(|ms| {
+        let claim = interrupt_free(|ms| {
             let hloc = hloc::borrow(ms);
             let hid = hloc.hid();
             let ctx = self.plic_ctx(hid).as_ptr();
@@ -240,12 +240,10 @@ impl InterruptController for Plic {
             let irq_claim_ptr = unsafe { (&raw const (*ctx).irq_claim_complete) };
             let prev_threshold = self.get_threshold();
             InterruptSource::new(unsafe { irq_claim_ptr.read_volatile() } as _).map(|irq_id| {
-                arch::interrupt_free(|ms| {
-                    self.set_threshold(
-                        ms,
-                        InterruptPriorityThreshold::mask_from(self.get_priority(irq_id)),
-                    );
-                });
+                self.set_threshold(
+                    ms,
+                    InterruptPriorityThreshold::mask_from(self.get_priority(irq_id)),
+                );
                 (irq_id, prev_threshold)
             })
         });
@@ -254,7 +252,7 @@ impl InterruptController for Plic {
             // Safety: Currently not in an IRQ-free section
             f(irq_id);
 
-            arch::interrupt_free(|ms| {
+            interrupt_free(|ms| {
                 let hloc = hloc::borrow(ms);
                 let hid = hloc.hid();
                 let ctx = self.plic_ctx(hid).as_ptr();
@@ -263,7 +261,7 @@ impl InterruptController for Plic {
                 let irq_complete_ptr = unsafe { (&raw mut (*ctx).irq_claim_complete) };
                 unsafe { irq_complete_ptr.write_volatile(irq_id.get() as _) };
 
-                arch::interrupt_free(|ms| {
+                interrupt_free(|ms| {
                     self.set_threshold(ms, prev_threshold);
                 });
             });

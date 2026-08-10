@@ -4,7 +4,11 @@ use fdt::Fdt;
 use spin::RwLock;
 
 use crate::{
-    arch::*,
+    arch::{
+        addr::{PAddr, VAddr},
+        virt::{PTEFlags, PageLevel, PageTable},
+        *,
+    },
     mem::{
         PAGE_SIZE, PhysFrameAlloc, SizedMemoryRegion,
         addrsp::{AddressSpace, AddressSpaceError},
@@ -334,7 +338,7 @@ pub fn init(fdt: Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             let mut pa_orig = kernel_start_p();
             while pa_orig < kernel_end_p() {
                 let va = phys_to_kernel(pa_orig);
-                let pa_trns = arch::translate_virt(root_ptr, va, VAddr::identity);
+                let pa_trns = arch::virt::translate_virt(root_ptr, va, VAddr::identity);
                 let va_addr = va.addr();
                 let pa_orig_addr = pa_orig.addr();
                 match pa_trns {
@@ -355,7 +359,7 @@ pub fn init(fdt: Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
                 pa_orig = r.base;
                 while pa_orig < r.end() {
                     let va = phys_to_virt(pa_orig);
-                    let pa_trns = arch::translate_virt(root_ptr, va, VAddr::identity);
+                    let pa_trns = arch::virt::translate_virt(root_ptr, va, VAddr::identity);
                     let va_addr = va.addr();
                     let pa_orig_addr = pa_orig.addr();
                     match pa_trns {
@@ -376,7 +380,7 @@ pub fn init(fdt: Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
             pa_orig = kernel_start_p();
             while pa_orig < kernel_end_p() {
                 let va = VAddr::identity(pa_orig);
-                let pa_trns = arch::translate_virt(root_ptr, va, VAddr::identity);
+                let pa_trns = arch::virt::translate_virt(root_ptr, va, VAddr::identity);
                 let va_addr = va.addr();
                 let pa_orig_addr = pa_orig.addr();
                 match pa_trns {
@@ -396,9 +400,9 @@ pub fn init(fdt: Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
 
         let mut g = ROOT_ADDRSP.write();
         if g.is_none() {
-            let max_asid = arch::get_max_asid();
-            arch::switch_address_space(&root_addrsp);
-            arch::flush_address_space(&root_addrsp);
+            let max_asid = arch::virt::get_max_asid();
+            arch::virt::switch_address_space(&root_addrsp);
+            arch::virt::flush_address_space(&root_addrsp);
             *g = Some(SendAddressSpace(root_addrsp));
             Ok(VirtualMemoryInfo { max_asid })
         } else {
@@ -415,7 +419,7 @@ pub fn flush_kernel_address_space() -> Result<(), VmsError> {
     let g = ROOT_ADDRSP.read();
     match g.as_ref() {
         Some(root_addrsp) => {
-            arch::flush_address_space(&root_addrsp.0);
+            arch::virt::flush_address_space(&root_addrsp.0);
             Ok(())
         }
         None => Err(VmsError::RootTableUninitialized),
@@ -433,9 +437,9 @@ pub fn smp_enable_initialized() -> Result<VirtualMemoryInfo, VmsError> {
                 root_addrsp.0.root_pa()
             );
 
-            let max_asid = arch::get_max_asid();
-            arch::switch_address_space(&root_addrsp.0);
-            arch::flush_address_space(&root_addrsp.0);
+            let max_asid = arch::virt::get_max_asid();
+            arch::virt::switch_address_space(&root_addrsp.0);
+            arch::virt::flush_address_space(&root_addrsp.0);
             Ok(VirtualMemoryInfo { max_asid })
         }
         None => Err(VmsError::RootTableUninitialized),
@@ -458,7 +462,7 @@ pub fn remap_tables() -> Result<(), VmsError> {
             .map_err(VmsError::AddressSpace)
     };
     if result.is_ok() {
-        arch::flush_address_space(&root_addrsp.0);
+        arch::virt::flush_address_space(&root_addrsp.0);
     }
     result
 }
@@ -483,7 +487,7 @@ pub fn uninit_identity_map() -> Result<(), VmsError> {
         .unmap_raw(VAddr::identity(kernel_start_p()), kernel_size())
         .map_err(VmsError::AddressSpace);
     if result.is_ok() {
-        arch::flush_address_space(&root_addrsp.0);
+        arch::virt::flush_address_space(&root_addrsp.0);
     }
     result
 }
@@ -498,7 +502,7 @@ pub fn map(virt: &PageAlloc, phys: &FrameAlloc, flags: PTEFlags) -> Result<(), V
         .map(virt, phys, flags)
         .map_err(VmsError::AddressSpace);
     if result.is_ok() {
-        arch::flush_address_space_at(&root_addrsp.0, virt.start_addr());
+        arch::virt::flush_address_space_at(&root_addrsp.0, virt.start_addr());
     }
     result
 }
@@ -520,7 +524,7 @@ pub fn map_raw_relaxed(
         .map_raw_relaxed(va, pa, size_bytes, flags)
         .map_err(VmsError::AddressSpace);
     if result.is_ok() {
-        arch::flush_address_space_at(&root_addrsp.0, va);
+        arch::virt::flush_address_space_at(&root_addrsp.0, va);
     }
     result
 }

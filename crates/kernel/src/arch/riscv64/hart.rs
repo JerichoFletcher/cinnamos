@@ -1,7 +1,7 @@
 use sbi::SbiError;
 
 use crate::{
-    arch::VAddr,
+    arch::addr::VAddr,
     mem::{self, PhysFrameAlloc, physalloc::FrameAlloc},
 };
 

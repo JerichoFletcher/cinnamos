@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use fdt::{Fdt, node::FdtNode};
 
 use crate::{
-    arch::{InterruptSource, PAddr},
+    arch::{addr::PAddr, interrupt::InterruptSource},
     mem::{MemoryRegion, RegionSubtract, SizedMemoryRegion},
 };
 

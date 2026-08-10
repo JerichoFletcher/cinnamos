@@ -73,7 +73,7 @@ impl Log for Logger {
             };
             let hid = hloc::try_get_hid();
 
-            arch::interrupt_free(|ms| {
+            arch::interrupt::interrupt_free(|ms| {
                 let mut writer = console::lock(ms);
                 let _ = match hid {
                     Some(hid) => writeln!(
@@ -97,7 +97,7 @@ impl Log for Logger {
     }
 
     fn flush(&self) {
-        arch::interrupt_free(|ms| {
+        arch::interrupt::interrupt_free(|ms| {
             console::lock(ms).flush();
         });
     }

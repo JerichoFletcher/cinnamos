@@ -1,4 +1,4 @@
-use crate::arch::{PAddr, VAddr};
+use crate::arch::addr::{PAddr, VAddr};
 use pastey::paste;
 
 macro_rules! def_symbols {
