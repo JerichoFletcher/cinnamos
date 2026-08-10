@@ -36,8 +36,8 @@ cfg_select! {
         pub use riscv64::trap::{TrapFrame, create_init_context, create_init_trap_frame};
         pub use riscv64::vaddr::VAddr;
         pub use riscv64::{
-            ElfDyn, get_dyn, init, init_higher_half, init_interrupts, jump_higher_half,
-            wait_for_interrupt,
+            ElfDyn, get_dyn, init, init_higher_half, init_interrupt_driver, init_interrupts,
+            jump_higher_half, wait_for_interrupt,
         };
     }
 }

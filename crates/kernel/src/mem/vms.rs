@@ -409,6 +409,19 @@ pub fn init(fdt: Fdt, dtb_pa: PAddr) -> Result<VirtualMemoryInfo, VmsError> {
     }
 }
 
+/// Flushes the translation cache for all pages in the kernel address space.
+#[inline]
+pub fn flush_kernel_address_space() -> Result<(), VmsError> {
+    let g = ROOT_ADDRSP.read();
+    match g.as_ref() {
+        Some(root_addrsp) => {
+            arch::flush_address_space(&root_addrsp.0);
+            Ok(())
+        }
+        None => Err(VmsError::RootTableUninitialized),
+    }
+}
+
 /// Enable the initialized address space for an SMP hart.
 #[inline]
 pub fn smp_enable_initialized() -> Result<VirtualMemoryInfo, VmsError> {

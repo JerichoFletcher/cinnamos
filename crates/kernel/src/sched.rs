@@ -91,9 +91,7 @@ impl Scheduler {
                 // the next task has a call stack in its context
                 unsafe { __switch(next_ptr, curr_ptr) };
             }
-            None => {
-                panic!("schedule run queue is empty")
-            }
+            None => panic!("schedule run queue is empty"),
         }
     }
 

@@ -1,4 +1,4 @@
-.equ SWITCH_FRAME_SIZE,     13*8
+.equ SWITCH_FRAME_SIZE,     21*8
 .equ TASK_CTXSP_OFFSET,     0
 
 .section .text
@@ -20,6 +20,14 @@ __switch:
     sd      s9, 10*8(sp)
     sd      s10, 11*8(sp)
     sd      s11, 12*8(sp)
+    sd      a0, 13*8(sp)
+    sd      a1, 14*8(sp)
+    sd      a2, 15*8(sp)
+    sd      a3, 16*8(sp)
+    sd      a4, 17*8(sp)
+    sd      a5, 18*8(sp)
+    sd      a6, 19*8(sp)
+    sd      a7, 20*8(sp)
 
     sd      sp, TASK_CTXSP_OFFSET(a1)
     j       __switch_noprev
@@ -42,5 +50,13 @@ __switch_noprev:
     ld      s9, 10*8(sp)
     ld      s10, 11*8(sp)
     ld      s11, 12*8(sp)
+    ld      a0, 13*8(sp)
+    ld      a1, 14*8(sp)
+    ld      a2, 15*8(sp)
+    ld      a3, 16*8(sp)
+    ld      a4, 17*8(sp)
+    ld      a5, 18*8(sp)
+    ld      a6, 19*8(sp)
+    ld      a7, 20*8(sp)
     addi    sp, sp, SWITCH_FRAME_SIZE
     ret

@@ -57,7 +57,7 @@ impl HartLocalGuard<'_> {
 }
 
 /// Initializes the hart-local storage for this hart and loads it into the thread-pointer
-/// register of the hart.
+/// register of the hart. The storage will be allocated from the kernel heap.
 ///
 /// After calling this function, the created storage can be accessed using [`get`] or [`try_get`].
 ///
@@ -65,8 +65,9 @@ impl HartLocalGuard<'_> {
 /// `tsp` must point to the top of a valid stack memory.
 #[inline]
 pub unsafe fn load_init(hid: usize, tsp: VAddr) {
-    log::trace!("init hloc hid={} tsp={:#016x}", hid, tsp);
-    arch::load_hart_local(Box::leak(Box::new(HartLocal::new(hid, tsp))));
+    let ptr = Box::leak(Box::new(HartLocal::new(hid, tsp)));
+    log::trace!("init hloc hid={} tsp={:#016x} ptr={:p}", hid, tsp, ptr);
+    arch::load_hart_local(ptr);
 }
 
 /// Gets an access guard for the hart-local storage from an IRQ-free section.

@@ -1,5 +1,7 @@
 use core::mem::offset_of;
 
+use riscv::register::sstatus::{self, Sstatus};
+
 use crate::{arch::VAddr, task::TaskControlBlock, util::mem::stack::StackBuilder};
 
 const _: () = debug_assert!(offset_of!(Task, context_sp) == 0);
@@ -68,4 +70,13 @@ impl TaskStackBuilder<'_> {
         self.task.context_sp = self.stack.get();
         self
     }
+}
+
+/// Loads a task execution context and calls `entry`.
+pub extern "C" fn kernel_task_enter(entry: extern "C" fn() -> !, task_sstatus: Sstatus) -> ! {
+    let mut sstatus = sstatus::read();
+    sstatus.set_sie(task_sstatus.sie());
+    unsafe { sstatus::write(sstatus) };
+
+    entry();
 }

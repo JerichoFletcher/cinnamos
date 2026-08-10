@@ -8,6 +8,7 @@ use crate::{
     arch::{
         self, InterruptPriorityThreshold,
         ic::{InterruptController, InterruptPriority},
+        timer::schedule_timer,
     },
     devicetree, mem,
 };
@@ -83,11 +84,11 @@ pub unsafe fn jump_higher_half(target: *const (), hid: usize, dtb_ptr: VAddr, ne
     }
 }
 
-/// Initializes interrupt controllers and enables interrupts for the current hart.
+/// Initializes interrupt controllers.
 ///
 /// # Safety
 /// `hid` must be equal to the current hart ID.
-pub unsafe fn init_interrupts(hid: usize, fdt: &Fdt) {
+pub unsafe fn init_interrupt_driver(hid: usize, fdt: &Fdt) {
     if let Some(plic_node) = fdt.find_compatible(&["riscv,plic0"])
         && let Some(mut plic_reg) = plic_node.reg()
     {
@@ -110,6 +111,11 @@ pub unsafe fn init_interrupts(hid: usize, fdt: &Fdt) {
         });
     }
     init_timer(hid, fdt);
+}
+
+/// Initializes and enables interrupts for this hart.
+pub fn init_interrupts() {
+    schedule_timer();
     interrupt::enable_interrupts();
 }
 

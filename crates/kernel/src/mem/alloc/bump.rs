@@ -96,7 +96,7 @@ impl BumpAllocator {
     /// `layout` must be a non-zero-sized layout.
     unsafe fn alloc(&self, layout: Layout) -> Option<PAddr> {
         loop {
-            let head = self.next.load(Ordering::Relaxed);
+            let mut head = self.next.load(Ordering::Acquire);
             let alloc = head.next_multiple_of(layout.align());
             let next = alloc.checked_add(layout.size())?;
             if next > self.end.addr() {
@@ -105,10 +105,10 @@ impl BumpAllocator {
 
             match self
                 .next
-                .compare_exchange_weak(head, next, Ordering::AcqRel, Ordering::Relaxed)
+                .compare_exchange_weak(head, next, Ordering::AcqRel, Ordering::Acquire)
             {
                 Ok(_) => return Some(PAddr::new(alloc)),
-                Err(_) => continue,
+                Err(actual) => head = actual,
             }
         }
     }

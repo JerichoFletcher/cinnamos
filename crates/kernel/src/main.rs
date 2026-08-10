@@ -73,6 +73,8 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8) -> ! {
         log::trace!("synchronized relocation");
         // Safety: PHYS_TO_KERNEL_SLIDE is the kernel space's slide amount
         unsafe { rel::shift_relocation(mem::vms::PHYS_TO_KERNEL_SLIDE) };
+        // Safety: Bump space is mapped into kernel space
+        unsafe { mem::heap::shift_bump(mem::vms::phys_to_kernel) };
     })
     .is_err()
     {
@@ -104,9 +106,6 @@ unsafe fn jump_higher_half(entry: *const (), hid: usize, dtb_ptr: *const u8, sp:
 unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     log::info!("boot hart ventry hid={}", hid);
 
-    // Safety: Bump space is mapped into kernel space
-    unsafe { mem::heap::shift_bump(mem::vms::phys_to_kernel) };
-
     // Safety: dtb_ptr points to a devicetree blob
     let fdt = unsafe { Fdt::from_ptr(dtb_ptr).expect("invalid devicetree blob") };
     if let Some((uart, uart_reg)) = devicetree::find_compatible(&fdt, &["ns16550", "ns16550a"]) {
@@ -125,16 +124,23 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
         };
     }
 
-    let trap_stack = mem::physalloc::alloc(4).expect("failed to allocate trap stack");
+    let trap_stack = mem::physalloc::alloc(8).expect("failed to allocate trap stack");
     let tsp = mem::vms::phys_to_kernel(trap_stack.end_addr());
     core::mem::forget(trap_stack);
     // Safety: tsp points to the top of trap_stack, which is mapped in bump space
     unsafe { hloc::load_init(hid, tsp) };
     arch::init_higher_half();
 
-    mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));
-    mem::vms::remap_tables().expect("failed to remap to higher-half");
-    mem::heap::init_heap();
+    // Barrier block and publish memory init
+    if hart::wait_all_harts_finalize(|| {
+        mem::physalloc::init(&fdt, mem::vms::virt_to_phys(VAddr::from_ptr(dtb_ptr)));
+        mem::vms::remap_tables().expect("failed to remap to higher-half");
+        mem::heap::init_heap();
+    })
+    .is_err()
+    {
+        panic!("multiple finalizers for physalloc init barrier");
+    }
 
     let (bump_start, bump_next, bump_end) = mem::alloc::bump::get_bump_area();
     log::info!(
@@ -153,12 +159,13 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
         unsafe { mem::physalloc::add_region(&reg) };
     }
 
-    // Safety: idle is a callable function
-    let task = unsafe { task::new_kernel_task(idle as _).expect("failed to create idle task") };
+    // Safety: hid is the current hart ID
+    unsafe { arch::init_interrupt_driver(hid, &fdt) };
+    arch::init_interrupts();
+
+    let task = task::new_kernel_task(idle).expect("failed to create idle task");
     // Safety: task already has a context
     arch::interrupt_free(|ms| unsafe { sched::enqueue(ms, task) });
-    // Safety: hid is the current hart ID
-    unsafe { arch::init_interrupts(hid, &fdt) };
 
     // Barrier block until all harts enter higher-half space
     if hart::wait_all_harts_finalize(|| {
@@ -197,15 +204,18 @@ unsafe extern "C" fn smp_entry(hid: usize, sp: PAddr) -> ! {
 unsafe fn smp_entry_virt(hid: usize) -> ! {
     log::info!("SMP hart ventry hid={}", hid);
 
-    let trap_stack = mem::physalloc::alloc(4).expect("failed to allocate trap stack");
+    let trap_stack = mem::physalloc::alloc(8).expect("failed to allocate trap stack");
     let tsp = mem::vms::phys_to_kernel(trap_stack.end_addr());
     core::mem::forget(trap_stack);
     // Safety: tsp points to the top of trap_stack, which is mapped in bump space
     unsafe { hloc::load_init(hid, tsp) };
     arch::init_higher_half();
+    hart::wait_all_harts(); // Until the boot hart initializes physalloc
 
     log::info!("SMP hart finished init hid={}", hid);
     hart::wait_all_harts(); // Until all harts enter higher-half space
+    mem::vms::flush_kernel_address_space().expect("failed to flush kernel TLB cache");
+    arch::init_interrupts();
 
     log::info!("SMP hart parked hid={}", hid);
     loop {
