@@ -91,6 +91,16 @@ pub fn interrupt_free<'ms, T>(f: impl FnOnce(IrqDisabledSection<'ms>) -> T) -> T
     f(IrqDisabledSection::new())
 }
 
+/// Enables interrupts and calls the closure.
+///
+/// # Safety
+/// - This function must not be called within an IRQ-disabled critical section.
+/// - When calling this function inside an interrupt handler, the interrupt flag that caused the
+///   interrupt must be disabled. Otherwise, the interrupt will be re-triggered before entering `f`.
+pub unsafe fn interrupt_nested<T>(f: impl FnOnce() -> T) -> T {
+    unsafe { riscv::interrupt::nested(f) }
+}
+
 /// Token for marking an IRQ-masked section.
 #[derive(Debug, Clone, Copy)]
 pub struct IrqDisabledSection<'ms> {

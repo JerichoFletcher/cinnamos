@@ -83,7 +83,7 @@ impl Plic {
     #[inline]
     const fn threshold_from_num(&self, num: u32) -> Option<InterruptPriorityThreshold> {
         match num {
-            0 => Some(InterruptPriorityThreshold::All),
+            0 => Some(InterruptPriorityThreshold::Low),
             _ => {
                 if num == self.to_priority_num(InterruptPriority::Low) {
                     Some(InterruptPriorityThreshold::Medium)
@@ -101,7 +101,7 @@ impl Plic {
     #[inline]
     const fn to_threshold_num(&self, threshold: InterruptPriorityThreshold) -> u32 {
         match threshold {
-            InterruptPriorityThreshold::All => 0,
+            InterruptPriorityThreshold::Low => 0,
             InterruptPriorityThreshold::Medium => self.to_priority_num(InterruptPriority::Low),
             InterruptPriorityThreshold::High => self.to_priority_num(InterruptPriority::Medium),
             InterruptPriorityThreshold::Disabled => self.to_priority_num(InterruptPriority::High),
@@ -210,6 +210,24 @@ impl InterruptController for Plic {
             old_val & !(1u32 << shift)
         };
         unsafe { ptr.write_volatile(new_val) };
+    }
+
+    fn iter_enabled_interrupts(
+        &self,
+        _ms: IrqDisabledSection<'_>,
+    ) -> Box<dyn Iterator<Item = InterruptDescriptor> + '_> {
+        Box::new(core::iter::from_coroutine(
+            #[coroutine]
+            || {
+                for source in 1..INTERRUPT_COUNT.get() {
+                    let source = NonZero::new(source).unwrap();
+                    let priority = self.get_priority(source);
+                    if !matches!(priority, InterruptPriority::Disabled) {
+                        yield InterruptDescriptor { source, priority }
+                    }
+                }
+            },
+        ))
     }
 
     unsafe fn try_if_claim(&self, f: &dyn Fn(InterruptSource)) {

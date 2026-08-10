@@ -24,7 +24,8 @@ cfg_select! {
             InterruptController, InterruptPriority, InterruptPriorityThreshold, InterruptSource,
         };
         pub use riscv64::interrupt::{
-            InterruptError, IrqDisabledSection, MasksIrq, interrupt_free, register_irq_handler,
+            InterruptError, IrqDisabledSection, MasksIrq, interrupt_free, interrupt_nested,
+            register_irq_handler,
         };
         pub use riscv64::paddr::PAddr;
         pub use riscv64::sv48::{

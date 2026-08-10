@@ -135,7 +135,7 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
                         curr.tcb_mut().time_quantum -= 1;
                     }
                     if t == 0 {
-                        sched::schedule(ms);
+                        sched::schedule();
                     }
                 }
             });

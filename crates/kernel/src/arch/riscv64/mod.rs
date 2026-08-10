@@ -103,10 +103,8 @@ pub unsafe fn init_interrupt_driver(hid: usize, fdt: &Fdt) {
                 for int in ints {
                     log::debug!("enabling interrupt {}: {}", int, node.name);
                     plic.set_priority(ms, int, InterruptPriority::Low);
-                    plic.set_enabled(ms, int, true);
                 }
             }
-            plic.set_threshold(ms, InterruptPriorityThreshold::All);
             ic::set_controller(ms, Box::new(plic));
         });
     }
@@ -115,8 +113,17 @@ pub unsafe fn init_interrupt_driver(hid: usize, fdt: &Fdt) {
 
 /// Initializes and enables interrupts for this hart.
 pub fn init_interrupts() {
-    schedule_timer();
-    interrupt::enable_interrupts();
+    arch::interrupt_free(|ms| {
+        if let Some(ic) = ic::get_controller_read(ms).as_ref() {
+            ic.set_threshold(ms, InterruptPriorityThreshold::Low);
+            for descriptor in ic.iter_enabled_interrupts(ms) {
+                ic.set_enabled(ms, descriptor.source, true);
+            }
+        }
+
+        schedule_timer();
+        interrupt::enable_interrupts();
+    });
 }
 
 /// Initializes timer interrupts. Depends on the `timebase-frequency` property on the current hart

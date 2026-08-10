@@ -31,7 +31,7 @@ pub enum InterruptPriority {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum InterruptPriorityThreshold {
     /// The interrupt context allows all priority levels, starting from [`InterruptPriority::Low`].
-    All,
+    Low,
     /// The interrupt context only allows a minimum level of [`InterruptPriority::Medium`].
     Medium,
     /// The interrupt context only allows a minimum level of [`InterruptPriority::High`].
@@ -45,7 +45,7 @@ impl InterruptPriorityThreshold {
     #[inline]
     pub const fn mask_from(priority: InterruptPriority) -> Self {
         match priority {
-            InterruptPriority::Disabled => Self::All,
+            InterruptPriority::Disabled => Self::Low,
             InterruptPriority::Low => Self::Medium,
             InterruptPriority::Medium => Self::High,
             InterruptPriority::High => Self::Disabled,
@@ -53,12 +53,19 @@ impl InterruptPriorityThreshold {
     }
 }
 
+/// Provides information for an interrupt.
+#[derive(Debug, Clone, Copy)]
+pub struct InterruptDescriptor {
+    pub source: InterruptSource,
+    pub priority: InterruptPriority,
+}
+
 /// An abstraction for any configurable interrupt controller.
 pub trait InterruptController: Send + Sync {
-    /// Gets the priority of an interrupt source.
+    /// Gets the global priority of an interrupt source.
     fn get_priority(&self, source: InterruptSource) -> InterruptPriority;
 
-    /// Sets the priority of an interrupt source.
+    /// Sets the global priority of an interrupt source.
     ///
     /// Since this mutates a global interrupt configuration, this function requires exclusive
     /// access to the controller to prevent races by other harts.
@@ -81,6 +88,11 @@ pub trait InterruptController: Send + Sync {
     /// Sets whether the interrupt source is enabled for this hart.
     fn set_enabled(&self, ms: IrqDisabledSection<'_>, source: InterruptSource, enabled: bool);
 
+    fn iter_enabled_interrupts(
+        &self,
+        ms: IrqDisabledSection<'_>,
+    ) -> Box<dyn Iterator<Item = InterruptDescriptor> + '_>;
+
     /// Attempts to claim an IRQ from the current hart context.
     ///
     /// If an IRQ is pending and successfully claimed, interrupts with a lower priority
@@ -97,7 +109,6 @@ pub trait InterruptController: Send + Sync {
 static INTERRUPT_CONTROLLER: RwLock<Option<Box<dyn InterruptController>>> = RwLock::new(None);
 
 /// Acquires a shared read lock on the current [`InterruptController`].
-#[expect(unused)]
 pub fn get_controller_read<'ms>(
     _ms: IrqDisabledSection<'ms>,
 ) -> RwLockReadGuard<'ms, Option<Box<dyn InterruptController>>> {

@@ -1,6 +1,7 @@
 .equ HLOC_SCRATCH_OFFSET,   8
 .equ HLOC_TASKPTR_OFFSET,   16
 .equ HLOC_TSP_OFFSET,       24
+.equ HLOC_NESTED_OFFSET,    32
 .equ TASK_KSP_OFFSET,       8
 .equ TRAP_FRAME_SIZE,       32*8 + 4*8
 
@@ -12,23 +13,37 @@ __trap_entry:
 # Load kernel stack pointer from current task
     csrrw   tp, sscratch, tp
     beq     tp, zero, __trap_entry_err_null_tp
-
     sd      sp, HLOC_SCRATCH_OFFSET(tp)
+
+# Check if we are in a nested trap
+    ld      sp, HLOC_NESTED_OFFSET(tp)
+    addi    sp, sp, -1
+# If the nested trap depth is 1, switch to the hart TSP
+    beqz    sp, 1f
+# If the nested trap depth is greater than 1, we're already in the hart trap stack
+    bgez    sp, 2f
+
+# If the hart is not running any tasks, switch to the hart TSP
     ld      sp, HLOC_TASKPTR_OFFSET(tp)
     beq     sp, zero, 1f
 
 # Load the task KSP
     ld      sp, TASK_KSP_OFFSET(sp)
     beq     sp, zero, __trap_entry_err_null_task_ksp
-    j       2f
+    j       3f
 
 1:
-# Null task pointer means the trap is taken before the scheduler starts
-# Load the hart's trap SP instead
+# Load the hart's trap SP
     ld      sp, HLOC_TSP_OFFSET(tp)
     beq     sp, zero, __trap_entry_err_null_kernel_tsp
+    j       3f
 
 2:
+# Load the original SP
+    ld      sp, HLOC_SCRATCH_OFFSET(tp)
+    j       3f
+
+3:
 # Save registers (except tp and sp)
     addi    sp, sp, -TRAP_FRAME_SIZE
     sd      ra, 1*8(sp)
@@ -75,6 +90,11 @@ __trap_entry:
 # Restore hart-local pointer to sscratch
     csrw    sscratch, tp
 
+# Increment trap depth
+    ld      t0, HLOC_NESTED_OFFSET(tp)
+    addi    t0, t0, 1
+    sd      t0, HLOC_NESTED_OFFSET(tp)
+
 # Call Rust handler
     mv      a0, sp
     call    trap_handler
@@ -82,11 +102,16 @@ __trap_entry:
 
 .global __trap_exit
 __trap_exit:
-    addi    t0, sp, TRAP_FRAME_SIZE
-    ld      t1, HLOC_TASKPTR_OFFSET(tp)
-    beq     t1, zero, 1f
+# Decrement trap depth
+    ld      t0, HLOC_NESTED_OFFSET(tp)
+    addi    t0, t0, -1
+    sd      t0, HLOC_NESTED_OFFSET(tp)
 
-# Store new task KSP ahead of time
+# If the hart is currently running a task, compute the new task KSP
+    ld      t0, HLOC_TASKPTR_OFFSET(tp)
+    beq     t0, zero, 1f
+
+    addi    t0, sp, TRAP_FRAME_SIZE
     sd      t0, TASK_KSP_OFFSET(t1)
     j       2f
 

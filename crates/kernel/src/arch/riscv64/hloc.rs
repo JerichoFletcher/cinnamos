@@ -8,6 +8,7 @@ use crate::{
 const _: () = debug_assert!(offset_of!(HartLocal, scratch) == 8);
 const _: () = debug_assert!(offset_of!(HartLocal, curr_task_ptr) == 16);
 const _: () = debug_assert!(offset_of!(HartLocal, trap_stack_top) == 24);
+const _: () = debug_assert!(offset_of!(HartLocal, nested_trap_depth) == 32);
 
 /// The storage object that is exclusive for each hart.
 #[repr(C)]
@@ -21,9 +22,11 @@ pub struct HartLocal {
     curr_task_ptr: *mut Task,
     /// Equals to the address of the trap stack top for the current hart.
     trap_stack_top: VAddr,
+    /// The current nested trap depth.
+    nested_trap_depth: usize,
+
     /// The current task being executed by this hart.
     curr_task: Option<SlabBox<Task>>,
-
     /// The nesting level of critical sections by this hart.
     critical_nesting: AtomicUsize,
 }
@@ -37,6 +40,8 @@ impl HartLocal {
             scratch: 0,
             curr_task_ptr: core::ptr::null_mut(),
             trap_stack_top: tsp,
+            nested_trap_depth: 0,
+
             curr_task: None,
             critical_nesting: AtomicUsize::new(0),
         }

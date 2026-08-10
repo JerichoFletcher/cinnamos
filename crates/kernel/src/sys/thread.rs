@@ -1,6 +1,6 @@
 use cinnamos_abi::{SyscallError, proc::ThreadId};
 
-use crate::{arch, sched};
+use crate::sched;
 
 pub fn thread_create(_entry: *const ()) -> Result<ThreadId, SyscallError> {
     todo!()
@@ -11,7 +11,7 @@ pub fn thread_create(_entry: *const ()) -> Result<ThreadId, SyscallError> {
 /// Upon reentrance, the thread will continue execution where it originally
 /// calls this function.
 pub fn thread_yield() -> Result<(), SyscallError> {
-    arch::interrupt_free(|ms| sched::schedule(ms));
+    sched::schedule();
     Ok(())
 }
 

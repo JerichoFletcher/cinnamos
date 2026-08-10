@@ -78,7 +78,6 @@ static TASK_ALLOC: SlabAllocator<4, Task> = SlabAllocator::new();
 /// and can be safely [scheduled](crate::sched::schedule) directly.
 pub fn new_kernel_task(entry: fn() -> !) -> Option<SlabBox<Task>> {
     let mut task = TASK_ALLOC.alloc(Task::new_kernel()?)?;
-    // let task_sp = task.tcb().task_stack_virt.end_addr();
 
     // Safety: The allocated kernel stack fits the fabricated stack
     unsafe {

@@ -62,7 +62,7 @@ unsafe fn entry(hid: usize, dtb_ptr: *const u8) -> ! {
     );
     for id in 0..hart_count {
         if id != hid {
-            let stack = mem::physalloc::alloc(16).expect("failed to allocate SMP stack");
+            let stack = mem::physalloc::alloc(8).expect("failed to allocate SMP stack");
             let r = unsafe { arch::start_hart(id, _kernel_smp_start as _, stack) };
             log::info!("start hid={} status={:?}", id, r);
         }
@@ -124,7 +124,7 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
         };
     }
 
-    let trap_stack = mem::physalloc::alloc(8).expect("failed to allocate trap stack");
+    let trap_stack = mem::physalloc::alloc(32).expect("failed to allocate trap stack");
     let tsp = mem::vms::phys_to_kernel(trap_stack.end_addr());
     core::mem::forget(trap_stack);
     // Safety: tsp points to the top of trap_stack, which is mapped in bump space
@@ -165,7 +165,7 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
 
     let task = task::new_kernel_task(idle).expect("failed to create idle task");
     // Safety: task already has a context
-    arch::interrupt_free(|ms| unsafe { sched::enqueue(ms, task) });
+    unsafe { sched::enqueue(task) };
 
     // Barrier block until all harts enter higher-half space
     if hart::wait_all_harts_finalize(|| {
@@ -179,7 +179,9 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
 
     log::info!("boot start scheduler hid={}", hid);
     hart::wait_all_harts(); // Wait until all harts are ready to enter the scheduler
-    sched::start();
+
+    // Safety: Not in a critical section
+    unsafe { sched::start() };
 }
 
 /// # Safety
@@ -205,7 +207,7 @@ unsafe extern "C" fn smp_entry(hid: usize, sp: PAddr) -> ! {
 unsafe fn smp_entry_virt(hid: usize) -> ! {
     log::info!("SMP hart ventry hid={}", hid);
 
-    let trap_stack = mem::physalloc::alloc(8).expect("failed to allocate trap stack");
+    let trap_stack = mem::physalloc::alloc(32).expect("failed to allocate trap stack");
     let tsp = mem::vms::phys_to_kernel(trap_stack.end_addr());
     core::mem::forget(trap_stack);
     // Safety: tsp points to the top of trap_stack, which is mapped in bump space
@@ -220,7 +222,9 @@ unsafe fn smp_entry_virt(hid: usize) -> ! {
 
     log::info!("SMP start scheduler hid={}", hid);
     hart::wait_all_harts(); // Wait until all harts are ready to enter the scheduler
-    sched::start();
+
+    // Safety: Not in a critical section
+    unsafe { sched::start() };
 }
 
 /// An idle task that simply yields. Required to make sure the scheduler run queue is never empty.
