@@ -15,10 +15,12 @@ use crate::{
 
 /// A unique ownership of a `T` within a slab memory.
 pub struct SlabBox<T> {
-    /// Invariant: `ptr` always points to an initialized `T` inside its slab memory
+    /// Always points to an initialized `T` inside its slab memory
     ptr: NonNull<T>,
-    /// Invariant: `slab` always points to a valid [Slab<T>] from which the [SlabBox<T>] was created
+    /// Always points to a valid [Slab<T>] from which the [SlabBox<T>] was created
     slab: NonNull<Slab<T>>,
+    /// Makes SlabBox<T> behave as if it owns the `T`
+    _owns: PhantomData<T>,
 }
 
 impl<T> AsRef<T> for SlabBox<T> {
@@ -65,6 +67,11 @@ impl<T: Debug> Debug for SlabBox<T> {
             .finish()
     }
 }
+
+// Safety: SlabBox owns the inner value
+unsafe impl<T: Send> Send for SlabBox<T> {}
+// Safety: No interior mutability
+unsafe impl<T: Sync> Sync for SlabBox<T> {}
 
 /// Critical data describing a slab.
 struct SlabData {
@@ -131,6 +138,7 @@ impl<T> Slab<T> {
                 SlabBox {
                     ptr,
                     slab: NonNull::from_ref(self),
+                    _owns: PhantomData,
                 }
             });
         }

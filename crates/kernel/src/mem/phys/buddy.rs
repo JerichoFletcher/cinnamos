@@ -352,20 +352,14 @@ impl<'a> BuddyFrameAllocator<'a> {
     }
 
     #[inline]
-    fn regions<'b>(&self) -> impl Iterator<Item = &BuddyRegion<'a>>
-    where
-        'a: 'b,
-    {
+    fn regions(&self) -> impl Iterator<Item = &BuddyRegion<'a>> {
         self.regions[..self.region_count]
             .iter()
             .map(|v| v.as_ref().unwrap())
     }
 
     #[inline]
-    fn push_region<'b>(&mut self, reg: BuddyRegion<'a>)
-    where
-        'a: 'b,
-    {
+    fn push_region(&mut self, reg: BuddyRegion<'a>) {
         assert!(self.region_count < MAX_REGION_COUNT);
         self.regions[self.region_count] = Some(reg);
         self.region_count += 1;

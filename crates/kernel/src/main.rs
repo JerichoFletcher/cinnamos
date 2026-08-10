@@ -160,7 +160,7 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
     // Safety: hid is the current hart ID
     unsafe { arch::init_interrupts(hid, &fdt) };
 
-    // Set barrier until all harts enter higher-half space
+    // Barrier block until all harts enter higher-half space
     if hart::wait_all_harts_finalize(|| {
         log::trace!("synchronized id-unmap");
         mem::vms::uninit_identity_map().expect("failed to uninitialize identity map");
