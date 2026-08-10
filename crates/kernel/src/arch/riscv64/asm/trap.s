@@ -77,7 +77,6 @@ __trap_entry:
 
 # Call Rust handler
     mv      a0, sp
-    mv      a1, tp
     call    trap_handler
     j       __trap_exit
 
@@ -99,14 +98,12 @@ __trap_exit:
 2:
 # Restore CSRs
     ld      t0, 2*8(sp)
-    ld      t1, 4*8(sp)
-    ld      t2, 32*8(sp)
-    ld      t3, 33*8(sp)
+    ld      t1, 32*8(sp)
+    ld      t2, 33*8(sp)
 
     sd      t0, HLOC_SCRATCH_OFFSET(tp)
-    csrw    sscratch, t1
-    csrw    sstatus, t2
-    csrw    sepc, t3
+    csrw    sstatus, t1
+    csrw    sepc, t2
 
 # Restore registers (except sp)
     ld      ra, 1*8(sp)

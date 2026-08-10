@@ -33,7 +33,7 @@ cfg_select! {
             switch_address_space, translate_virt, unmap_page,
         };
         pub use riscv64::task::Task;
-        pub use riscv64::trap::{TrapFrame, create_init_context, create_init_trap_frame};
+        pub use riscv64::trap::TrapFrame;
         pub use riscv64::vaddr::VAddr;
         pub use riscv64::{
             ElfDyn, get_dyn, init, init_higher_half, init_interrupt_driver, init_interrupts,

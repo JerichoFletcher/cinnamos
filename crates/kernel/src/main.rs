@@ -177,7 +177,8 @@ unsafe fn entry_virt(hid: usize, dtb_ptr: *const u8) -> ! {
         panic!("multiple finalizers for id-unmap barrier");
     }
 
-    log::info!("starting scheduler");
+    log::info!("boot start scheduler hid={}", hid);
+    hart::wait_all_harts(); // Wait until all harts are ready to enter the scheduler
     sched::start();
 }
 
@@ -217,10 +218,9 @@ unsafe fn smp_entry_virt(hid: usize) -> ! {
     mem::vms::flush_kernel_address_space().expect("failed to flush kernel TLB cache");
     arch::init_interrupts();
 
-    log::info!("SMP hart parked hid={}", hid);
-    loop {
-        arch::wait_for_interrupt();
-    }
+    log::info!("SMP start scheduler hid={}", hid);
+    hart::wait_all_harts(); // Wait until all harts are ready to enter the scheduler
+    sched::start();
 }
 
 /// An idle task that simply yields. Required to make sure the scheduler run queue is never empty.

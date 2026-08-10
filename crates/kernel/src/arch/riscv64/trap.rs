@@ -3,14 +3,14 @@ use riscv::{
     interrupt::{Exception, Interrupt, Trap},
     register::{
         sscratch,
-        sstatus::{self, Sstatus},
+        sstatus::Sstatus,
         stval,
         stvec::{self, Stvec, TrapMode},
     },
 };
 
 use crate::{
-    arch::{self, Context, VAddr, interrupt},
+    arch::{self, VAddr, interrupt},
     *,
 };
 
@@ -73,37 +73,6 @@ impl TrapFrame {
     pub const REG_T4: usize = 29;
     pub const REG_T5: usize = 30;
     pub const REG_T6: usize = 31;
-
-    fn create_kernel_frame(entry: *const (), stack_ptr: VAddr) -> Self {
-        let mut sstatus = sstatus::read();
-        sstatus.set_spie(true);
-        sstatus.set_spp(sstatus::SPP::Supervisor);
-
-        let mut regs = [0; 32];
-        regs[Self::REG_SP] = stack_ptr.addr();
-        regs[Self::REG_TP] = hloc::get_ptr() as usize;
-        Self {
-            regs,
-            sstatus,
-            sepc: VAddr::from_ptr(entry),
-        }
-    }
-}
-
-/// Fabricates a snapshot of an empty hart state with the given stack pointer. When loading this frame,
-/// the hart will load and jump to `entry`.
-///
-/// # Safety
-/// - `entry` must point to executable code (e.g. a function or user task entry point).
-/// - `task_sp` must point to a valid stack memory.
-pub unsafe fn create_init_trap_frame(entry: *const (), task_sp: VAddr) -> TrapFrame {
-    TrapFrame::create_kernel_frame(entry, task_sp)
-}
-
-/// Fabricates an initial context that simply jumps to trap exit. Intended to be coupled with a [TrapFrame]
-/// to form a complete stack that loads the frame and jumps to its entry point.
-pub fn create_init_context() -> Context {
-    Context::new(VAddr::from_ptr(__trap_exit as *const ()))
 }
 
 /// Dispatches the appropriate handler for a trap.
@@ -186,6 +155,9 @@ extern "C" fn trap_handler(frame: &mut TrapFrame) {
             frame.sepc, tcause, tval
         ),
     }
+
+    // TODO: Load sscratch with user TLS on user threads
+    unsafe { sscratch::write(hloc::get_ptr() as _) };
 }
 
 /// Dispatches a system call that was requested in the frame.

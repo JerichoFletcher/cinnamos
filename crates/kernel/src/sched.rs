@@ -55,6 +55,11 @@ impl Scheduler {
     /// Yields execution of the current task and switches to the next one.
     pub fn schedule(&self, ms: IrqDisabledSection<'_>) {
         let mut hloc = hloc::borrow(ms);
+        let mut rq = self.run_queue.lock(ms);
+        if rq.is_empty() {
+            return;
+        }
+
         let mut curr = hloc
             .take_curr_task()
             .expect("Scheduler::schedule() expects a current task");
@@ -65,56 +70,54 @@ impl Scheduler {
 
         let curr_ptr = curr.as_mut() as *mut _;
         let curr_id = curr.tcb().id;
+        rq.push_back(curr);
+        let mut next = rq.pop_front().unwrap();
 
-        let next = {
-            let mut rq = self.run_queue.lock(ms);
-            rq.push_back(curr);
-            rq.pop_front()
-        };
-        match next {
-            Some(mut next) => {
-                let tcb = next.tcb_mut();
-                tcb.state = TaskState::Running;
-                if tcb.time_quantum == 0 {
-                    // TODO: Priority-based quantum budget assignment
-                    tcb.time_quantum = 5;
-                }
-                let next_ptr = next.as_ref() as *const _;
-                log::trace!(
-                    "scheduling next task curr={} next={}",
-                    curr_id,
-                    next.tcb().id
-                );
-
-                hloc.set_curr_task(next);
-                // Safety: Both pointers are derived from allocated slab boxes, and
-                // the next task has a call stack in its context
-                unsafe { __switch(next_ptr, curr_ptr) };
-            }
-            None => panic!("schedule run queue is empty"),
+        let tcb = next.tcb_mut();
+        tcb.state = TaskState::Running;
+        if tcb.time_quantum == 0 {
+            // TODO: Priority-based quantum budget assignment
+            tcb.time_quantum = 5;
         }
+        let next_ptr = next.as_ref() as *const _;
+        log::trace!(
+            "scheduling next task curr={} next={}",
+            curr_id,
+            next.tcb().id
+        );
+        drop(rq);
+
+        hloc.set_curr_task(next);
+        // Safety: Both pointers are derived from allocated slab boxes, and
+        // the next task has a call stack in its context
+        unsafe { __switch(next_ptr, curr_ptr) };
     }
 
     /// Starts execution of the scheduler.
     pub fn start(&self) -> ! {
         let next_ptr = arch::interrupt_free(|ms| {
             let mut hloc = hloc::borrow(ms);
-            let next = self.run_queue.lock(ms).pop_front();
-            match next {
-                Some(mut next) => {
-                    let tcb = next.tcb_mut();
-                    tcb.state = TaskState::Running;
-                    if tcb.time_quantum == 0 {
-                        // TODO: Priority-based quantum budget assignment
-                        tcb.time_quantum = 5;
-                    }
-                    let next_ptr = next.as_ref() as *const _;
-                    log::trace!("scheduling first task next={}", next.tcb().id);
 
-                    hloc.set_curr_task(next);
-                    next_ptr
+            loop {
+                let next = self.run_queue.lock(ms).pop_front();
+                match next {
+                    Some(mut next) => {
+                        let tcb = next.tcb_mut();
+                        tcb.state = TaskState::Running;
+                        if tcb.time_quantum == 0 {
+                            // TODO: Priority-based quantum budget assignment
+                            tcb.time_quantum = 5;
+                        }
+                        let next_ptr = next.as_ref() as *const _;
+                        log::trace!("scheduling first task next={}", next.tcb().id);
+    
+                        hloc.set_curr_task(next);
+                        break next_ptr;
+                    }
+                    None => {
+                        arch::wait_for_interrupt();
+                    },
                 }
-                None => panic!("schedule run queue is empty"),
             }
         });
         // Safety: The pointer is derived from an allocated slab box, and

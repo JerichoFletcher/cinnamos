@@ -46,7 +46,7 @@ SECTIONS {
     . = ALIGN(4K);
     PROVIDE(_kmem_start = .);
     PROVIDE(_stack_start = .);
-    . += 512K;
+    . += 64K;
     PROVIDE(_stack_end = .);
     PROVIDE(_kmem_end = .);
 
